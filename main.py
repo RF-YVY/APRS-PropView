@@ -36,6 +36,7 @@ from server.packet_handler import PacketHandler
 from server.websocket_manager import WebSocketManager
 from server.analytics import AnalyticsEngine
 from server.alerts import AlertManager, AlertConfig
+from server.weather import WeatherManager
 
 # Configure logging
 logging.basicConfig(
@@ -137,9 +138,17 @@ async def main():
         handler.set_aprs_is(aprs_is)
         logger.info(f"APRS-IS: {config.aprs_is.server}:{config.aprs_is.port}")
 
+    # ── Weather ────────────────────────────────────────────────────
+
+    weather_manager = WeatherManager(config)
+    if config.weather.enabled and config.weather.location_code:
+        logger.info(f"Weather: enabled, location={config.weather.location_code}")
+    else:
+        logger.info("Weather: disabled or no location set")
+
     # ── Create web application ──────────────────────────────────────
 
-    app = create_app(config, db, tracker, ws_manager, handler, analytics, alert_manager, aprs_is)
+    app = create_app(config, db, tracker, ws_manager, handler, analytics, alert_manager, aprs_is, weather_manager)
 
     # ── Start background tasks ──────────────────────────────────────
 

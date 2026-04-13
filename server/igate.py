@@ -106,9 +106,9 @@ class IGate:
         if addressee.upper() not in {k.upper() for k in self._rf_stations}:
             return None
 
-        # Check recency (only gate if heard within last 30 minutes)
+        # Check recency (only gate if heard within last hour)
         last_heard = self._rf_stations.get(addressee, 0)
-        if time.time() - last_heard > 1800:
+        if time.time() - last_heard > 3600:
             return None
 
         # Deduplicate

@@ -27,6 +27,12 @@
         // Init analytics module
         window.pvAnalytics.init();
 
+        // Init messaging module
+        window.pvMessages.init();
+
+        // Init weather module
+        window.pvWeather.init();
+
         // Wire up WebSocket events
         wireWebSocket();
 
@@ -102,6 +108,24 @@
             if (msg.data) {
                 showAlertNotification(msg.data);
                 window.pvAnalytics.loadAlerts();
+            }
+        });
+
+        ws.on('message', (msg) => {
+            if (msg.data) {
+                window.pvMessages.addMessage(msg.data);
+            }
+        });
+
+        ws.on('message_ack', (msg) => {
+            if (msg.data) {
+                window.pvMessages.handleAck(msg.data);
+            }
+        });
+
+        ws.on('message_rej', (msg) => {
+            if (msg.data) {
+                window.pvMessages.handleRej(msg.data);
             }
         });
 
@@ -483,6 +507,12 @@
             setChk('cfg-alerts-sms', cfg.alerts?.sms_enabled);
             setVal('cfg-alerts-sms-addr', cfg.alerts?.sms_gateway_address);
 
+            // Weather
+            setChk('cfg-wx-enabled', cfg.weather?.enabled);
+            setVal('cfg-wx-location', cfg.weather?.location_code);
+            setVal('cfg-wx-range', cfg.weather?.alert_range_miles);
+            setVal('cfg-wx-refresh', cfg.weather?.refresh_minutes);
+
         } catch (e) {
             console.error('Failed to load settings:', e);
         }
@@ -557,6 +587,12 @@
                 email_password: getVal('cfg-alerts-email-pw'),
                 sms_enabled: getChk('cfg-alerts-sms'),
                 sms_gateway_address: getVal('cfg-alerts-sms-addr'),
+            },
+            weather: {
+                enabled: getChk('cfg-wx-enabled'),
+                location_code: getVal('cfg-wx-location'),
+                alert_range_miles: getVal('cfg-wx-range'),
+                refresh_minutes: getVal('cfg-wx-refresh'),
             },
         };
 
@@ -716,6 +752,9 @@
             }
             if (btn.dataset.tab === 'tab-analytics') {
                 window.pvAnalytics.loadAllData();
+            }
+            if (btn.dataset.tab === 'tab-messages') {
+                window.pvMessages.loadMessages();
             }
         });
     });

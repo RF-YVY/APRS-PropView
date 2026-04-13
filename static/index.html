@@ -43,10 +43,35 @@
         </div>
     </header>
 
+    <!-- ── Message Alert Banner ───────────────────────────────── -->
+    <div id="msg-alert-banner" class="msg-alert-banner" style="display:none;">
+        <span class="msg-alert-icon">💬</span>
+        <span class="msg-alert-text">New message from <b id="msg-alert-call">???</b>: <span id="msg-alert-preview"></span></span>
+        <button id="msg-alert-close" class="msg-alert-close" title="Dismiss">&times;</button>
+    </div>
+
     <!-- ── Main Content ───────────────────────────────────────── -->
     <div id="main-content">
         <!-- ── Map Panel ─────────────────────────────────────── -->
         <div id="map-panel">
+            <!-- Weather Banner (top of map) -->
+            <div id="wx-banner" class="wx-banner" style="display:none;">
+                <div class="wx-current">
+                    <span class="wx-icon" id="wx-icon">☀️</span>
+                    <span class="wx-temp" id="wx-temp">--°F</span>
+                    <span class="wx-desc" id="wx-desc">--</span>
+                    <span class="wx-details">
+                        <span title="Feels like">🌡️ <span id="wx-feels">--</span>°F</span>
+                        <span title="Wind">💨 <span id="wx-wind">--</span></span>
+                        <span title="Humidity">💧 <span id="wx-humidity">--</span>%</span>
+                        <span title="Pressure">📊 <span id="wx-pressure">--</span> mb</span>
+                    </span>
+                    <span class="wx-location" id="wx-location">--</span>
+                    <button id="wx-refresh-btn" class="wx-refresh-btn" title="Refresh weather">🔄</button>
+                </div>
+            </div>
+            <!-- Severe weather alert banners -->
+            <div id="wx-alerts-container" class="wx-alerts-container"></div>
             <div id="map"></div>
             <div id="map-controls">
                 <button id="btn-center-map" title="Center on my station">📍</button>
@@ -84,6 +109,7 @@
                 <button class="tab-btn active" data-tab="tab-rf">RF Stations</button>
                 <button class="tab-btn" data-tab="tab-is">APRS-IS</button>
                 <button class="tab-btn" data-tab="tab-packets">Packets</button>
+                <button class="tab-btn" data-tab="tab-messages">💬 Messages</button>
                 <button class="tab-btn" data-tab="tab-prop">Propagation</button>
                 <button class="tab-btn" data-tab="tab-analytics">📊 Analytics</button>
                 <button class="tab-btn" data-tab="tab-settings">⚙ Settings</button>
@@ -155,6 +181,28 @@
                     <button id="btn-clear-packets" class="btn-small">Clear</button>
                 </div>
                 <div id="packet-list" class="packet-list"></div>
+            </div>
+
+            <!-- ── Messages Tab ──────────────────────────────── -->
+            <div id="tab-messages" class="tab-content">
+                <div class="msg-compose-bar">
+                    <input type="text" id="msg-to-call" class="msg-input-call" placeholder="TO CALL" maxlength="9" title="Recipient callsign (e.g. W1ABC-7)">
+                    <input type="text" id="msg-text" class="msg-input-text" placeholder="Type message... (max 67 chars)" maxlength="67">
+                    <button id="btn-send-msg" class="btn-primary btn-send-msg" title="Send APRS Message">📨 Send</button>
+                </div>
+                <div class="msg-filter-bar">
+                    <label>Show:
+                        <select id="msg-filter">
+                            <option value="all">All Messages</option>
+                            <option value="mine">My Conversations</option>
+                            <option value="rx">Received Only</option>
+                            <option value="tx">Sent Only</option>
+                        </select>
+                    </label>
+                    <span id="msg-count" class="filter-count">0 messages</span>
+                    <button id="btn-clear-msgs" class="btn-small" title="Clear message list">Clear</button>
+                </div>
+                <div id="msg-list" class="msg-list"></div>
             </div>
 
             <!-- ── Propagation Tab ───────────────────────────── -->
@@ -493,6 +541,35 @@
                         </div>
                     </div>
 
+                    <!-- Weather -->
+                    <div class="settings-section">
+                        <h3>🌤️ Weather</h3>
+                        <div class="settings-row">
+                            <label for="cfg-wx-enabled">Weather Enabled</label>
+                            <input type="checkbox" id="cfg-wx-enabled">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-wx-location">Location Code</label>
+                            <div class="wx-location-input">
+                                <input type="text" id="cfg-wx-location" placeholder="US Zip (28801) or ICAO (KAVL)" maxlength="5">
+                                <button id="btn-wx-resolve" class="btn-small" title="Look up location">🔍 Lookup</button>
+                            </div>
+                        </div>
+                        <div class="settings-row">
+                            <label>Resolved location</label>
+                            <span id="cfg-wx-resolved" class="filter-preview">—</span>
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-wx-range">Alert Range (miles)</label>
+                            <input type="number" id="cfg-wx-range" min="10" max="250" step="5" value="50">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-wx-refresh">Refresh Interval (min)</label>
+                            <input type="number" id="cfg-wx-refresh" min="5" max="120" value="15">
+                        </div>
+                        <p class="settings-hint">ℹ️ Uses Open-Meteo (current conditions) and NWS (severe alerts). No API key required. Watches display in orange, warnings in red. Lightning data shown when thunderstorm activity detected.</p>
+                    </div>
+
                     <!-- Band Opening Alerts -->
                     <div class="settings-section">
                         <h3>🚨 Band Opening Alerts</h3>
@@ -606,6 +683,8 @@
     <script src="/static/js/stations.js"></script>
     <script src="/static/js/icons.js"></script>
     <script src="/static/js/analytics.js"></script>
+    <script src="/static/js/messages.js"></script>
+    <script src="/static/js/weather.js"></script>
     <script src="/static/js/app.js"></script>
 </body>
 </html>

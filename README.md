@@ -29,6 +29,21 @@ A real-time APRS digipeater and IGate application focused on visualizing VHF pro
 - **Email (SMTP)** — Email alerts via any SMTP server
 - **SMS Gateway** — Text alerts via carrier email-to-SMS gateways
 
+### Weather
+
+- **Current Conditions Banner** — Live weather banner on the map view (temperature, wind, humidity, pressure, feels-like) powered by Open-Meteo
+- **US Zip Code & ICAO Location** — Set your weather location by entering a US zip code or ICAO airport code
+- **Severe Weather Alerts** — NWS active alerts displayed as color-coded banners (red for warnings, orange for watches/advisories)
+- **Configurable Alert Range** — Select how far from your location to monitor severe weather (default 50 miles)
+- **Lightning Detection** — Thunderstorm indicators via WMO weather codes and NWS alert keyword scanning
+- **Auto-Refresh** — Configurable refresh interval (default 15 min) with 5-minute alert polling
+
+### APRS Messaging
+
+- **Send & Receive** — Two-way APRS messaging with auto-ACK and retry support
+- **Message Log** — Filterable message history (All / Sent / Received)
+- **RF + IS Routing** — Messages sent on both RF and APRS-IS simultaneously
+
 ### Settings & UX
 
 - **Web-based Configuration** — Edit all settings from the browser (saved to `config.toml`)
@@ -98,6 +113,7 @@ All settings are in `config.toml` and can be edited from the web UI **Settings**
 | `[tracking]` | Station age limits and cleanup intervals |
 | `[database]` | SQLite database path |
 | `[alerts]` | Band opening thresholds, Discord/email/SMS notification settings |
+| `[weather]` | Weather enabled, location code (zip/ICAO), alert range miles, refresh interval |
 
 ## Architecture
 
@@ -143,6 +159,7 @@ aprs-propview/
 │   ├── station_tracker.py  # Station tracking & propagation
 │   ├── analytics.py        # Analytics engine
 │   ├── alerts.py           # Band opening alert manager
+│   ├── weather.py          # Open-Meteo + NWS weather provider
 │   └── websocket_manager.py
 └── static/
     ├── index.html           # Single-page dashboard
@@ -153,6 +170,8 @@ aprs-propview/
         ├── stations.js      # Station list management
         ├── icons.js         # APRS symbol → emoji mapping
         ├── analytics.js     # Analytics charts & tables
+        ├── messages.js      # APRS messaging UI
+        ├── weather.js       # Weather banner & alerts
         └── websocket.js     # WebSocket client
 ```
 

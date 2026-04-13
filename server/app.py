@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from server.config import (
     Config, StationConfig, DigiConfig, IGateConfig, APRSISConfig,
     KISSSerialConfig, KISSTCPConfig, WebConfig, DatabaseConfig, TrackingConfig,
-    AlertsConfig,
+    AlertsConfig, WeatherConfig,
 )
 from server.database import Database
 from server.station_tracker import StationTracker
@@ -23,6 +23,7 @@ from server.packet_handler import PacketHandler
 from server.analytics import AnalyticsEngine
 from server.alerts import AlertManager
 from server.aprs_is import APRSISClient
+from server.weather import WeatherManager
 
 logger = logging.getLogger("propview.app")
 
@@ -178,6 +179,7 @@ def create_app(
     analytics: AnalyticsEngine = None,
     alert_manager: AlertManager = None,
     aprs_is: APRSISClient = None,
+    weather_manager: WeatherManager = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application."""
 
@@ -307,6 +309,54 @@ def create_app(
     async def get_stats():
         return await db.get_stats()
 
+    # ── Messaging API ───────────────────────────────────────────
+
+    @app.get("/api/messages")
+    async def get_messages(
+        limit: int = Query(100, ge=1, le=500),
+    ):
+        messages = handler.get_messages(limit=limit)
+        return {"messages": messages, "count": len(messages)}
+
+    @app.post("/api/messages/send")
+    async def send_message(request: Request):
+        """Send an APRS message to another station."""
+        try:
+            body = await request.json()
+            to_call = (body.get("to", "") or "").strip().upper()
+            text = (body.get("text", "") or "").strip()
+
+            if not to_call:
+                return JSONResponse(
+                    status_code=400,
+                    content={"success": False, "message": "Recipient callsign is required."},
+                )
+            if not text:
+                return JSONResponse(
+                    status_code=400,
+                    content={"success": False, "message": "Message text is required."},
+                )
+            if len(text) > 67:
+                return JSONResponse(
+                    status_code=400,
+                    content={"success": False, "message": "Message text too long (max 67 characters per APRS spec)."},
+                )
+            if not _CALLSIGN_RE.match(to_call.split("-")[0]):
+                return JSONResponse(
+                    status_code=400,
+                    content={"success": False, "message": "Invalid recipient callsign format."},
+                )
+
+            msg = await handler.send_message(to_call, text)
+            return {"success": True, "message": msg}
+
+        except Exception as e:
+            logger.error(f"Failed to send message: {e}")
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "message": "Error sending message."},
+            )
+
     # ── Analytics API ───────────────────────────────────────────
 
     @app.get("/api/analytics/longest-paths")
@@ -357,6 +407,56 @@ def create_app(
         if not alert_manager:
             return {"alerts": []}
         return {"alerts": alert_manager.get_alert_history()}
+
+    # ── Weather API ─────────────────────────────────────────────
+
+    @app.get("/api/weather")
+    async def get_weather():
+        """Get current weather conditions and NWS alerts."""
+        if not weather_manager:
+            return {"enabled": False, "configured": False}
+        try:
+            return await weather_manager.get_all()
+        except Exception as e:
+            logger.error(f"Weather fetch error: {e}")
+            return {"enabled": config.weather.enabled, "configured": False, "error": str(e)}
+
+    @app.get("/api/weather/refresh")
+    async def refresh_weather():
+        """Force-refresh weather data from APIs."""
+        if not weather_manager:
+            return {"enabled": False, "configured": False}
+        try:
+            return await weather_manager.get_all(force=True)
+        except Exception as e:
+            logger.error(f"Weather refresh error: {e}")
+            return {"enabled": config.weather.enabled, "configured": False, "error": str(e)}
+
+    @app.post("/api/weather/resolve-location")
+    async def resolve_weather_location(request: Request):
+        """Resolve a US zip code or ICAO code to lat/lon for weather."""
+        try:
+            body = await request.json()
+            code = (body.get("code", "") or "").strip()
+            if not code:
+                return JSONResponse(
+                    status_code=400,
+                    content={"success": False, "message": "Location code is required."},
+                )
+            from server.weather import resolve_location
+            result = await resolve_location(code)
+            if not result:
+                return JSONResponse(
+                    status_code=404,
+                    content={"success": False, "message": f"Could not resolve '{code}'. Enter a valid US zip code (e.g. 28801) or ICAO code (e.g. KAVL)."},
+                )
+            return {"success": True, "location": result}
+        except Exception as e:
+            logger.error(f"Location resolve error: {e}")
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "message": "Error resolving location."},
+            )
 
     @app.get("/api/config")
     async def get_config():
@@ -424,6 +524,12 @@ def create_app(
                 "email_password": _mask_passcode(config.alerts.email_password),
                 "sms_enabled": config.alerts.sms_enabled,
                 "sms_gateway_address": config.alerts.sms_gateway_address,
+            },
+            "weather": {
+                "enabled": config.weather.enabled,
+                "location_code": config.weather.location_code,
+                "alert_range_miles": config.weather.alert_range_miles,
+                "refresh_minutes": config.weather.refresh_minutes,
             },
         }
 
@@ -586,6 +692,15 @@ def create_app(
                         sms_gateway_address=config.alerts.sms_gateway_address,
                     )
                 live_applied.append("alerts")
+
+            # Update weather config
+            if "weather" in body:
+                wc = body["weather"]
+                config.weather.enabled = bool(wc.get("enabled", config.weather.enabled))
+                config.weather.location_code = (wc.get("location_code", config.weather.location_code) or "").strip()
+                config.weather.alert_range_miles = int(wc.get("alert_range_miles", config.weather.alert_range_miles))
+                config.weather.refresh_minutes = max(5, int(wc.get("refresh_minutes", config.weather.refresh_minutes)))
+                live_applied.append("weather")
 
             # Save to file
             config_path = Path("config.toml")

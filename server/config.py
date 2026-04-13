@@ -80,6 +80,12 @@ email_to = ""
 email_password = ""
 sms_enabled = false
 sms_gateway_address = ""
+
+[weather]
+enabled = false
+location_code = ""
+alert_range_miles = 50
+refresh_minutes = 15
 """
 
 
@@ -174,6 +180,14 @@ class AlertsConfig:
 
 
 @dataclass
+class WeatherConfig:
+    enabled: bool = False
+    location_code: str = ""       # US zip code or ICAO code
+    alert_range_miles: int = 50    # Range for severe weather alerts
+    refresh_minutes: int = 15      # How often to refresh weather data
+
+
+@dataclass
 class Config:
     station: StationConfig = field(default_factory=StationConfig)
     digipeater: DigiConfig = field(default_factory=DigiConfig)
@@ -185,6 +199,7 @@ class Config:
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     tracking: TrackingConfig = field(default_factory=TrackingConfig)
     alerts: AlertsConfig = field(default_factory=AlertsConfig)
+    weather: WeatherConfig = field(default_factory=WeatherConfig)
 
     @staticmethod
     def create_default(path: Path):
@@ -208,6 +223,7 @@ class Config:
             "database": (DatabaseConfig, "database"),
             "tracking": (TrackingConfig, "tracking"),
             "alerts": (AlertsConfig, "alerts"),
+            "weather": (WeatherConfig, "weather"),
         }
 
         for key, (cls, attr) in section_map.items():
@@ -296,5 +312,11 @@ class Config:
             f'email_password = "{esc(self.alerts.email_password)}"',
             f"sms_enabled = {'true' if self.alerts.sms_enabled else 'false'}",
             f'sms_gateway_address = "{esc(self.alerts.sms_gateway_address)}"',
+            "",
+            "[weather]",
+            f"enabled = {'true' if self.weather.enabled else 'false'}",
+            f'location_code = "{esc(self.weather.location_code)}"',
+            f"alert_range_miles = {int(self.weather.alert_range_miles)}",
+            f"refresh_minutes = {int(self.weather.refresh_minutes)}",
         ]
         path.write_text("\n".join(lines) + "\n")

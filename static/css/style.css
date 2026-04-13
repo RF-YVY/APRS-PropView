@@ -1667,3 +1667,484 @@ canvas {
     to { transform: translateX(-50%) translateY(0); opacity: 1; }
 }
 
+/* ── Message Alert Banner ───────────────────────────────────────── */
+
+.msg-alert-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: linear-gradient(135deg, #1a365d, #2563eb);
+    color: #e0f2fe;
+    padding: 6px 16px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.2s;
+    z-index: 100;
+}
+
+.msg-alert-banner:hover {
+    background: linear-gradient(135deg, #1e40af, #3b82f6);
+}
+
+.msg-alert-icon {
+    font-size: 16px;
+    flex-shrink: 0;
+}
+
+.msg-alert-text {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.msg-alert-text b {
+    color: #93c5fd;
+}
+
+.msg-alert-close {
+    background: none;
+    border: none;
+    color: #93c5fd;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.msg-alert-close:hover {
+    color: #fff;
+}
+
+.msg-alert-flash {
+    animation: msg-flash 0.6s ease;
+}
+
+@keyframes msg-flash {
+    0%, 100% { background: linear-gradient(135deg, #1a365d, #2563eb); }
+    50% { background: linear-gradient(135deg, #1e40af, #60a5fa); }
+}
+
+/* ── Messages Tab ───────────────────────────────────────────────── */
+
+.msg-compose-bar {
+    display: flex;
+    gap: 6px;
+    padding: 8px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+}
+
+.msg-input-call {
+    width: 90px;
+    padding: 6px 8px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-family: 'Consolas', monospace;
+    font-size: 12px;
+    text-transform: uppercase;
+}
+
+.msg-input-text {
+    flex: 1;
+    padding: 6px 8px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.msg-input-call:focus,
+.msg-input-text:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.15);
+}
+
+.btn-send-msg {
+    padding: 6px 14px;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.msg-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px;
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+}
+
+.msg-filter-bar label {
+    color: var(--text-secondary);
+}
+
+.msg-filter-bar select {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 2px 4px;
+    font-size: 11px;
+}
+
+.msg-list {
+    overflow-y: auto;
+    flex: 1;
+    padding: 4px;
+}
+
+.msg-empty {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 40px 20px;
+    font-size: 13px;
+}
+
+.msg-item {
+    padding: 6px 8px;
+    margin-bottom: 2px;
+    border-radius: 6px;
+    border-left: 3px solid transparent;
+    transition: background 0.15s;
+}
+
+.msg-item:hover {
+    background: var(--bg-secondary);
+}
+
+.msg-item.msg-tx {
+    border-left-color: var(--accent-blue);
+    background: rgba(88, 166, 255, 0.04);
+}
+
+.msg-item.msg-rx-mine {
+    border-left-color: var(--accent-green);
+    background: rgba(63, 185, 80, 0.04);
+}
+
+.msg-item.msg-rx {
+    border-left-color: var(--text-muted);
+}
+
+.msg-header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    margin-bottom: 2px;
+}
+
+.msg-dir {
+    font-size: 12px;
+}
+
+.msg-from {
+    font-weight: 600;
+    color: var(--accent-blue);
+    font-family: 'Consolas', monospace;
+    font-size: 11px;
+}
+
+.msg-arrow {
+    color: var(--text-muted);
+    font-size: 10px;
+}
+
+.msg-to {
+    font-weight: 600;
+    color: var(--accent-purple);
+    font-family: 'Consolas', monospace;
+    font-size: 11px;
+}
+
+.msg-source-tag {
+    font-size: 9px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.msg-source-tag.rf {
+    background: rgba(248, 81, 73, 0.2);
+    color: #f85149;
+}
+
+.msg-source-tag.is {
+    background: rgba(88, 166, 255, 0.2);
+    color: #58a6ff;
+}
+
+.msg-source-tag.tx {
+    background: rgba(63, 185, 80, 0.2);
+    color: #3fb950;
+}
+
+.msg-time {
+    margin-left: auto;
+    color: var(--text-muted);
+    font-size: 10px;
+    font-family: 'Consolas', monospace;
+}
+
+.msg-status {
+    font-size: 12px;
+    margin-left: 2px;
+}
+
+.msg-status.acked {
+    color: var(--accent-green);
+}
+
+.msg-status.rejected {
+    color: #f85149;
+}
+
+.msg-status.pending {
+    color: var(--text-muted);
+    font-size: 10px;
+}
+
+.msg-body {
+    font-size: 13px;
+    color: var(--text-primary);
+    padding: 2px 0 2px 18px;
+    word-break: break-word;
+    line-height: 1.4;
+}
+
+/* ── Weather Banner ─────────────────────────────────────────── */
+
+#wx-banner {
+    display: none;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 14px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    font-size: 13px;
+    color: var(--text-primary);
+    z-index: 800;
+    flex-shrink: 0;
+    min-height: 36px;
+}
+
+#wx-icon {
+    font-size: 22px;
+    line-height: 1;
+}
+
+#wx-temp {
+    font-size: 18px;
+    font-weight: 700;
+    font-family: 'Consolas', monospace;
+    white-space: nowrap;
+}
+
+#wx-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.wx-details {
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    flex-wrap: wrap;
+}
+
+.wx-details span {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.wx-details .wx-label {
+    color: var(--text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 9px;
+    letter-spacing: 0.5px;
+}
+
+.wx-details .wx-value {
+    font-family: 'Consolas', monospace;
+}
+
+#wx-location {
+    margin-left: auto;
+    font-size: 10px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+#wx-refresh-btn {
+    background: none;
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+    line-height: 1;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+#wx-refresh-btn:hover {
+    color: var(--accent-blue);
+    border-color: var(--accent-blue);
+}
+
+/* ── Severe Weather Alerts ──────────────────────────────────── */
+
+#wx-alerts-container {
+    display: flex;
+    flex-direction: column;
+    z-index: 801;
+    flex-shrink: 0;
+}
+
+.wx-alert {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: default;
+    position: relative;
+    flex-wrap: wrap;
+}
+
+.wx-alert-warning {
+    background: rgba(248, 81, 73, 0.15);
+    color: #ff6b6b;
+    border-bottom: 1px solid rgba(248, 81, 73, 0.3);
+}
+
+.wx-alert-watch {
+    background: rgba(255, 166, 0, 0.15);
+    color: #ffa600;
+    border-bottom: 1px solid rgba(255, 166, 0, 0.3);
+}
+
+.wx-alert-icon {
+    font-size: 14px;
+}
+
+.wx-alert-event {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.wx-alert-severity {
+    font-size: 9px;
+    text-transform: uppercase;
+    padding: 1px 5px;
+    border-radius: 3px;
+    letter-spacing: 0.5px;
+}
+
+.wx-alert-warning .wx-alert-severity {
+    background: rgba(248, 81, 73, 0.25);
+}
+
+.wx-alert-watch .wx-alert-severity {
+    background: rgba(255, 166, 0, 0.25);
+}
+
+.wx-alert-expand {
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    font-size: 11px;
+    padding: 0 4px;
+    opacity: 0.6;
+    transition: opacity 0.15s;
+}
+
+.wx-alert-expand:hover {
+    opacity: 1;
+}
+
+.wx-alert-detail {
+    width: 100%;
+    font-weight: 400;
+    font-size: 11px;
+    line-height: 1.5;
+    padding: 4px 0 2px 22px;
+    opacity: 0.85;
+}
+
+.wx-alert-detail p {
+    margin: 2px 0;
+}
+
+.wx-alert-desc {
+    max-height: 100px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+}
+
+.wx-alert-instruction {
+    color: var(--text-primary);
+}
+
+.wx-alert-expires {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* Alert flash animation for new alerts */
+.wx-alert-flash {
+    animation: wxAlertFlash 0.6s ease-out;
+}
+
+@keyframes wxAlertFlash {
+    0%   { opacity: 0; transform: translateY(-4px); }
+    50%  { opacity: 1; }
+    100% { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Weather Settings ───────────────────────────────────────── */
+
+.wx-location-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.wx-location-row input {
+    flex: 1;
+}
+
+#btn-wx-resolve {
+    padding: 4px 10px;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+#cfg-wx-resolved {
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 2px 0;
+    min-height: 16px;
+}
+

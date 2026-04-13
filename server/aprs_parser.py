@@ -449,6 +449,37 @@ def calculate_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> flo
     return (bearing + 360) % 360
 
 
+def make_message_packet(addressee: str, message_text: str, message_id: str = "") -> str:
+    """Create an APRS message info field.
+
+    Format: :ADDRESSEE :message{id}
+    Addressee is padded to 9 characters.
+    """
+    padded = addressee.ljust(9)[:9]
+    info = f":{padded}:{message_text}"
+    if message_id:
+        info += f"{{{message_id}}}"
+    return info
+
+
+def make_ack_packet(addressee: str, message_id: str) -> str:
+    """Create an APRS message acknowledgement info field.
+
+    Format: :ADDRESSEE :ack{id}
+    """
+    padded = addressee.ljust(9)[:9]
+    return f":{padded}:ack{message_id}"
+
+
+def make_rej_packet(addressee: str, message_id: str) -> str:
+    """Create an APRS message rejection info field.
+
+    Format: :ADDRESSEE :rej{id}
+    """
+    padded = addressee.ljust(9)[:9]
+    return f":{padded}:rej{message_id}"
+
+
 def make_position_packet(
     callsign: str,
     lat: float,
