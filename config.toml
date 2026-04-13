@@ -1,0 +1,50 @@
+# APRS PropView Configuration
+# Edit this file with your station details before starting
+
+[station]
+callsign = "N0CALL"
+ssid = 0
+latitude = 0.0
+longitude = 0.0
+symbol_table = "/"
+symbol_code = "#"
+comment = "APRS PropView Digi/IGate"
+beacon_interval = 1800
+
+[digipeater]
+enabled = true
+aliases = ["WIDE1-1", "WIDE2-1"]
+dedupe_interval = 30
+
+[igate]
+enabled = true
+rf_to_is = true
+is_to_rf = false
+
+[aprs_is]
+enabled = true
+server = "rotate.aprs2.net"
+port = 14580
+passcode = "-1"
+filter = ""
+
+[kiss_serial]
+enabled = false
+port = "COM3"
+baudrate = 9600
+
+[kiss_tcp]
+enabled = false
+host = "127.0.0.1"
+port = 8001
+
+[web]
+host = "127.0.0.1"
+port = 14501
+
+[database]
+path = "propview.db"
+
+[tracking]
+max_station_age = 86400
+cleanup_interval = 3600

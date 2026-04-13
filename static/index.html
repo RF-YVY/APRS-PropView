@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APRS PropView — VHF Propagation Monitor</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="/static/css/style.css" />
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+    <!-- ── Header Bar ─────────────────────────────────────────── -->
+    <header id="header">
+        <div class="header-left">
+            <h1>📡 APRS PropView</h1>
+            <span id="station-call" class="station-badge">N0CALL</span>
+        </div>
+        <div class="header-center">
+            <div class="prop-gauge">
+                <div class="prop-label">VHF Propagation</div>
+                <div class="prop-bar-container">
+                    <div id="prop-bar" class="prop-bar" style="width: 0%"></div>
+                </div>
+                <div class="prop-stats">
+                    <span id="prop-level" class="prop-level">—</span>
+                    <span id="prop-score" class="prop-score">0</span>
+                </div>
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="status-indicators">
+                <span id="rf-status" class="status-dot disconnected" title="RF TNC">RF</span>
+                <span id="is-status" class="status-dot disconnected" title="APRS-IS">IS</span>
+                <span id="ws-status" class="status-dot disconnected" title="WebSocket">WS</span>
+            </div>
+            <div class="header-stats">
+                <span title="RF Stations (1h)">RF: <b id="rf-count-1h">0</b></span>
+                <span title="APRS-IS Stations (1h)">IS: <b id="is-count-1h">0</b></span>
+                <span title="Max Distance">Max: <b id="max-distance">0</b> km</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- ── Main Content ───────────────────────────────────────── -->
+    <div id="main-content">
+        <!-- ── Map Panel ─────────────────────────────────────── -->
+        <div id="map-panel">
+            <div id="map"></div>
+            <div id="map-controls">
+                <button id="btn-center-map" title="Center on my station">📍</button>
+                <button id="btn-toggle-lines" title="Toggle propagation lines" class="active">📏</button>
+                <button id="btn-toggle-rf" title="Toggle RF stations" class="active">🔴</button>
+                <button id="btn-toggle-is" title="Toggle APRS-IS stations" class="active">🔵</button>
+                <div class="map-control-divider"></div>
+                <button id="btn-pick-location" title="Pick station location on map">📌</button>
+                <button id="btn-toggle-theme" title="Toggle light/dark map" class="active">🌙</button>
+                <div class="map-control-divider"></div>
+                <select id="line-time-filter" title="Filter lines by time">
+                    <option value="1">1h lines</option>
+                    <option value="6">6h lines</option>
+                    <option value="12">12h lines</option>
+                    <option value="24" selected>24h lines</option>
+                    <option value="0">All time</option>
+                </select>
+                <div id="map-type-filter-wrap">
+                    <button id="map-type-filter-btn" title="Filter stations by type">🏷️ Types ▾</button>
+                    <div id="map-type-filter-dropdown" class="map-type-dropdown">
+                        <label class="map-type-cb map-type-cb-all">
+                            <input type="checkbox" id="map-type-all" checked> <span>All Types</span>
+                        </label>
+                        <div class="map-type-divider"></div>
+                        <div id="map-type-checkboxes"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Side Panel ────────────────────────────────────── -->
+        <div id="side-panel">
+            <!-- Tab Buttons -->
+            <div class="tab-bar">
+                <button class="tab-btn active" data-tab="tab-rf">RF Stations</button>
+                <button class="tab-btn" data-tab="tab-is">APRS-IS</button>
+                <button class="tab-btn" data-tab="tab-packets">Packets</button>
+                <button class="tab-btn" data-tab="tab-prop">Propagation</button>
+                <button class="tab-btn" data-tab="tab-analytics">📊 Analytics</button>
+                <button class="tab-btn" data-tab="tab-settings">⚙ Settings</button>
+            </div>
+
+            <!-- ── RF Stations Tab ───────────────────────────── -->
+            <div id="tab-rf" class="tab-content active">
+                <div class="filter-bar">
+                    <label>Last heard:
+                        <select id="rf-time-filter">
+                            <option value="1">1 hour</option>
+                            <option value="6">6 hours</option>
+                            <option value="12">12 hours</option>
+                            <option value="24" selected>24 hours</option>
+                            <option value="0">All</option>
+                        </select>
+                    </label>
+                    <label>Max dist:
+                        <select id="rf-dist-filter">
+                            <option value="0" selected>Any</option>
+                            <option value="50">50 km</option>
+                            <option value="100">100 km</option>
+                            <option value="200">200 km</option>
+                            <option value="500">500 km</option>
+                        </select>
+                    </label>
+                    <label>Type:
+                        <select id="rf-type-filter">
+                            <option value="">All</option>
+                        </select>
+                    </label>
+                    <span id="rf-filter-count" class="filter-count">0 stations</span>
+                </div>
+                <div id="rf-station-list" class="station-list"></div>
+            </div>
+
+            <!-- ── APRS-IS Stations Tab ──────────────────────── -->
+            <div id="tab-is" class="tab-content">
+                <div class="filter-bar">
+                    <label>Last heard:
+                        <select id="is-time-filter">
+                            <option value="1">1 hour</option>
+                            <option value="6">6 hours</option>
+                            <option value="12">12 hours</option>
+                            <option value="24" selected>24 hours</option>
+                            <option value="0">All</option>
+                        </select>
+                    </label>
+                    <label>Type:
+                        <select id="is-type-filter">
+                            <option value="">All</option>
+                        </select>
+                    </label>
+                    <span id="is-filter-count" class="filter-count">0 stations</span>
+                </div>
+                <div id="is-station-list" class="station-list"></div>
+            </div>
+
+            <!-- ── Packets Tab ───────────────────────────────── -->
+            <div id="tab-packets" class="tab-content">
+                <div class="filter-bar">
+                    <label>Source:
+                        <select id="packet-source-filter">
+                            <option value="">All</option>
+                            <option value="rf">RF Only</option>
+                            <option value="aprs_is">APRS-IS Only</option>
+                        </select>
+                    </label>
+                    <button id="btn-clear-packets" class="btn-small">Clear</button>
+                </div>
+                <div id="packet-list" class="packet-list"></div>
+            </div>
+
+            <!-- ── Propagation Tab ───────────────────────────── -->
+            <div id="tab-prop" class="tab-content">
+                <div class="prop-detail">
+                    <h3>Current Conditions</h3>
+                    <div class="prop-grid">
+                        <div class="prop-card">
+                            <div class="prop-card-value" id="prop-rf-1h">0</div>
+                            <div class="prop-card-label">RF Stations (1h)</div>
+                        </div>
+                        <div class="prop-card">
+                            <div class="prop-card-value" id="prop-rf-6h">0</div>
+                            <div class="prop-card-label">RF Stations (6h)</div>
+                        </div>
+                        <div class="prop-card">
+                            <div class="prop-card-value" id="prop-rf-24h">0</div>
+                            <div class="prop-card-label">RF Stations (24h)</div>
+                        </div>
+                        <div class="prop-card">
+                            <div class="prop-card-value" id="prop-max-dist">0 km</div>
+                            <div class="prop-card-label">Max Distance</div>
+                        </div>
+                        <div class="prop-card">
+                            <div class="prop-card-value" id="prop-avg-dist">0 km</div>
+                            <div class="prop-card-label">Avg Distance</div>
+                        </div>
+                        <div class="prop-card">
+                            <div class="prop-card-value" id="prop-is-1h">0</div>
+                            <div class="prop-card-label">APRS-IS (1h)</div>
+                        </div>
+                    </div>
+                    <h3>Distance Distribution</h3>
+                    <canvas id="distance-chart" width="380" height="180"></canvas>
+                    <h3>Propagation History (24h)</h3>
+                    <canvas id="prop-history-chart" width="380" height="180"></canvas>
+                </div>
+            </div>
+
+            <!-- ── Analytics Tab ───────────────────────────────── -->
+            <div id="tab-analytics" class="tab-content">
+                <div class="analytics-panel">
+                    <!-- Sub-tabs for analytics sections -->
+                    <div class="analytics-subtabs">
+                        <button class="analytics-subtab active" data-section="sec-leaderboard">🏆 Longest Path</button>
+                        <button class="analytics-subtab" data-section="sec-heatmap">🌡️ Heatmap</button>
+                        <button class="analytics-subtab" data-section="sec-reliability">⭐ Reliability</button>
+                        <button class="analytics-subtab" data-section="sec-besttime">🕐 Best Times</button>
+                        <button class="analytics-subtab" data-section="sec-alerts">🚨 Alerts</button>
+                    </div>
+
+                    <!-- Longest Path Today -->
+                    <div id="sec-leaderboard" class="analytics-section active">
+                        <div class="analytics-header">
+                            <h3>🏆 Longest Path Today</h3>
+                            <select id="leaderboard-hours">
+                                <option value="6">6h</option>
+                                <option value="12">12h</option>
+                                <option value="24" selected>24h</option>
+                                <option value="48">48h</option>
+                                <option value="168">7d</option>
+                            </select>
+                        </div>
+                        <div id="leaderboard-list" class="leaderboard-list">
+                            <div class="analytics-empty">No data yet. Stations will appear as RF packets are received.</div>
+                        </div>
+                    </div>
+
+                    <!-- Propagation Heatmap -->
+                    <div id="sec-heatmap" class="analytics-section">
+                        <div class="analytics-header">
+                            <h3>🌡️ Propagation Heatmap</h3>
+                            <select id="heatmap-hours">
+                                <option value="24" selected>24h</option>
+                                <option value="48">48h</option>
+                                <option value="168">7d</option>
+                            </select>
+                        </div>
+                        <div class="heatmap-legend">
+                            <span class="heatmap-label">Low</span>
+                            <div class="heatmap-gradient"></div>
+                            <span class="heatmap-label">High</span>
+                        </div>
+                        <h4>Station Activity by Hour</h4>
+                        <canvas id="heatmap-stations-chart" width="380" height="160"></canvas>
+                        <h4>Max Distance by Hour</h4>
+                        <canvas id="heatmap-distance-chart" width="380" height="160"></canvas>
+                    </div>
+
+                    <!-- Station Reliability -->
+                    <div id="sec-reliability" class="analytics-section">
+                        <div class="analytics-header">
+                            <h3>⭐ Station Reliability</h3>
+                            <select id="reliability-hours">
+                                <option value="12">12h</option>
+                                <option value="24" selected>24h</option>
+                                <option value="48">48h</option>
+                                <option value="168">7d</option>
+                            </select>
+                        </div>
+                        <div id="reliability-list" class="reliability-list">
+                            <div class="analytics-empty">No data yet.</div>
+                        </div>
+                    </div>
+
+                    <!-- Best Time of Day -->
+                    <div id="sec-besttime" class="analytics-section">
+                        <div class="analytics-header">
+                            <h3>🕐 Best Time of Day</h3>
+                            <select id="besttime-days">
+                                <option value="3">3 days</option>
+                                <option value="7" selected>7 days</option>
+                                <option value="14">14 days</option>
+                                <option value="30">30 days</option>
+                            </select>
+                        </div>
+                        <div id="best-hours-summary" class="best-hours-summary"></div>
+                        <h4>Hourly Composite Score</h4>
+                        <canvas id="besttime-chart" width="380" height="180"></canvas>
+                        <h4>Day of Week</h4>
+                        <div id="dow-stats" class="dow-stats"></div>
+                    </div>
+
+                    <!-- Alerts Section -->
+                    <div id="sec-alerts" class="analytics-section">
+                        <div class="analytics-header">
+                            <h3>🚨 Band Opening Alerts</h3>
+                            <span id="alert-status-badge" class="alert-badge off">OFF</span>
+                        </div>
+                        <p class="analytics-desc">Get notified when VHF band conditions meet your thresholds via Discord, Email, or SMS.</p>
+                        <div id="alert-history" class="alert-history">
+                            <div class="analytics-empty">No alerts yet.</div>
+                        </div>
+                        <p class="analytics-desc" style="margin-top:10px;">Configure alert thresholds and notification channels in the <b>Settings</b> tab under <b>Band Opening Alerts</b>.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Settings Tab ──────────────────────────────── -->
+            <div id="tab-settings" class="tab-content">
+                <div class="settings-panel">
+                    <div id="settings-status" class="settings-status" style="display:none;"></div>
+
+                    <!-- Station -->
+                    <div class="settings-section">
+                        <h3>Station</h3>
+                        <div class="settings-row">
+                            <label for="cfg-callsign">Callsign</label>
+                            <input type="text" id="cfg-callsign" placeholder="N0CALL" maxlength="9" style="text-transform:uppercase;">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-ssid">SSID</label>
+                            <select id="cfg-ssid">
+                                <option value="0">0 – Primary / Home station</option>
+                                <option value="1">1 – Digipeater / Generic</option>
+                                <option value="2">2 – Digipeater / Generic</option>
+                                <option value="3">3 – Digipeater / Generic</option>
+                                <option value="4">4 – Digipeater / Generic</option>
+                                <option value="5">5 – Smartphone / D-Star / Other network</option>
+                                <option value="6">6 – Satellite / Camping / 6m</option>
+                                <option value="7">7 – Handheld (HT)</option>
+                                <option value="8">8 – Boat / RV / Secondary mobile</option>
+                                <option value="9">9 – Primary Mobile (car tracker)</option>
+                                <option value="10">10 – IGate / Echolink / Winlink</option>
+                                <option value="11">11 – Balloon / Aircraft / Spacecraft</option>
+                                <option value="12">12 – One-way tracker / APRStt</option>
+                                <option value="13">13 – Weather station</option>
+                                <option value="14">14 – Trucker / Full-time driver</option>
+                                <option value="15">15 – Generic additional station</option>
+                            </select>
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-latitude">Latitude</label>
+                            <input type="number" id="cfg-latitude" step="0.0001" placeholder="0.0">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-longitude">Longitude</label>
+                            <input type="number" id="cfg-longitude" step="0.0001" placeholder="0.0">
+                        </div>
+                        <div class="settings-row">
+                            <label></label>
+                            <button id="btn-pick-location-settings" class="btn-small btn-pick" title="Click to pick location on the map">📌 Pick on Map</button>
+                        </div>
+                        <div class="settings-row">
+                            <label>Station Icon</label>
+                            <div class="icon-picker-trigger" id="icon-picker-trigger">
+                                <span id="icon-picker-preview" class="icon-preview">📡</span>
+                                <span id="icon-picker-label" class="icon-picker-name">Digi / Gateway</span>
+                                <button class="btn-small" id="btn-open-icon-picker">Change</button>
+                            </div>
+                        </div>
+                        <input type="hidden" id="cfg-symbol-table" value="/">
+                        <input type="hidden" id="cfg-symbol-code" value="#">
+                        <div class="settings-row">
+                            <label for="cfg-comment">Comment</label>
+                            <input type="text" id="cfg-comment" placeholder="APRS PropView">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-beacon-interval">Beacon Interval (s)</label>
+                            <input type="number" id="cfg-beacon-interval" min="0" max="86400" value="1800">
+                        </div>
+                        <p class="settings-hint">&#9432; APRS-IS policy: minimum 600s (10 min) for fixed stations. Set to 0 to disable beacons.</p>
+                    </div>
+
+                    <!-- Digipeater -->
+                    <div class="settings-section">
+                        <h3>Digipeater</h3>
+                        <div class="settings-row">
+                            <label for="cfg-digi-enabled">Enabled</label>
+                            <input type="checkbox" id="cfg-digi-enabled">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-digi-aliases">Aliases (comma-separated)</label>
+                            <input type="text" id="cfg-digi-aliases" placeholder="WIDE1-1, WIDE2-1">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-digi-dedupe">Dedupe Interval (s)</label>
+                            <input type="number" id="cfg-digi-dedupe" min="1" max="300" value="30">
+                        </div>
+                    </div>
+
+                    <!-- IGate -->
+                    <div class="settings-section">
+                        <h3>IGate</h3>
+                        <div class="settings-row">
+                            <label for="cfg-igate-enabled">Enabled</label>
+                            <input type="checkbox" id="cfg-igate-enabled">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-igate-rf2is">RF → APRS-IS</label>
+                            <input type="checkbox" id="cfg-igate-rf2is">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-igate-is2rf">APRS-IS → RF</label>
+                            <input type="checkbox" id="cfg-igate-is2rf">
+                        </div>
+                        <p class="settings-hint">&#9432; RF→IS requires a valid APRS-IS passcode (not -1). IS→RF only gates messages to stations heard on RF. Gated packets will not request further digipeating per APRS-IS policy.</p>
+                    </div>
+
+                    <!-- APRS-IS -->
+                    <div class="settings-section">
+                        <h3>APRS-IS</h3>
+                        <div class="settings-row">
+                            <label for="cfg-is-enabled">Enabled</label>
+                            <input type="checkbox" id="cfg-is-enabled">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-is-server">Server</label>
+                            <input type="text" id="cfg-is-server" placeholder="rotate.aprs2.net">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-is-port">Port</label>
+                            <input type="number" id="cfg-is-port" value="14580">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-is-passcode">Passcode</label>
+                            <input type="text" id="cfg-is-passcode" placeholder="-1">
+                        </div>
+                        <p class="settings-hint">&#9432; Use -1 for read-only (receive only). A valid passcode is required to transmit, beacon, or gate packets to APRS-IS. Only licensed amateur radio operators should transmit.</p>
+                        <div class="settings-row">
+                            <label for="cfg-is-range-miles">Range (miles)</label>
+                            <input type="number" id="cfg-is-range-miles" min="0" max="500" step="1" placeholder="e.g. 100">
+                        </div>
+                        <div class="settings-row">
+                            <label>Range filter</label>
+                            <span id="cfg-is-range-preview" class="filter-preview">—</span>
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-is-extra-filters">Other filters</label>
+                            <input type="text" id="cfg-is-extra-filters" placeholder="e.g. b/CALL1/CALL2 t/poimqstunw">
+                        </div>
+                        <div class="settings-row">
+                            <label>Combined filter</label>
+                            <span id="cfg-is-filter-combined" class="filter-preview">—</span>
+                        </div>
+                        <input type="hidden" id="cfg-is-filter">
+                    </div>
+
+                    <!-- KISS Serial -->
+                    <div class="settings-section">
+                        <h3>KISS Serial TNC</h3>
+                        <div class="settings-row">
+                            <label for="cfg-ks-enabled">Enabled</label>
+                            <input type="checkbox" id="cfg-ks-enabled">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-ks-port">Serial Port</label>
+                            <input type="text" id="cfg-ks-port" placeholder="COM3">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-ks-baud">Baudrate</label>
+                            <input type="number" id="cfg-ks-baud" value="9600">
+                        </div>
+                    </div>
+
+                    <!-- KISS TCP -->
+                    <div class="settings-section">
+                        <h3>KISS TCP TNC</h3>
+                        <div class="settings-row">
+                            <label for="cfg-kt-enabled">Enabled</label>
+                            <input type="checkbox" id="cfg-kt-enabled">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-kt-host">Host</label>
+                            <input type="text" id="cfg-kt-host" placeholder="127.0.0.1">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-kt-port">Port</label>
+                            <input type="number" id="cfg-kt-port" value="8001">
+                        </div>
+                    </div>
+
+                    <!-- Web Interface -->
+                    <div class="settings-section">
+                        <h3>Web Interface</h3>
+                        <div class="settings-row">
+                            <label for="cfg-web-host">Host</label>
+                            <input type="text" id="cfg-web-host" placeholder="127.0.0.1">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-web-port">Port</label>
+                            <input type="number" id="cfg-web-port" value="14501">
+                        </div>
+                    </div>
+
+                    <!-- Tracking -->
+                    <div class="settings-section">
+                        <h3>Tracking</h3>
+                        <div class="settings-row">
+                            <label for="cfg-track-age">Max Station Age (s)</label>
+                            <input type="number" id="cfg-track-age" value="86400">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-track-cleanup">Cleanup Interval (s)</label>
+                            <input type="number" id="cfg-track-cleanup" value="3600">
+                        </div>
+                    </div>
+
+                    <!-- Band Opening Alerts -->
+                    <div class="settings-section">
+                        <h3>🚨 Band Opening Alerts</h3>
+                        <div class="settings-row">
+                            <label for="cfg-alerts-enabled">Alerts Enabled</label>
+                            <input type="checkbox" id="cfg-alerts-enabled">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-alerts-min-stations">Min RF Stations (1h)</label>
+                            <input type="number" id="cfg-alerts-min-stations" min="1" max="100" value="5">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-alerts-min-dist">Min Max-Distance (km)</label>
+                            <input type="number" id="cfg-alerts-min-dist" min="1" max="2000" value="100">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-alerts-cooldown">Cooldown (seconds)</label>
+                            <input type="number" id="cfg-alerts-cooldown" min="60" max="86400" value="1800">
+                        </div>
+                        <h4 style="color:var(--accent-purple);margin:10px 0 6px;">Discord</h4>
+                        <div class="settings-row">
+                            <label for="cfg-alerts-discord">Discord Enabled</label>
+                            <input type="checkbox" id="cfg-alerts-discord">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-alerts-discord-url">Webhook URL</label>
+                            <input type="text" id="cfg-alerts-discord-url" placeholder="https://discord.com/api/webhooks/...">
+                        </div>
+                        <h4 style="color:var(--accent-orange);margin:10px 0 6px;">Email</h4>
+                        <div class="settings-row">
+                            <label for="cfg-alerts-email">Email Enabled</label>
+                            <input type="checkbox" id="cfg-alerts-email">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-alerts-smtp">SMTP Server</label>
+                            <input type="text" id="cfg-alerts-smtp" placeholder="smtp.gmail.com">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-alerts-smtp-port">SMTP Port</label>
+                            <input type="number" id="cfg-alerts-smtp-port" value="587">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-alerts-email-from">From Address</label>
+                            <input type="text" id="cfg-alerts-email-from" placeholder="you@gmail.com">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-alerts-email-to">To Address</label>
+                            <input type="text" id="cfg-alerts-email-to" placeholder="recipient@example.com">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-alerts-email-pw">Email Password</label>
+                            <input type="password" id="cfg-alerts-email-pw" placeholder="App password">
+                        </div>
+                        <h4 style="color:var(--accent-green);margin:10px 0 6px;">SMS (Email-to-SMS Gateway)</h4>
+                        <div class="settings-row">
+                            <label for="cfg-alerts-sms">SMS Enabled</label>
+                            <input type="checkbox" id="cfg-alerts-sms">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-alerts-sms-addr">Gateway Address</label>
+                            <input type="text" id="cfg-alerts-sms-addr" placeholder="5551234567@tmomail.net">
+                        </div>
+                    </div>
+
+                    <div class="settings-actions">
+                        <button id="btn-save-settings" class="btn-primary">💾 Save Configuration</button>
+                        <p class="settings-note">Most settings apply immediately. KISS and web host/port changes require a restart.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Footer ─────────────────────────────────────────────── -->
+    <footer id="footer">
+        <span id="footer-stats">
+            RF RX: <b id="stat-rf-rx">0</b> |
+            RF TX: <b id="stat-rf-tx">0</b> |
+            IS RX: <b id="stat-is-rx">0</b> |
+            IS TX: <b id="stat-is-tx">0</b> |
+            Digipeated: <b id="stat-digi">0</b> |
+            Gated: <b id="stat-gated">0</b>
+        </span>
+        <span id="footer-uptime">Uptime: 0:00:00</span>
+    </footer>
+
+    <!-- ── APRS Icon Picker Modal ──────────────────────────────── -->
+    <div id="icon-picker-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-content icon-picker-modal">
+            <div class="modal-header">
+                <h3>Choose Station Icon</h3>
+                <button id="icon-picker-close" class="modal-close">&times;</button>
+            </div>
+            <div class="icon-picker-tabs">
+                <button class="icon-tab active" data-table="/">Primary Symbols</button>
+                <button class="icon-tab" data-table="\">Alternate Symbols</button>
+            </div>
+            <div class="icon-picker-search">
+                <input type="text" id="icon-search" placeholder="Search icons (e.g. house, car, digi)...">
+            </div>
+            <div id="icon-picker-grid" class="icon-picker-grid"></div>
+            <div class="modal-footer">
+                <span id="icon-picker-selection" class="icon-selection-info">Click an icon to select</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Scripts ────────────────────────────────────────────── -->
+    <script src="/static/js/websocket.js"></script>
+    <script src="/static/js/map.js"></script>
+    <script src="/static/js/stations.js"></script>
+    <script src="/static/js/icons.js"></script>
+    <script src="/static/js/analytics.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
