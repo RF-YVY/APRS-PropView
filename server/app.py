@@ -207,6 +207,26 @@ def create_app(
     async def mobile_page():
         return FileResponse(str(STATIC_DIR / "mobile.html"))
 
+    @app.post("/api/mobile/verify-pin")
+    async def verify_mobile_pin(request: Request):
+        """Verify PIN for mobile access. Returns success if PIN matches or no PIN is set."""
+        try:
+            body = await request.json()
+            pin = (body.get("pin", "") or "").strip()
+            configured_pin = (config.web.mobile_pin or "").strip()
+            if not configured_pin:
+                return {"success": True}  # No PIN configured
+            if pin == configured_pin:
+                return {"success": True}
+            return JSONResponse(status_code=403, content={"success": False, "message": "Incorrect PIN."})
+        except Exception:
+            return JSONResponse(status_code=400, content={"success": False, "message": "Invalid request."})
+
+    @app.get("/api/mobile/pin-required")
+    async def mobile_pin_required():
+        """Check if a mobile PIN is configured."""
+        return {"required": bool((config.web.mobile_pin or "").strip())}
+
     @app.get("/favicon.ico")
     async def favicon():
         return FileResponse(str(STATIC_DIR / "ico" / "favicon.ico"))
@@ -524,6 +544,7 @@ def create_app(
                 "font_family": config.web.font_family,
                 "ghost_after_minutes": config.web.ghost_after_minutes,
                 "expire_after_minutes": config.web.expire_after_minutes,
+                "mobile_pin": config.web.mobile_pin,
             },
             "database": {
                 "path": config.database.path,
@@ -670,6 +691,7 @@ def create_app(
                 config.web.font_family = w.get("font_family", config.web.font_family) or ""
                 config.web.ghost_after_minutes = int(w.get("ghost_after_minutes", config.web.ghost_after_minutes))
                 config.web.expire_after_minutes = int(w.get("expire_after_minutes", config.web.expire_after_minutes))
+                config.web.mobile_pin = (w.get("mobile_pin", config.web.mobile_pin) or "").strip()
                 need_restart.append("web host/port")
 
             # Update database config

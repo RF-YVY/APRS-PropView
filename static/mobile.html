@@ -171,10 +171,37 @@ html, body {
 .wx-alert { padding: 6px 10px; font-size: 11px; font-weight: 600; border-bottom: 1px solid var(--border); flex-shrink: 0; display: none; }
 .wx-alert.warn { display: block; background: rgba(248,81,73,0.15); color: var(--accent-red); }
 .wx-alert.watch { display: block; background: rgba(210,153,34,0.15); color: var(--accent-orange); }
+
+/* ── PIN gate ───────────────────────────── */
+.pin-gate {
+    position: fixed; inset: 0; z-index: 9999; background: var(--bg);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+}
+.pin-gate h2 { color: var(--accent-blue); font-size: 20px; }
+.pin-gate input {
+    background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 16px; color: var(--text); font-size: 20px; text-align: center;
+    width: 180px; outline: none; letter-spacing: 4px;
+}
+.pin-gate input:focus { border-color: var(--accent-blue); }
+.pin-gate button {
+    background: var(--accent-blue); border: none; border-radius: 8px;
+    color: #fff; font-size: 16px; padding: 12px 32px; cursor: pointer; font-weight: 600;
+}
+.pin-gate button:active { opacity: 0.7; }
+.pin-gate .pin-error { color: var(--accent-red); font-size: 13px; min-height: 20px; }
 </style>
 </head>
 <body>
-<div class="m-app">
+<!-- PIN gate overlay (hidden if no PIN configured) -->
+<div class="pin-gate" id="pin-gate" style="display:none;">
+    <h2>📡 APRS PropView</h2>
+    <p style="color:var(--text-muted);font-size:13px;">Enter PIN to access mobile view</p>
+    <input type="password" id="pin-input" maxlength="8" inputmode="numeric" autocomplete="off" placeholder="PIN">
+    <button id="pin-submit">Unlock</button>
+    <div class="pin-error" id="pin-error"></div>
+</div>
+<div class="m-app" id="m-app" style="display:none;">
     <!-- Header -->
     <div class="m-header">
         <span class="title">📡 APRS PropView</span>
@@ -271,6 +298,63 @@ html, body {
    APRS PropView — Mobile Companion
    Single-file SPA connecting to the same backend WebSocket + REST.
    ================================================================ */
+
+// ── PIN Gate ───────────────────────────────────────────────
+(async function pinGate() {
+    try {
+        const r = await fetch('/api/mobile/pin-required');
+        const d = await r.json();
+        if (!d.required) {
+            // No PIN — show app directly
+            document.getElementById('m-app').style.display = 'flex';
+            return;
+        }
+        // Check if already unlocked this session
+        if (sessionStorage.getItem('pvMobileUnlocked') === '1') {
+            document.getElementById('m-app').style.display = 'flex';
+            return;
+        }
+        // Show PIN gate
+        const gate = document.getElementById('pin-gate');
+        gate.style.display = 'flex';
+
+        const input = document.getElementById('pin-input');
+        const btn = document.getElementById('pin-submit');
+        const err = document.getElementById('pin-error');
+
+        async function tryPin() {
+            const pin = input.value.trim();
+            if (!pin) { input.focus(); return; }
+            err.textContent = '';
+            btn.disabled = true;
+            try {
+                const vr = await fetch('/api/mobile/verify-pin', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pin }),
+                });
+                const vd = await vr.json();
+                if (vd.success) {
+                    sessionStorage.setItem('pvMobileUnlocked', '1');
+                    gate.style.display = 'none';
+                    document.getElementById('m-app').style.display = 'flex';
+                } else {
+                    err.textContent = vd.message || 'Incorrect PIN.';
+                    input.value = '';
+                    input.focus();
+                }
+            } catch { err.textContent = 'Network error.'; }
+            finally { btn.disabled = false; }
+        }
+
+        btn.addEventListener('click', tryPin);
+        input.addEventListener('keydown', e => { if (e.key === 'Enter') tryPin(); });
+        input.focus();
+    } catch {
+        // If check fails, show app anyway
+        document.getElementById('m-app').style.display = 'flex';
+    }
+})();
 
 // ── State ──────────────────────────────────────────────────
 const S = {

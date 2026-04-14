@@ -578,6 +578,11 @@
                             <input type="number" id="cfg-web-expire" min="0" max="1440" step="5" value="0">
                         </div>
                         <p class="settings-hint" style="color:var(--text-muted);font-size:11px;margin:2px 0 8px 0;">Remove stations from map after this many minutes since last heard. 0 = never expire.</p>
+                        <div class="settings-row">
+                            <label for="cfg-web-pin">Mobile PIN</label>
+                            <input type="text" id="cfg-web-pin" maxlength="8" placeholder="Leave blank = no PIN" autocomplete="off">
+                        </div>
+                        <p class="settings-hint" style="color:var(--text-muted);font-size:11px;margin:2px 0 8px 0;">Require this PIN to access /mobile. Leave empty to allow open access.</p>
                     </div>
 
                     <!-- Tracking -->

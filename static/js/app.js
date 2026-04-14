@@ -649,6 +649,7 @@
             window._ghostMinutes = cfg.web?.ghost_after_minutes ?? 60;
             window.pvMap?.ghostStaleMarkers(window._ghostMinutes);
             setVal('cfg-web-expire', cfg.web?.expire_after_minutes ?? 0);
+            setVal('cfg-web-pin', cfg.web?.mobile_pin || '');
             window._expireMinutes = cfg.web?.expire_after_minutes ?? 0;
 
             // Tracking
@@ -740,6 +741,7 @@
                 font_family: getVal('cfg-web-font') || '',
                 ghost_after_minutes: parseInt(getVal('cfg-web-ghost')) || 0,
                 expire_after_minutes: parseInt(getVal('cfg-web-expire')) || 0,
+                mobile_pin: getVal('cfg-web-pin') || '',
             },
             tracking: {
                 max_station_age: (parseInt(getVal('cfg-track-age')) || 0) * 60,

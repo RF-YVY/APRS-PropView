@@ -49,6 +49,47 @@ logging.basicConfig(
 logger = logging.getLogger("propview")
 
 
+# ── System Tray ─────────────────────────────────────────────────────
+
+def _start_tray(url: str, shutdown_event: asyncio.Event, loop):
+    """Start a pystray system-tray icon in a background thread."""
+    try:
+        import pystray
+        from PIL import Image
+    except ImportError:
+        logger.debug("pystray or Pillow not available — skipping system tray")
+        return None
+
+    ico_path = EXE_DIR / "ico" / "favicon.ico"
+    if not ico_path.exists():
+        ico_path = BASE_DIR / "static" / "ico" / "favicon.ico"
+    try:
+        image = Image.open(ico_path)
+    except Exception:
+        # Create a simple colored square as fallback
+        image = Image.new("RGB", (64, 64), "#58a6ff")
+
+    def on_open(icon, item):
+        webbrowser.open(url)
+
+    def on_quit(icon, item):
+        icon.stop()
+        loop.call_soon_threadsafe(shutdown_event.set)
+
+    menu = pystray.Menu(
+        pystray.MenuItem("Open PropView", on_open, default=True),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Quit", on_quit),
+    )
+
+    icon = pystray.Icon("APRSPropView", image, "APRS PropView", menu)
+
+    import threading
+    t = threading.Thread(target=icon.run, daemon=True)
+    t.start()
+    return icon
+
+
 async def main():
     print(
         r"""
@@ -179,7 +220,9 @@ async def main():
 
     # ── Start web server ────────────────────────────────────────────
 
-    url = f"http://{config.web.host}:{config.web.port}"
+    # Use localhost for browser URL when binding to all interfaces
+    browse_host = "127.0.0.1" if config.web.host == "0.0.0.0" else config.web.host
+    url = f"http://{browse_host}:{config.web.port}"
     logger.info(f"Web interface: {url}")
 
     import uvicorn
@@ -200,11 +243,26 @@ async def main():
 
     tasks.append(asyncio.create_task(open_browser()))
 
+    # ── System tray icon ────────────────────────────────────────────
+
+    shutdown_event = asyncio.Event()
+    tray_icon = _start_tray(url, shutdown_event, asyncio.get_event_loop())
+
     print(f"\n  APRS PropView running at {url}")
+    if tray_icon:
+        print("  System tray icon active — right-click to quit.")
     print("  Press Ctrl+C to stop.\n")
 
     try:
-        await server.serve()
+        # Run server until Ctrl+C or tray quit
+        server_task = asyncio.create_task(server.serve())
+        shutdown_task = asyncio.create_task(shutdown_event.wait())
+        done, pending = await asyncio.wait(
+            [server_task, shutdown_task],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for p in pending:
+            p.cancel()
     finally:
         logger.info("Shutting down...")
         for task in tasks:

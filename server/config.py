@@ -61,6 +61,7 @@ port = 14501
 font_family = ""
 ghost_after_minutes = 60
 expire_after_minutes = 0
+mobile_pin = ""
 
 [database]
 path = "propview.db"
@@ -162,6 +163,7 @@ class WebConfig:
     font_family: str = ""
     ghost_after_minutes: int = 60
     expire_after_minutes: int = 0
+    mobile_pin: str = ""
 
 
 @dataclass
@@ -313,6 +315,7 @@ class Config:
             f'font_family = "{esc(self.web.font_family)}"',
             f"ghost_after_minutes = {int(self.web.ghost_after_minutes)}",
             f"expire_after_minutes = {int(self.web.expire_after_minutes)}",
+            f'mobile_pin = "{esc(self.web.mobile_pin)}"',
             "",
             "[database]",
             f'path = "{esc(self.database.path)}"',

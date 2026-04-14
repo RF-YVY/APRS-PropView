@@ -266,11 +266,51 @@ body {
     font-family: "Consolas", monospace;
     font-weight: 700;
     font-size: 15px;
-    margin-bottom: 4px;
 }
+
+.leaflet-popup-content .popup-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.leaflet-popup-content .popup-source-tag {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-left: auto;
+}
+.popup-tag-rf { background: rgba(248,81,73,0.2); color: var(--rf-color); }
+.popup-tag-aprs_is { background: rgba(88,166,255,0.2); color: var(--is-color); }
 
 .leaflet-popup-content .popup-rf { color: var(--rf-color); }
 .leaflet-popup-content .popup-is { color: var(--is-color); }
+
+.leaflet-popup-content .popup-table {
+    border-collapse: collapse;
+    font-size: 12px;
+    width: 100%;
+}
+.leaflet-popup-content .popup-table td {
+    padding: 2px 0;
+    vertical-align: top;
+}
+.leaflet-popup-content .popup-lbl {
+    color: var(--text-muted);
+    white-space: nowrap;
+    padding-right: 8px;
+    font-weight: 500;
+    width: 1%;
+}
+.leaflet-popup-content .popup-path {
+    font-family: "Consolas", monospace;
+    font-size: 11px;
+    word-break: break-all;
+}
 .leaflet-popup-content .popup-detail {
     color: var(--text-secondary);
     font-size: 12px;
@@ -871,12 +911,9 @@ canvas {
     border-top-color: rgba(13, 17, 23, 0.85) !important;
 }
 
-/* Animated propagation lines — dashes flow from station toward my position */
-.prop-line-animated {
-    animation: dash-flow 1.5s linear infinite;
-}
-@keyframes dash-flow {
-    to { stroke-dashoffset: -28; }
+/* Propagation line styling */
+.prop-line {
+    /* Static dashed lines — CSS animation removed for performance */
 }
 
 /* ── Help Modal ──────────────────────────────────────────────────── */

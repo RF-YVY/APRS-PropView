@@ -174,17 +174,31 @@ class PropViewMap {
         this.stationMeta[call] = { source, symbol_table: symTable, symbol_code: symCode, category, last_heard: station.last_heard || 0 };
 
         const popupSprite = (typeof getAPRSSpriteHTML === 'function') ? getAPRSSpriteHTML(symTable, symCode, 32) : emoji;
+
+        // Time ago string
+        let agoStr = '';
+        if (station.last_heard) {
+            const secs = Math.floor(Date.now() / 1000 - station.last_heard);
+            if (secs < 60) agoStr = `${secs}s ago`;
+            else if (secs < 3600) agoStr = `${Math.floor(secs / 60)}m ago`;
+            else agoStr = `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m ago`;
+        }
+
         const popup = `
-            <div class="popup-call ${sourceClass}">${call}</div>
-            <div class="popup-detail">
-                Source: ${sourceLabel}<br>
-                Type: <span class="popup-sym-inline">${popupSprite}</span> ${symName}<br>
-                Distance: ${distStr} ${headingStr}<br>
-                Last heard: ${timeStr}<br>
-                Packets: ${countStr}<br>
-                ${station.last_comment ? 'Comment: ' + station.last_comment + '<br>' : ''}
-                ${station.last_path ? 'Path: ' + station.last_path : ''}
+            <div class="popup-header">
+                <span class="popup-sym-inline">${popupSprite}</span>
+                <span class="popup-call ${sourceClass}">${call}</span>
+                <span class="popup-source-tag popup-tag-${source}">${sourceLabel}</span>
             </div>
+            <table class="popup-table">
+                <tr><td class="popup-lbl">Type</td><td>${symName || 'Unknown'}</td></tr>
+                <tr><td class="popup-lbl">Distance</td><td>${distStr}${headingStr ? ' · ' + headingStr : ''}</td></tr>
+                <tr><td class="popup-lbl">Heard</td><td>${timeStr}${agoStr ? ' (' + agoStr + ')' : ''}</td></tr>
+                <tr><td class="popup-lbl">Packets</td><td>${countStr}</td></tr>
+                ${station.last_comment ? `<tr><td class="popup-lbl">Comment</td><td>${station.last_comment}</td></tr>` : ''}
+                ${station.last_path ? `<tr><td class="popup-lbl">Path</td><td class="popup-path">${station.last_path}</td></tr>` : ''}
+                <tr><td class="popup-lbl">Position</td><td>${lat.toFixed(4)}, ${lng.toFixed(4)}</td></tr>
+            </table>
         `;
 
         const borderColor = source === 'rf' ? '#f85149' : '#58a6ff';
@@ -381,7 +395,7 @@ class PropViewMap {
                 weight,
                 opacity: 0.8,
                 dashArray: '8 6',
-                className: 'prop-line-animated',
+                className: 'prop-line',
             }).addTo(this.lineLayer);
         }
 

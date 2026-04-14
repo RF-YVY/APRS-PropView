@@ -211,6 +211,8 @@ def build():
         "--hidden-import", "serial.tools.list_ports",
         "--hidden-import", "geopy",
         "--hidden-import", "geopy.distance",
+        "--hidden-import", "pystray",
+        "--hidden-import", "pystray._win32",
         # Collect all submodules
         "--collect-submodules", "uvicorn",
         "--collect-submodules", "fastapi",
