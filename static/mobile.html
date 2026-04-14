@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0d1117">
+<title>APRS PropView Mobile</title>
+<link rel="icon" type="image/x-icon" href="/static/ico/favicon.ico">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/static/js/icons.js"></script>
+<style>
+:root {
+    --bg: #0d1117;
+    --bg-card: #161b22;
+    --bg-input: #1c2128;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent-blue: #58a6ff;
+    --accent-red: #f85149;
+    --accent-green: #3fb950;
+    --accent-orange: #d29922;
+    --accent-purple: #bc8cff;
+    --nav-height: 56px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+    height: 100%; width: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg); color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+}
+/* ── App shell ──────────────────────────── */
+.m-app { display: flex; flex-direction: column; height: 100%; }
+.m-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px; background: var(--bg-card); border-bottom: 1px solid var(--border);
+    flex-shrink: 0; min-height: 42px;
+}
+.m-header .title { font-size: 14px; font-weight: 600; color: var(--accent-blue); }
+.m-header .status { font-size: 11px; color: var(--text-muted); }
+.m-header .ws-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; background: var(--accent-red); vertical-align: middle; }
+.m-header .ws-dot.ok { background: var(--accent-green); }
+.m-content { flex: 1; overflow: hidden; position: relative; }
+.m-tab { display: none; height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.m-tab.active { display: flex; flex-direction: column; }
+.m-nav {
+    display: flex; flex-shrink: 0; background: var(--bg-card);
+    border-top: 1px solid var(--border); height: var(--nav-height);
+}
+.m-nav button {
+    flex: 1; background: none; border: none; color: var(--text-muted);
+    font-size: 10px; padding: 6px 0; cursor: pointer; display: flex;
+    flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    transition: color .15s; position: relative;
+}
+.m-nav button .icon { font-size: 20px; }
+.m-nav button.active { color: var(--accent-blue); }
+.m-nav button:active { background: rgba(88,166,255,0.1); }
+.m-nav .badge {
+    position: absolute; top: 2px; right: calc(50% - 16px);
+    background: var(--accent-red); color: #fff; font-size: 9px; font-weight: 700;
+    min-width: 16px; height: 16px; border-radius: 8px; line-height: 16px;
+    text-align: center; padding: 0 4px; display: none;
+}
+
+/* ── Messages ───────────────────────────── */
+.msg-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+.msg-bubble {
+    max-width: 85%; padding: 8px 12px; border-radius: 12px; font-size: 13px;
+    line-height: 1.4; word-wrap: break-word; position: relative;
+}
+.msg-bubble.rx { background: var(--bg-input); align-self: flex-start; border-bottom-left-radius: 2px; }
+.msg-bubble.tx { background: #1a3a5c; align-self: flex-end; border-bottom-right-radius: 2px; }
+.msg-bubble .from { font-size: 11px; font-weight: 600; color: var(--accent-blue); margin-bottom: 2px; }
+.msg-bubble.tx .from { color: var(--accent-green); }
+.msg-bubble .meta { font-size: 10px; color: var(--text-muted); margin-top: 3px; display: flex; gap: 6px; }
+.msg-bubble .ack-icon { color: var(--accent-green); }
+.msg-bubble .rej-icon { color: var(--accent-red); }
+.msg-compose {
+    display: flex; gap: 6px; padding: 8px; background: var(--bg-card);
+    border-top: 1px solid var(--border); flex-shrink: 0; align-items: flex-end;
+}
+.msg-compose input[type="text"] {
+    flex: 1; background: var(--bg-input); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px; color: var(--text); font-size: 14px;
+    outline: none; min-width: 0;
+}
+.msg-compose input#m-msg-to { width: 90px; flex: none; text-transform: uppercase; }
+.msg-compose input:focus { border-color: var(--accent-blue); }
+.msg-compose button {
+    background: var(--accent-blue); border: none; border-radius: 8px;
+    color: #fff; font-size: 14px; padding: 10px 16px; cursor: pointer;
+    white-space: nowrap; font-weight: 600;
+}
+.msg-compose button:active { opacity: 0.7; }
+.msg-empty { color: var(--text-muted); text-align: center; padding: 40px 20px; font-size: 13px; }
+.msg-filter-bar {
+    display: flex; gap: 4px; padding: 6px 8px; background: var(--bg-card);
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.msg-filter-bar button {
+    background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text-muted); font-size: 11px; padding: 4px 10px; cursor: pointer;
+}
+.msg-filter-bar button.active { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
+
+/* ── Map ────────────────────────────────── */
+#m-map { flex: 1; }
+.aprs-icon-wrapper { background: transparent !important; border: none !important; }
+.aprs-sprite { display: inline-block; image-rendering: pixelated; image-rendering: -moz-crisp-edges; vertical-align: middle; flex-shrink: 0; }
+.aprs-emoji-fallback { display: inline-block; text-align: center; vertical-align: middle; }
+.aprs-emoji-marker {
+    width: 22px; height: 22px; font-size: 14px; line-height: 22px; text-align: center;
+    border-radius: 6px; border: 2px solid; background: rgba(22,27,34,0.85);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4); cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+}
+.aprs-emoji-rf { border-color: #f85149; box-shadow: 0 0 8px rgba(248,81,73,0.35); }
+.aprs-emoji-aprs_is { border-color: #58a6ff; box-shadow: 0 0 8px rgba(88,166,255,0.35); }
+.aprs-emoji-marker.ghosted { opacity: 0.35; filter: grayscale(80%); border-style: dashed !important; }
+.leaflet-popup-content-wrapper { background: var(--bg-card) !important; color: var(--text) !important; border-radius: 8px !important; }
+.leaflet-popup-tip { background: var(--bg-card) !important; }
+.popup-call { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+.popup-rf { color: var(--accent-red); }
+.popup-is { color: var(--accent-blue); }
+.popup-detail { font-size: 12px; line-height: 1.5; color: var(--text-muted); }
+
+/* ── Stations ───────────────────────────── */
+.station-section { padding: 8px; }
+.station-section h3 { font-size: 13px; color: var(--accent-blue); padding: 6px 0; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.station-section h3.rf { color: var(--accent-red); }
+.stn-card { display: flex; align-items: center; gap: 8px; padding: 8px; border-bottom: 1px solid var(--border); }
+.stn-card:active { background: rgba(88,166,255,0.06); }
+.stn-card .stn-icon { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; }
+.stn-card .stn-info { flex: 1; min-width: 0; }
+.stn-card .stn-call { font-size: 13px; font-weight: 600; }
+.stn-card .stn-detail { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stn-card .stn-time { font-size: 10px; color: var(--text-muted); text-align: right; white-space: nowrap; }
+
+/* ── Propagation ────────────────────────── */
+.prop-section { padding: 12px; }
+.prop-gauge { text-align: center; padding: 16px; background: var(--bg-card); border-radius: 10px; margin-bottom: 12px; }
+.prop-gauge .level { font-size: 48px; font-weight: 700; }
+.prop-gauge .label { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+.prop-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.prop-stat { background: var(--bg-card); border-radius: 8px; padding: 12px; text-align: center; }
+.prop-stat .val { font-size: 20px; font-weight: 700; color: var(--accent-blue); }
+.prop-stat .lbl { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.solar-img { text-align: center; margin-top: 8px; }
+.solar-img img { max-width: 100%; border-radius: 6px; }
+.leader-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+.leader-table th { text-align: left; color: var(--text-muted); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.leader-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.leader-table .rank { color: var(--accent-orange); font-weight: 700; width: 30px; }
+
+/* ── About ──────────────────────────────── */
+.about-section { padding: 20px; text-align: center; }
+.about-section h2 { color: var(--accent-blue); margin-bottom: 8px; }
+.about-section .ver { font-size: 14px; color: var(--text-muted); margin-bottom: 16px; }
+.about-section .info { font-size: 13px; color: var(--text-muted); line-height: 1.8; }
+.about-section a { color: var(--accent-blue); text-decoration: none; }
+
+/* ── Weather banner ─────────────────────── */
+.wx-banner { padding: 6px 10px; font-size: 11px; background: var(--bg-card); border-bottom: 1px solid var(--border); flex-shrink: 0; display: none; color: var(--text-muted); }
+.wx-banner.vis { display: block; }
+.wx-alert { padding: 6px 10px; font-size: 11px; font-weight: 600; border-bottom: 1px solid var(--border); flex-shrink: 0; display: none; }
+.wx-alert.warn { display: block; background: rgba(248,81,73,0.15); color: var(--accent-red); }
+.wx-alert.watch { display: block; background: rgba(210,153,34,0.15); color: var(--accent-orange); }
+</style>
+</head>
+<body>
+<div class="m-app">
+    <!-- Header -->
+    <div class="m-header">
+        <span class="title">📡 APRS PropView</span>
+        <span class="status"><span class="ws-dot" id="m-ws-dot"></span><span id="m-call">—</span></span>
+    </div>
+
+    <!-- Weather banners -->
+    <div class="wx-alert" id="m-wx-alert"></div>
+    <div class="wx-banner" id="m-wx-banner"></div>
+
+    <!-- Content panels -->
+    <div class="m-content">
+        <!-- Messages -->
+        <div class="m-tab active" id="mtab-messages">
+            <div class="msg-filter-bar">
+                <button class="active" data-f="all">All</button>
+                <button data-f="mine">Mine</button>
+                <button data-f="rx">Received</button>
+                <button data-f="tx">Sent</button>
+            </div>
+            <div class="msg-list" id="m-msg-list"><div class="msg-empty">No messages yet.</div></div>
+            <div class="msg-compose">
+                <input type="text" id="m-msg-to" placeholder="TO CALL" maxlength="9" autocomplete="off" autocapitalize="characters">
+                <input type="text" id="m-msg-text" placeholder="Message..." maxlength="67" autocomplete="off">
+                <button id="m-btn-send">Send</button>
+            </div>
+        </div>
+
+        <!-- Map -->
+        <div class="m-tab" id="mtab-map"><div id="m-map"></div></div>
+
+        <!-- Stations -->
+        <div class="m-tab" id="mtab-stations">
+            <div class="station-section"><h3 class="rf">📻 RF Stations (<span id="m-rf-count">0</span>)</h3><div id="m-rf-list"></div></div>
+            <div class="station-section"><h3>🌐 APRS-IS Stations (<span id="m-is-count">0</span>)</h3><div id="m-is-list"></div></div>
+        </div>
+
+        <!-- Propagation -->
+        <div class="m-tab" id="mtab-prop">
+            <div class="prop-section">
+                <div class="prop-gauge">
+                    <div class="level" id="m-prop-level">—</div>
+                    <div class="label" id="m-prop-label">Waiting for data...</div>
+                </div>
+                <div class="prop-stats">
+                    <div class="prop-stat"><div class="val" id="m-rf-total">0</div><div class="lbl">RF Stations</div></div>
+                    <div class="prop-stat"><div class="val" id="m-max-dist">—</div><div class="lbl">Max Distance</div></div>
+                    <div class="prop-stat"><div class="val" id="m-pkt-count">0</div><div class="lbl">Packets (1h)</div></div>
+                    <div class="prop-stat"><div class="val" id="m-uptime">—</div><div class="lbl">Uptime</div></div>
+                </div>
+                <h3 style="color:var(--accent-orange);font-size:13px;margin:8px 0;">🏆 Longest Paths (24h)</h3>
+                <table class="leader-table">
+                    <thead><tr><th>#</th><th>Station</th><th>Distance</th></tr></thead>
+                    <tbody id="m-leader-body"><tr><td colspan="3" style="color:var(--text-muted)">Loading...</td></tr></tbody>
+                </table>
+                <div class="solar-img" style="margin-top:16px;">
+                    <h3 style="color:var(--accent-purple);font-size:13px;margin-bottom:8px;">☀️ Solar Conditions</h3>
+                    <img src="https://www.hamqsl.com/solar101vhf.php" alt="Solar Data" loading="lazy" style="width:100%;max-width:480px;">
+                </div>
+            </div>
+        </div>
+
+        <!-- About -->
+        <div class="m-tab" id="mtab-about">
+            <div class="about-section">
+                <h2>📡 APRS PropView</h2>
+                <div class="ver" id="m-version">—</div>
+                <div class="info">
+                    VHF Propagation Monitor<br>
+                    Digipeater &bull; IGate &bull; Analytics<br><br>
+                    Created by <strong>Brett Wicker</strong><br>
+                    with the assistance of an AI agent.<br><br>
+                    <strong>Wicker Made, LLC</strong><br>
+                    <a href="mailto:madebywicker@gmail.com">madebywicker@gmail.com</a><br><br>
+                    <a href="/" target="_blank">Open Desktop View</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom nav -->
+    <nav class="m-nav">
+        <button class="active" data-tab="mtab-messages"><span class="icon">💬</span><span>Messages</span><span class="badge" id="m-msg-badge">0</span></button>
+        <button data-tab="mtab-map"><span class="icon">🗺️</span><span>Map</span></button>
+        <button data-tab="mtab-stations"><span class="icon">📻</span><span>Stations</span></button>
+        <button data-tab="mtab-prop"><span class="icon">📊</span><span>Propag.</span></button>
+        <button data-tab="mtab-about"><span class="icon">ℹ️</span><span>About</span></button>
+    </nav>
+</div>
+
+<script>
+'use strict';
+/* ================================================================
+   APRS PropView — Mobile Companion
+   Single-file SPA connecting to the same backend WebSocket + REST.
+   ================================================================ */
+
+// ── State ──────────────────────────────────────────────────
+const S = {
+    ws: null, connected: false, myCall: '', messages: [], msgFilter: 'all',
+    rfStations: {}, isStations: {},
+    map: null, mapReady: false, rfMarkers: {}, isMarkers: {},
+    rfLayer: null, isLayer: null, myMarker: null, myPos: null,
+    startTime: 0, ghostMinutes: 60, stationMeta: {},
+    unreadCount: 0, activeTab: 'mtab-messages', propData: null,
+};
+
+// ── Helpers ────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function timeAgo(ts) {
+    if (!ts) return '—';
+    const s = Math.floor(Date.now() / 1000 - ts);
+    if (s < 60) return s + 's';
+    if (s < 3600) return Math.floor(s / 60) + 'm';
+    if (s < 86400) return Math.floor(s / 3600) + 'h';
+    return Math.floor(s / 86400) + 'd';
+}
+function fmtDist(km) { if (!km) return '—'; return (km * 0.621371).toFixed(1) + ' mi'; }
+function fmtTime(ts) { if (!ts) return ''; return new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+
+// ── Tab switching ──────────────────────────────────────────
+document.querySelector('.m-nav').addEventListener('click', e => {
+    const btn = e.target.closest('button[data-tab]');
+    if (!btn) return;
+    const tab = btn.dataset.tab;
+    S.activeTab = tab;
+
+    document.querySelectorAll('.m-nav button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.m-tab').forEach(t => t.classList.remove('active'));
+    $(tab)?.classList.add('active');
+
+    if (tab === 'mtab-map' && !S.mapReady) initMap();
+    if (tab === 'mtab-map' && S.map) setTimeout(() => S.map.invalidateSize(), 50);
+    if (tab === 'mtab-messages') { S.unreadCount = 0; updateBadge(); }
+    if (tab === 'mtab-prop') loadLeaderboard();
+});
+
+// ── Message filter ─────────────────────────────────────────
+document.querySelector('.msg-filter-bar').addEventListener('click', e => {
+    const btn = e.target.closest('button[data-f]');
+    if (!btn) return;
+    S.msgFilter = btn.dataset.f;
+    document.querySelectorAll('.msg-filter-bar button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderMessages();
+});
+
+// ── Send message ───────────────────────────────────────────
+$('m-btn-send').addEventListener('click', sendMsg);
+$('m-msg-text').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); sendMsg(); } });
+$('m-msg-to').addEventListener('input', e => { e.target.value = e.target.value.toUpperCase(); });
+
+async function sendMsg() {
+    const to = $('m-msg-to').value.trim().toUpperCase();
+    const text = $('m-msg-text').value.trim();
+    if (!to || !text) return;
+    $('m-btn-send').disabled = true;
+    try {
+        const r = await fetch('/api/messages/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ to, text }),
+        });
+        const j = await r.json();
+        if (j.success) { $('m-msg-text').value = ''; $('m-msg-text').focus(); }
+        else alert(j.message || 'Send failed');
+    } catch { alert('Network error'); }
+    finally { $('m-btn-send').disabled = false; }
+}
+
+// ── Tap message to reply ───────────────────────────────────
+$('m-msg-list').addEventListener('click', e => {
+    const bub = e.target.closest('.msg-bubble');
+    if (!bub || !bub.dataset.from) return;
+    $('m-msg-to').value = bub.dataset.from.toUpperCase();
+    $('m-msg-text').focus();
+});
+
+// ── Render messages ────────────────────────────────────────
+function renderMessages() {
+    const list = $('m-msg-list');
+    let msgs = S.messages;
+    if (S.msgFilter === 'mine') msgs = msgs.filter(m => m.from?.toUpperCase() === S.myCall || m.to?.toUpperCase() === S.myCall);
+    else if (S.msgFilter === 'rx') msgs = msgs.filter(m => m.direction === 'rx');
+    else if (S.msgFilter === 'tx') msgs = msgs.filter(m => m.direction === 'tx');
+
+    if (!msgs.length) { list.innerHTML = '<div class="msg-empty">No messages yet.</div>'; return; }
+
+    // Oldest first (chat style)
+    const sorted = [...msgs].reverse();
+    list.innerHTML = sorted.map(m => {
+        const isTx = m.direction === 'tx';
+        let ackHtml = '';
+        if (isTx) {
+            if (m.acked) ackHtml = '<span class="ack-icon">✓</span>';
+            else if (m.rejected) ackHtml = '<span class="rej-icon">✗</span>';
+            else ackHtml = '⏳';
+        }
+        const src = m.source === 'rf' ? 'RF' : (m.source === 'aprs_is' ? 'IS' : 'TX');
+        return `<div class="msg-bubble ${isTx ? 'tx' : 'rx'}" data-from="${escHtml(m.from || '')}">
+            <div class="from">${escHtml(m.from || '?')} → ${escHtml(m.to || '?')}</div>
+            ${escHtml(m.text || '')}
+            <div class="meta"><span>${fmtTime(m.timestamp)}</span><span>${src}</span>${ackHtml}</div>
+        </div>`;
+    }).join('');
+    list.scrollTop = list.scrollHeight;
+}
+
+function updateBadge() {
+    const b = $('m-msg-badge');
+    if (S.unreadCount > 0) { b.textContent = S.unreadCount; b.style.display = 'block'; }
+    else b.style.display = 'none';
+}
+
+// ── Map ────────────────────────────────────────────────────
+function initMap() {
+    if (S.mapReady) return;
+    const lat = S.myPos ? S.myPos[0] : 39.8;
+    const lng = S.myPos ? S.myPos[1] : -98.6;
+    const zoom = S.myPos ? 8 : 4;
+
+    S.map = L.map('m-map', { zoomControl: false, attributionControl: false }).setView([lat, lng], zoom);
+    L.control.zoom({ position: 'topright' }).addTo(S.map);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19, subdomains: 'abcd',
+    }).addTo(S.map);
+
+    S.rfLayer = L.layerGroup().addTo(S.map);
+    S.isLayer = L.layerGroup().addTo(S.map);
+
+    if (S.myPos) {
+        S.myMarker = L.circleMarker(S.myPos, {
+            radius: 8, color: '#3fb950', fillColor: '#3fb950', fillOpacity: 0.6, weight: 2,
+        }).addTo(S.map).bindPopup(`<b style="color:#3fb950">${escHtml(S.myCall)}</b><br>My Station`);
+    }
+
+    for (const st of Object.values(S.rfStations)) addMapMarker(st);
+    for (const st of Object.values(S.isStations)) addMapMarker(st);
+    S.mapReady = true;
+}
+
+function addMapMarker(st) {
+    if (!st.latitude || !st.longitude) return;
+    if (st.latitude === 0 && st.longitude === 0) return;
+
+    const source = st.source;
+    const call = st.callsign;
+    const markers = source === 'rf' ? S.rfMarkers : S.isMarkers;
+    const layer = source === 'rf' ? S.rfLayer : S.isLayer;
+    if (!layer) return;
+
+    const symT = st.symbol_table || '/';
+    const symC = st.symbol_code || '-';
+    const bc = source === 'rf' ? '#f85149' : '#58a6ff';
+    const spr = (typeof getAPRSSpriteHTML === 'function') ? getAPRSSpriteHTML(symT, symC, 16) : '📍';
+    const popSpr = (typeof getAPRSSpriteHTML === 'function') ? getAPRSSpriteHTML(symT, symC, 32) : '📍';
+    const symN = (typeof getAPRSSymbolName === 'function') ? getAPRSSymbolName(symT, symC) : '';
+
+    const iconHtml = `<div class="aprs-emoji-marker aprs-emoji-${source}" style="border-color:${bc};">${spr}</div>`;
+    const icon = L.divIcon({ className: 'aprs-icon-wrapper', html: iconHtml, iconSize: [24, 24], iconAnchor: [12, 12], popupAnchor: [0, -12] });
+
+    const srcLabel = source === 'rf' ? 'RF' : 'APRS-IS';
+    const srcClass = source === 'rf' ? 'popup-rf' : 'popup-is';
+    const popup = `<div class="popup-call ${srcClass}">${escHtml(call)}</div>
+        <div class="popup-detail">Source: ${srcLabel}<br>Type: ${popSpr} ${escHtml(symN)}<br>
+        Distance: ${fmtDist(st.distance_km)}<br>Last: ${fmtTime(st.last_heard)}<br>
+        Pkts: ${st.packet_count || 1}${st.last_comment ? '<br>' + escHtml(st.last_comment) : ''}</div>`;
+
+    if (markers[call]) {
+        markers[call].setLatLng([st.latitude, st.longitude]).setPopupContent(popup).setIcon(icon);
+    } else {
+        markers[call] = L.marker([st.latitude, st.longitude], { icon }).bindPopup(popup).addTo(layer);
+    }
+    S.stationMeta[call] = { source, last_heard: st.last_heard || 0 };
+}
+
+function removeMapMarker(call, source) {
+    const markers = source === 'rf' ? S.rfMarkers : S.isMarkers;
+    const layer = source === 'rf' ? S.rfLayer : S.isLayer;
+    if (markers[call] && layer) { layer.removeLayer(markers[call]); delete markers[call]; }
+    delete S.stationMeta[call];
+}
+
+function ghostStaleMarkers() {
+    if (!S.ghostMinutes || S.ghostMinutes <= 0) return;
+    const cutoff = Date.now() / 1000 - S.ghostMinutes * 60;
+    for (const [call, meta] of Object.entries(S.stationMeta)) {
+        const markers = meta.source === 'rf' ? S.rfMarkers : S.isMarkers;
+        const marker = markers[call];
+        if (!marker) continue;
+        const el = marker.getElement();
+        if (!el) continue;
+        const inner = el.querySelector('.aprs-emoji-marker');
+        if (!inner) continue;
+        inner.classList.toggle('ghosted', meta.last_heard > 0 && meta.last_heard < cutoff);
+    }
+}
+
+// ── Stations list ──────────────────────────────────────────
+function renderStations() {
+    renderStationList(S.rfStations, $('m-rf-list'), $('m-rf-count'));
+    renderStationList(S.isStations, $('m-is-list'), $('m-is-count'));
+}
+
+function renderStationList(stations, container, countEl) {
+    const arr = Object.values(stations).sort((a, b) => (b.last_heard || 0) - (a.last_heard || 0));
+    if (countEl) countEl.textContent = arr.length;
+    if (!container) return;
+    if (!arr.length) { container.innerHTML = '<div class="msg-empty">No stations.</div>'; return; }
+    container.innerHTML = arr.map(st => {
+        const sym = (typeof getAPRSSpriteHTML === 'function') ? getAPRSSpriteHTML(st.symbol_table || '/', st.symbol_code || '-', 20) : '📍';
+        return `<div class="stn-card">
+            <div class="stn-icon">${sym}</div>
+            <div class="stn-info">
+                <div class="stn-call">${escHtml(st.callsign)}</div>
+                <div class="stn-detail">${fmtDist(st.distance_km)} · ${st.packet_count || 1} pkts${st.last_comment ? ' · ' + escHtml(st.last_comment).substring(0, 30) : ''}</div>
+            </div>
+            <div class="stn-time">${timeAgo(st.last_heard)}</div>
+        </div>`;
+    }).join('');
+}
+
+// ── Propagation ────────────────────────────────────────────
+function updatePropDisplay(data) {
+    if (!data) return;
+    S.propData = data;
+    const rf = data.rf_stations_1h || 0;
+    const maxD = data.max_distance_km || 0;
+
+    let level = 'LOW', color = 'var(--text-muted)';
+    if (rf >= 10 && maxD >= 200) { level = 'HIGH'; color = 'var(--accent-green)'; }
+    else if (rf >= 5 && maxD >= 100) { level = 'MED'; color = 'var(--accent-orange)'; }
+    else if (rf >= 2) { level = 'LOW'; color = 'var(--accent-blue)'; }
+
+    const el = $('m-prop-level');
+    if (el) { el.textContent = level; el.style.color = color; }
+    const lbl = $('m-prop-label');
+    if (lbl) lbl.textContent = `${rf} RF stations in 1h \u00b7 ${fmtDist(maxD)} max`;
+
+    const rft = $('m-rf-total'); if (rft) rft.textContent = rf;
+    const md = $('m-max-dist'); if (md) md.textContent = fmtDist(maxD);
+    const pc = $('m-pkt-count'); if (pc) pc.textContent = data.packets_1h || 0;
+}
+
+async function loadLeaderboard() {
+    try {
+        const r = await fetch('/api/analytics/longest-paths?hours=24&limit=10');
+        const d = await r.json();
+        const body = $('m-leader-body');
+        if (!body) return;
+        if (!d.paths?.length) { body.innerHTML = '<tr><td colspan="3" style="color:var(--text-muted)">No data yet</td></tr>'; return; }
+        body.innerHTML = d.paths.map((p, i) => `<tr>
+            <td class="rank">${i + 1}</td>
+            <td>${escHtml(p.callsign || p.station || '?')}</td>
+            <td>${fmtDist(p.distance_km || p.max_distance_km || 0)}</td>
+        </tr>`).join('');
+    } catch { /* silent */ }
+}
+
+// ── Uptime ─────────────────────────────────────────────────
+function updateUptime() {
+    if (!S.startTime) return;
+    const diff = Math.floor(Date.now() / 1000 - S.startTime);
+    const h = Math.floor(diff / 3600);
+    const m = Math.floor((diff % 3600) / 60);
+    const el = $('m-uptime');
+    if (el) el.textContent = h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+// ── Weather ────────────────────────────────────────────────
+async function loadWeather() {
+    try {
+        const r = await fetch('/api/weather');
+        const d = await r.json();
+        const banner = $('m-wx-banner');
+        const alertEl = $('m-wx-alert');
+
+        if (d.current) {
+            const c = d.current;
+            const parts = [];
+            if (c.temperature !== undefined) parts.push(`${Math.round(c.temperature)}\u00b0F`);
+            if (c.description) parts.push(c.description);
+            if (c.wind_speed !== undefined) parts.push(`Wind ${Math.round(c.wind_speed)} mph`);
+            if (c.humidity !== undefined) parts.push(`${c.humidity}% RH`);
+            if (parts.length) { banner.textContent = '\ud83c\udf24\ufe0f ' + parts.join(' \u00b7 '); banner.classList.add('vis'); }
+        }
+
+        if (d.alerts?.length) {
+            const a = d.alerts[0];
+            const severity = (a.severity || '').toLowerCase();
+            alertEl.textContent = '\u26a0\ufe0f ' + (a.headline || a.event || 'Weather Alert');
+            alertEl.className = 'wx-alert ' + (severity.includes('warning') ? 'warn' : 'watch');
+        } else if (alertEl) {
+            alertEl.className = 'wx-alert';
+        }
+    } catch { /* silent */ }
+}
+
+// ── WebSocket ──────────────────────────────────────────────
+function connectWS() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = `${proto}//${location.host}/ws`;
+    S.ws = new WebSocket(url);
+
+    S.ws.onopen = () => {
+        S.connected = true;
+        $('m-ws-dot').classList.add('ok');
+    };
+
+    S.ws.onclose = () => {
+        S.connected = false;
+        $('m-ws-dot').classList.remove('ok');
+        setTimeout(connectWS, 3000);
+    };
+
+    S.ws.onerror = () => S.ws.close();
+
+    S.ws.onmessage = (ev) => {
+        let msg;
+        try { msg = JSON.parse(ev.data); } catch { return; }
+
+        switch (msg.type) {
+            case 'status':
+                handleStatus(msg.data);
+                break;
+
+            case 'initial_stations':
+                (msg.rf || []).forEach(st => { st.source = 'rf'; S.rfStations[st.callsign] = st; if (S.mapReady) addMapMarker(st); });
+                (msg.aprs_is || []).forEach(st => { st.source = 'aprs_is'; S.isStations[st.callsign] = st; if (S.mapReady) addMapMarker(st); });
+                renderStations();
+                break;
+
+            case 'station_update':
+                if (msg.station) {
+                    const st = msg.station;
+                    if (st.source === 'rf') S.rfStations[st.callsign] = st;
+                    else S.isStations[st.callsign] = st;
+                    if (S.mapReady) addMapMarker(st);
+                    renderStations();
+                }
+                break;
+
+            case 'station_removed':
+                if (msg.data) {
+                    const { callsign, source } = msg.data;
+                    if (source === 'rf') delete S.rfStations[callsign];
+                    else delete S.isStations[callsign];
+                    if (S.mapReady) removeMapMarker(callsign, source);
+                    renderStations();
+                }
+                break;
+
+            case 'propagation':
+                if (msg.data) updatePropDisplay(msg.data);
+                break;
+
+            case 'message':
+                if (msg.data) {
+                    S.messages.unshift(msg.data);
+                    if (S.activeTab !== 'mtab-messages' && msg.data.direction === 'rx' && msg.data.to?.toUpperCase() === S.myCall) {
+                        S.unreadCount++;
+                        updateBadge();
+                    }
+                    renderMessages();
+                }
+                break;
+
+            case 'message_ack':
+                if (msg.data) {
+                    for (const m of S.messages) {
+                        if (m.direction === 'tx' && m.message_id === msg.data.message_id &&
+                            m.to?.toUpperCase() === (msg.data.from || '').toUpperCase()) {
+                            m.acked = true; break;
+                        }
+                    }
+                    renderMessages();
+                }
+                break;
+
+            case 'message_rej':
+                if (msg.data) {
+                    for (const m of S.messages) {
+                        if (m.direction === 'tx' && m.message_id === msg.data.message_id &&
+                            m.to?.toUpperCase() === (msg.data.from || '').toUpperCase()) {
+                            m.rejected = true; break;
+                        }
+                    }
+                    renderMessages();
+                }
+                break;
+        }
+    };
+}
+
+function handleStatus(data) {
+    if (!data) return;
+    S.myCall = (data.station?.callsign || '').toUpperCase();
+    $('m-call').textContent = S.myCall || '—';
+    S.startTime = data.start_time || 0;
+
+    const lat = data.station?.latitude;
+    const lng = data.station?.longitude;
+    if (lat && lng && lat !== 0) {
+        S.myPos = [lat, lng];
+        if (S.mapReady && !S.myMarker) {
+            S.myMarker = L.circleMarker(S.myPos, {
+                radius: 8, color: '#3fb950', fillColor: '#3fb950', fillOpacity: 0.6, weight: 2,
+            }).addTo(S.map).bindPopup(`<b style="color:#3fb950">${escHtml(S.myCall)}</b><br>My Station`);
+            S.map.setView(S.myPos, 8);
+        }
+    }
+}
+
+// ── Init ───────────────────────────────────────────────────
+async function init() {
+    connectWS();
+
+    // Load messages via REST
+    try {
+        const r = await fetch('/api/messages?limit=500');
+        const d = await r.json();
+        if (d.messages) { S.messages = d.messages; renderMessages(); }
+    } catch { /* silent */ }
+
+    // Load version
+    try {
+        const r = await fetch('/api/version');
+        const d = await r.json();
+        $('m-version').textContent = 'Version ' + (d.version || '?');
+    } catch { /* silent */ }
+
+    // Load ghost setting
+    try {
+        const r = await fetch('/api/config');
+        const d = await r.json();
+        S.ghostMinutes = d.web?.ghost_after_minutes ?? 60;
+    } catch { /* silent */ }
+
+    // Weather
+    loadWeather();
+    setInterval(loadWeather, 300000);
+
+    // Periodic refreshes
+    setInterval(updateUptime, 1000);
+    setInterval(renderStations, 15000);
+    setInterval(ghostStaleMarkers, 30000);
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

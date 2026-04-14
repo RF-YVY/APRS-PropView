@@ -68,8 +68,11 @@ _ZIP_RE = re.compile(r"^\d{5}$")
 _ICAO_RE = re.compile(r"^[A-Z]{4}$")
 
 
-def _sync_http_get(url: str, timeout: int = 10) -> Optional[Dict]:
-    """Synchronous HTTP GET returning parsed JSON, or None on failure."""
+def _sync_http_get(url: str, timeout: int = 10, retries: int = 1) -> Optional[Dict]:
+    """Synchronous HTTP GET returning parsed JSON, or None on failure.
+
+    Retries on timeout/connection errors with exponential backoff.
+    """
     req = urllib.request.Request(
         url,
         headers={
@@ -77,19 +80,28 @@ def _sync_http_get(url: str, timeout: int = 10) -> Optional[Dict]:
             "Accept": "application/geo+json, application/json",
         },
     )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError,
-            OSError, TimeoutError) as e:
-        logger.warning(f"HTTP GET failed for {url}: {e}")
-        return None
+    last_err = None
+    for attempt in range(1 + retries):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError,
+                OSError, TimeoutError) as e:
+            last_err = e
+            if attempt < retries:
+                import time as _time
+                _time.sleep(2 ** attempt)  # 1s, 2s backoff
+                logger.debug(f"Retrying ({attempt + 1}/{retries}) {url}")
+    logger.warning(f"HTTP GET failed for {url}: {last_err}")
+    return None
 
 
-async def _async_http_get(url: str, timeout: int = 10) -> Optional[Dict]:
+async def _async_http_get(url: str, timeout: int = 10, retries: int = 1) -> Optional[Dict]:
     """Run a synchronous HTTP GET on an executor to keep the event loop free."""
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _sync_http_get, url, timeout)
+    return await loop.run_in_executor(
+        None, _sync_http_get, url, timeout, retries
+    )
 
 
 # ── Geocoding helpers ─────────────────────────────────────────────────
@@ -223,7 +235,7 @@ async def fetch_nws_alerts(
     """
     # NWS alerts by point — returns alerts whose zone/county covers the point
     url = f"https://api.weather.gov/alerts/active?point={lat:.4f},{lon:.4f}"
-    data = await _async_http_get(url, timeout=15)
+    data = await _async_http_get(url, timeout=30, retries=2)
 
     alerts = []
 

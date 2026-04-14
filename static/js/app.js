@@ -9,9 +9,70 @@
     let serverConfig = null;
     let uptimeStart = 0;
 
+    // ── Distance unit helpers (mi / km) ────────────────────────
+    // Default to miles; persisted in localStorage
+    window.pvDistUnit = localStorage.getItem('pvDistUnit') || 'mi';
+    const KM_TO_MI = 0.621371;
+
+    /** Convert km to the active display unit. */
+    window.convertDist = function (km) {
+        if (km == null) return null;
+        return window.pvDistUnit === 'mi' ? km * KM_TO_MI : km;
+    };
+
+    /** Format km as a display string in the active unit. */
+    window.formatDist = function (km, decimals) {
+        if (decimals === undefined) decimals = 1;
+        if (km == null || km === 0) return 'N/A';
+        const val = window.pvDistUnit === 'mi' ? km * KM_TO_MI : km;
+        return `${val.toFixed(decimals)} ${window.pvDistUnit}`;
+    };
+
+    /** Return the current unit label ('mi' or 'km'). */
+    window.distLabel = function () { return window.pvDistUnit; };
+
+    /** Toggle the distance unit and refresh all displays. */
+    window.toggleDistUnit = function () {
+        window.pvDistUnit = window.pvDistUnit === 'mi' ? 'km' : 'mi';
+        localStorage.setItem('pvDistUnit', window.pvDistUnit);
+        _refreshAllDistanceDisplays();
+    };
+
+    /** Convert a km value to the active unit for settings fields that store in km. */
+    window.distToDisplay = function (km) {
+        return window.pvDistUnit === 'mi' ? Math.round(km * KM_TO_MI) : km;
+    };
+
+    /** Convert a display-unit value back to km for settings fields. */
+    window.displayToDist = function (val) {
+        return window.pvDistUnit === 'mi' ? val / KM_TO_MI : val;
+    };
+
+    /** Refresh every distance-related display after a unit toggle. */
+    function _refreshAllDistanceDisplays() {
+        const u = window.pvDistUnit;
+        // Update all .dist-unit spans
+        document.querySelectorAll('.dist-unit').forEach(el => { el.textContent = u; });
+        // Update distance filter dropdowns (values stay in km, labels change)
+        const miLabels = { '50': '31 mi', '100': '62 mi', '200': '124 mi', '500': '311 mi' };
+        const kmLabels = { '50': '50 km', '100': '100 km', '200': '200 km', '500': '500 km' };
+        const labels = u === 'mi' ? miLabels : kmLabels;
+        document.querySelectorAll('#rf-dist-filter option, #is-dist-filter option').forEach(opt => {
+            if (labels[opt.value]) opt.textContent = labels[opt.value];
+        });
+        // Re-render station lists
+        if (window.pvStations) window.pvStations.render();
+        // Refresh map legend
+        if (window.pvMap) window.pvMap.refreshLegend();
+        // Refresh map popups (will update on next open)
+    }
+
     // ── Initialize ─────────────────────────────────────────────
 
     document.addEventListener('DOMContentLoaded', () => {
+        // Apply saved distance unit to all labels
+        _refreshAllDistanceDisplays();
+
         // Init tab switching
         initTabs();
 
@@ -36,6 +97,9 @@
         // Wire up WebSocket events
         wireWebSocket();
 
+        // Sidebar toggle
+        initSidebarToggle();
+
         // Force callsign field to uppercase on input
         document.getElementById('cfg-callsign')?.addEventListener('input', (e) => {
             const start = e.target.selectionStart;
@@ -55,6 +119,20 @@
             window.pvStations._renderStationList('rf');
             window.pvStations._renderStationList('aprs_is');
         }, 15000);
+
+        // Periodically ghost stale markers (every 30s)
+        window._ghostMinutes = 60; // default, overwritten by loadSettings
+        window._expireMinutes = 0; // default, overwritten by loadSettings
+        setInterval(() => {
+            window.pvMap?.ghostStaleMarkers(window._ghostMinutes);
+        }, 30000);
+
+        // Periodically expire stale stations (every 60s)
+        setInterval(() => {
+            if (window._expireMinutes > 0) {
+                window.pvMap?.expireStaleStations(window._expireMinutes);
+            }
+        }, 60000);
     });
 
     // ── Tab switching ──────────────────────────────────────────
@@ -69,7 +147,43 @@
                 // Activate selected
                 btn.classList.add('active');
                 document.getElementById(tabId)?.classList.add('active');
+
+                // If sidebar was collapsed, expand it
+                const panel = document.getElementById('side-panel');
+                if (panel?.classList.contains('collapsed')) {
+                    panel.classList.remove('collapsed');
+                    const toggle = document.getElementById('sidebar-toggle');
+                    if (toggle) toggle.textContent = '▶';
+                    setTimeout(() => window.pvMap?.map?.invalidateSize(), 300);
+                }
             });
+        });
+    }
+
+    // ── Sidebar toggle ─────────────────────────────────────────
+
+    function initSidebarToggle() {
+        const toggle = document.getElementById('sidebar-toggle');
+        const panel = document.getElementById('side-panel');
+        if (!toggle || !panel) return;
+
+        toggle.addEventListener('click', () => {
+            const isCollapsed = panel.classList.contains('collapsed');
+            if (isCollapsed) {
+                // Expanding: keep tab content hidden until width transition finishes
+                panel.classList.remove('collapsed');
+                toggle.textContent = '▶';
+                // Show tabs after width transition completes (250ms + buffer)
+                setTimeout(() => {
+                    panel.querySelectorAll('.tab-bar, .tab-content').forEach(el => el.style.removeProperty('display'));
+                    window.pvMap?.map?.invalidateSize();
+                }, 280);
+            } else {
+                // Collapsing
+                panel.classList.add('collapsed');
+                toggle.textContent = '◀';
+                setTimeout(() => window.pvMap?.map?.invalidateSize(), 300);
+            }
         });
     }
 
@@ -126,6 +240,13 @@
         ws.on('message_rej', (msg) => {
             if (msg.data) {
                 window.pvMessages.handleRej(msg.data);
+            }
+        });
+
+        ws.on('station_removed', (msg) => {
+            if (msg.data && msg.data.callsign) {
+                window.pvMap?.removeStation(msg.data.callsign);
+                window.pvStations?.removeStation(msg.data.callsign, msg.data.source);
             }
         });
 
@@ -197,14 +318,14 @@
         // Header stats
         setTextById('rf-count-1h', data.rf_stations_1h || 0);
         setTextById('is-count-1h', data.is_stations_1h || 0);
-        setTextById('max-distance', data.max_distance_km ? data.max_distance_km.toFixed(0) : '0');
+        setTextById('max-distance', data.max_distance_km ? window.convertDist(data.max_distance_km).toFixed(0) : '0');
 
         // Propagation tab cards
         setTextById('prop-rf-1h', data.rf_stations_1h || 0);
         setTextById('prop-rf-6h', data.rf_stations_6h || 0);
         setTextById('prop-rf-24h', data.rf_stations_24h || 0);
-        setTextById('prop-max-dist', `${(data.max_distance_km || 0).toFixed(0)} km`);
-        setTextById('prop-avg-dist', `${(data.avg_distance_km || 0).toFixed(0)} km`);
+        setTextById('prop-max-dist', window.formatDist(data.max_distance_km || 0, 0));
+        setTextById('prop-avg-dist', window.formatDist(data.avg_distance_km || 0, 0));
         setTextById('prop-is-1h', data.is_stations_1h || 0);
 
         // Draw distance distribution chart
@@ -286,7 +407,7 @@
         ctx.textAlign = 'center';
         for (let i = 0; i <= numBins; i += Math.max(1, Math.floor(numBins / 6))) {
             const x = padding.left + (i * (chartW / numBins));
-            const label = `${i * binSize}`;
+            const label = `${Math.round(window.convertDist(i * binSize))}`;
             ctx.fillText(label, x, h - padding.bottom + 14);
         }
 
@@ -294,7 +415,7 @@
         ctx.fillStyle = '#6e7681';
         ctx.font = '10px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('Distance (km)', w / 2, h - 4);
+        ctx.fillText(`Distance (${window.distLabel()})`, w / 2, h - 4);
 
         ctx.save();
         ctx.translate(12, h / 2);
@@ -431,13 +552,48 @@
         const div = document.createElement('div');
         div.className = 'alert-notification';
         div.innerHTML = `<span class="alert-notif-icon">🚨</span> <b>Band Opening!</b> ` +
-            `RF: ${alert.rf_stations} stations · Max: ${alert.max_distance_km} km · ` +
+            `RF: ${alert.rf_stations} stations · Max: ${window.formatDist(alert.max_distance_km, 0)} · ` +
             `${(alert.level || '').toUpperCase()}`;
         document.body.appendChild(div);
         // Auto-dismiss after 15 seconds
         setTimeout(() => { div.classList.add('fade-out'); }, 12000);
         setTimeout(() => { div.remove(); }, 15000);
     }
+
+    // ── About info ──────────────────────────────────────────────
+
+    async function loadAboutInfo() {
+        try {
+            const resp = await fetch('/api/version');
+            const data = await resp.json();
+            const v = data.version || '1.0.0';
+            const el1 = document.getElementById('about-version');
+            const el2 = document.getElementById('about-version-detail');
+            if (el1) el1.textContent = 'v' + v;
+            if (el2) el2.textContent = v;
+        } catch (e) { /* keep static defaults */ }
+    }
+
+    // ── Font management ──────────────────────────────────────────
+
+    function applyFont(fontFamily) {
+        if (fontFamily) {
+            document.documentElement.style.setProperty('--font-family', fontFamily);
+        } else {
+            document.documentElement.style.removeProperty('--font-family');
+        }
+    }
+
+    // Apply saved font on initial load
+    (async function initFont() {
+        try {
+            const resp = await fetch('/api/config');
+            const cfg = await resp.json();
+            applyFont(cfg.web?.font_family || '');
+            window._ghostMinutes = cfg.web?.ghost_after_minutes ?? 60;
+            window._expireMinutes = cfg.web?.expire_after_minutes ?? 0;
+        } catch (e) { /* use default */ }
+    })();
 
     // ── Settings load/save ─────────────────────────────────────
 
@@ -454,12 +610,13 @@
             setVal('cfg-symbol-table', cfg.station?.symbol_table);
             setVal('cfg-symbol-code', cfg.station?.symbol_code);
             setVal('cfg-comment', cfg.station?.comment);
-            setVal('cfg-beacon-interval', cfg.station?.beacon_interval);
+            setVal('cfg-beacon-interval', Math.round((cfg.station?.beacon_interval || 0) / 60));
+            setVal('cfg-beacon-path', cfg.station?.beacon_path || 'WIDE1-1');
 
             // Digipeater
             setChk('cfg-digi-enabled', cfg.digipeater?.enabled);
             setVal('cfg-digi-aliases', (cfg.digipeater?.aliases || []).join(', '));
-            setVal('cfg-digi-dedupe', cfg.digipeater?.dedupe_interval);
+            setVal('cfg-digi-dedupe', parseFloat(((cfg.digipeater?.dedupe_interval || 0) / 60).toFixed(1)));
 
             // IGate
             setChk('cfg-igate-enabled', cfg.igate?.enabled);
@@ -486,16 +643,28 @@
             // Web
             setVal('cfg-web-host', cfg.web?.host);
             setVal('cfg-web-port', cfg.web?.port);
+            setVal('cfg-web-font', cfg.web?.font_family || '');
+            applyFont(cfg.web?.font_family || '');
+            setVal('cfg-web-ghost', cfg.web?.ghost_after_minutes ?? 60);
+            window._ghostMinutes = cfg.web?.ghost_after_minutes ?? 60;
+            window.pvMap?.ghostStaleMarkers(window._ghostMinutes);
+            setVal('cfg-web-expire', cfg.web?.expire_after_minutes ?? 0);
+            window._expireMinutes = cfg.web?.expire_after_minutes ?? 0;
 
             // Tracking
-            setVal('cfg-track-age', cfg.tracking?.max_station_age);
-            setVal('cfg-track-cleanup', cfg.tracking?.cleanup_interval);
+            setVal('cfg-track-age', Math.round((cfg.tracking?.max_station_age || 0) / 60));
+            setVal('cfg-track-cleanup', Math.round((cfg.tracking?.cleanup_interval || 0) / 60));
 
             // Alerts
             setChk('cfg-alerts-enabled', cfg.alerts?.enabled);
             setVal('cfg-alerts-min-stations', cfg.alerts?.min_stations);
-            setVal('cfg-alerts-min-dist', cfg.alerts?.min_distance_km);
-            setVal('cfg-alerts-cooldown', cfg.alerts?.cooldown_seconds);
+            setVal('cfg-alerts-min-dist', Math.round(window.distToDisplay(cfg.alerts?.min_distance_km || 0)));
+            setVal('cfg-alerts-cooldown', Math.round((cfg.alerts?.cooldown_seconds || 0) / 60));
+            setVal('cfg-alerts-quiet-start', cfg.alerts?.quiet_start || '');
+            setVal('cfg-alerts-quiet-end', cfg.alerts?.quiet_end || '');
+            setChk('cfg-alerts-msg-discord', cfg.alerts?.msg_discord_enabled);
+            setChk('cfg-alerts-msg-email', cfg.alerts?.msg_email_enabled);
+            setChk('cfg-alerts-msg-sms', cfg.alerts?.msg_sms_enabled);
             setChk('cfg-alerts-discord', cfg.alerts?.discord_enabled);
             setVal('cfg-alerts-discord-url', cfg.alerts?.discord_webhook_url);
             setChk('cfg-alerts-email', cfg.alerts?.email_enabled);
@@ -535,12 +704,13 @@
                 symbol_table: getVal('cfg-symbol-table'),
                 symbol_code: getVal('cfg-symbol-code'),
                 comment: getVal('cfg-comment'),
-                beacon_interval: getVal('cfg-beacon-interval'),
+                beacon_interval: (parseInt(getVal('cfg-beacon-interval')) || 0) * 60,
+                beacon_path: getVal('cfg-beacon-path'),
             },
             digipeater: {
                 enabled: getChk('cfg-digi-enabled'),
                 aliases: getVal('cfg-digi-aliases'),
-                dedupe_interval: getVal('cfg-digi-dedupe'),
+                dedupe_interval: Math.round((parseFloat(getVal('cfg-digi-dedupe')) || 0) * 60),
             },
             igate: {
                 enabled: getChk('cfg-igate-enabled'),
@@ -567,16 +737,25 @@
             web: {
                 host: getVal('cfg-web-host'),
                 port: getVal('cfg-web-port'),
+                font_family: getVal('cfg-web-font') || '',
+                ghost_after_minutes: parseInt(getVal('cfg-web-ghost')) || 0,
+                expire_after_minutes: parseInt(getVal('cfg-web-expire')) || 0,
             },
             tracking: {
-                max_station_age: getVal('cfg-track-age'),
-                cleanup_interval: getVal('cfg-track-cleanup'),
+                max_station_age: (parseInt(getVal('cfg-track-age')) || 0) * 60,
+                cleanup_interval: (parseInt(getVal('cfg-track-cleanup')) || 0) * 60,
             },
             alerts: {
                 enabled: getChk('cfg-alerts-enabled'),
                 min_stations: getVal('cfg-alerts-min-stations'),
-                min_distance_km: getVal('cfg-alerts-min-dist'),
-                cooldown_seconds: getVal('cfg-alerts-cooldown'),
+                min_distance_km: Math.round(window.displayToDist(parseFloat(getVal('cfg-alerts-min-dist')) || 0)),
+                cooldown_seconds: (parseInt(getVal('cfg-alerts-cooldown')) || 0) * 60,
+                quiet_start: getVal('cfg-alerts-quiet-start') || '',
+                quiet_end: getVal('cfg-alerts-quiet-end') || '',
+                msg_notify_enabled: getChk('cfg-alerts-msg-discord') || getChk('cfg-alerts-msg-email') || getChk('cfg-alerts-msg-sms'),
+                msg_discord_enabled: getChk('cfg-alerts-msg-discord'),
+                msg_email_enabled: getChk('cfg-alerts-msg-email'),
+                msg_sms_enabled: getChk('cfg-alerts-msg-sms'),
                 discord_enabled: getChk('cfg-alerts-discord'),
                 discord_webhook_url: getVal('cfg-alerts-discord-url'),
                 email_enabled: getChk('cfg-alerts-email'),
@@ -756,15 +935,34 @@
             if (btn.dataset.tab === 'tab-messages') {
                 window.pvMessages.loadMessages();
             }
+            if (btn.dataset.tab === 'tab-about') {
+                loadAboutInfo();
+            }
         });
     });
 
     // Save button
     document.getElementById('btn-save-settings')?.addEventListener('click', saveSettings);
 
+    // Live font preview when changed in settings
+    document.getElementById('cfg-web-font')?.addEventListener('change', (e) => {
+        applyFont(e.target.value || '');
+    });
+
     // Clear packets button
     document.getElementById('btn-clear-packets')?.addEventListener('click', () => {
         window.pvStations.clearPackets();
+    });
+
+    // Help modal
+    document.getElementById('btn-open-help')?.addEventListener('click', () => {
+        document.getElementById('help-modal').style.display = 'flex';
+    });
+    document.getElementById('help-modal-close')?.addEventListener('click', () => {
+        document.getElementById('help-modal').style.display = 'none';
+    });
+    document.getElementById('help-modal')?.addEventListener('click', (e) => {
+        if (e.target.id === 'help-modal') e.target.style.display = 'none';
     });
 
 })();

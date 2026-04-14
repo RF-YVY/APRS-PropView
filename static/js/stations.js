@@ -52,6 +52,16 @@ class StationManager {
         this._renderStationList('aprs_is');
     }
 
+    removeStation(callsign, source) {
+        if (source === 'rf' && this.rfStations[callsign]) {
+            delete this.rfStations[callsign];
+            this._renderStationList('rf');
+        } else if (this.isStations[callsign]) {
+            delete this.isStations[callsign];
+            this._renderStationList('aprs_is');
+        }
+    }
+
     // ── Packet tracking ────────────────────────────────────────
 
     addPacket(pkt) {
@@ -66,6 +76,12 @@ class StationManager {
         this.packetBuffer = [];
         const list = document.getElementById('packet-list');
         if (list) list.innerHTML = '';
+    }
+
+    /** Re-render both station lists (e.g. after unit toggle). */
+    render() {
+        this._renderStationList('rf');
+        this._renderStationList('aprs_is');
     }
 
     // ── Rendering ──────────────────────────────────────────────
@@ -132,7 +148,7 @@ class StationManager {
     _stationItemHTML(station) {
         const call = this._escapeHTML(station.callsign || '???');
         const source = station.source === 'rf' ? 'rf' : 'aprs_is';
-        const dist = station.distance_km ? `${station.distance_km.toFixed(1)} km` : '';
+        const dist = station.distance_km ? window.formatDist(station.distance_km) : '';
         const heading = station.heading ? `${station.heading.toFixed(0)}°` : '';
         const elapsed = this._timeAgo(station.last_heard);
         const count = station.packet_count || 1;

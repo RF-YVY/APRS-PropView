@@ -31,8 +31,13 @@ window.pvMessages = (function () {
         // Filter change
         document.getElementById('msg-filter')?.addEventListener('change', renderMessages);
 
-        // Clear button
-        document.getElementById('btn-clear-msgs')?.addEventListener('click', () => {
+        // Clear button — clear on server and locally
+        document.getElementById('btn-clear-msgs')?.addEventListener('click', async () => {
+            try {
+                await fetch('/api/messages', { method: 'DELETE' });
+            } catch (e) {
+                console.error('Failed to clear messages on server:', e);
+            }
             messages = [];
             renderMessages();
         });
@@ -50,6 +55,20 @@ window.pvMessages = (function () {
         document.getElementById('msg-alert-close')?.addEventListener('click', (e) => {
             e.stopPropagation();
             hideBanner();
+        });
+
+        // Click message to populate TO CALL for reply
+        document.getElementById('msg-list')?.addEventListener('click', (e) => {
+            const item = e.target.closest('.msg-item');
+            if (!item) return;
+            const fromCall = item.dataset.from;
+            if (!fromCall) return;
+            const toEl = document.getElementById('msg-to-call');
+            const textEl = document.getElementById('msg-text');
+            if (toEl) {
+                toEl.value = fromCall.toUpperCase();
+                if (textEl) textEl.focus();
+            }
         });
 
         // Char counter
@@ -218,7 +237,7 @@ window.pvMessages = (function () {
             }
 
             return `
-                <div class="msg-item ${dirClass}">
+                <div class="msg-item ${dirClass}" data-from="${escHtml(msg.from || '')}" title="Click to reply">
                     <div class="msg-header">
                         <span class="msg-dir">${dirIcon}</span>
                         <span class="msg-from">${escHtml(msg.from || '?')}</span>

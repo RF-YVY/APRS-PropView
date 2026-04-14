@@ -211,6 +211,25 @@ class StationTracker:
                 await self.db.delete_old_stations(max_age)
                 await self.db.delete_old_packets(max_age * 2)
 
+                # Prune in-memory caches and notify frontend
+                cutoff = time.time() - max_age
+                for cache, source in [
+                    (self._rf_stations, "rf"),
+                    (self._is_stations, "aprs_is"),
+                ]:
+                    stale = [
+                        cs for cs, info in cache.items()
+                        if info.get("last_heard", 0) < cutoff
+                    ]
+                    for cs in stale:
+                        del cache[cs]
+                        await self.ws.broadcast({
+                            "type": "station_removed",
+                            "data": {"callsign": cs, "source": source},
+                        })
+                    if stale:
+                        logger.info(f"Pruned {len(stale)} stale {source} stations from memory")
+
                 # Calculate and broadcast propagation update
                 prop_data = await self.get_propagation_data()
                 await self.ws.broadcast({"type": "propagation", "data": prop_data})

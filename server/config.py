@@ -26,6 +26,7 @@ symbol_table = "/"
 symbol_code = "#"
 comment = "APRS PropView Digi/IGate"
 beacon_interval = 1800
+beacon_path = "WIDE1-1"
 
 [digipeater]
 enabled = true
@@ -57,6 +58,9 @@ port = 8001
 [web]
 host = "127.0.0.1"
 port = 14501
+font_family = ""
+ghost_after_minutes = 60
+expire_after_minutes = 0
 
 [database]
 path = "propview.db"
@@ -70,6 +74,12 @@ enabled = false
 min_stations = 5
 min_distance_km = 100.0
 cooldown_seconds = 1800
+quiet_start = ""
+quiet_end = ""
+msg_notify_enabled = false
+msg_discord_enabled = false
+msg_email_enabled = false
+msg_sms_enabled = false
 discord_enabled = false
 discord_webhook_url = ""
 email_enabled = false
@@ -99,6 +109,7 @@ class StationConfig:
     symbol_code: str = "#"
     comment: str = "APRS PropView Digi/IGate"
     beacon_interval: int = 1800
+    beacon_path: str = "WIDE1-1"
 
     @property
     def full_callsign(self) -> str:
@@ -148,6 +159,9 @@ class KISSTCPConfig:
 class WebConfig:
     host: str = "127.0.0.1"
     port: int = 14501
+    font_family: str = ""
+    ghost_after_minutes: int = 60
+    expire_after_minutes: int = 0
 
 
 @dataclass
@@ -167,6 +181,12 @@ class AlertsConfig:
     min_stations: int = 5
     min_distance_km: float = 100.0
     cooldown_seconds: int = 1800
+    quiet_start: str = ""       # HH:MM 24h — quiet period start (e.g. "22:00")
+    quiet_end: str = ""         # HH:MM 24h — quiet period end (e.g. "08:00")
+    msg_notify_enabled: bool = False  # Send notification on incoming APRS message
+    msg_discord_enabled: bool = False
+    msg_email_enabled: bool = False
+    msg_sms_enabled: bool = False
     discord_enabled: bool = False
     discord_webhook_url: str = ""
     email_enabled: bool = False
@@ -258,6 +278,7 @@ class Config:
             f'symbol_code = "{esc(self.station.symbol_code)}"',
             f'comment = "{esc(self.station.comment)}"',
             f"beacon_interval = {int(self.station.beacon_interval)}",
+            f'beacon_path = "{esc(self.station.beacon_path)}"',
             "",
             "[digipeater]",
             f"enabled = {'true' if self.digipeater.enabled else 'false'}",
@@ -289,6 +310,9 @@ class Config:
             "[web]",
             f'host = "{esc(self.web.host)}"',
             f"port = {int(self.web.port)}",
+            f'font_family = "{esc(self.web.font_family)}"',
+            f"ghost_after_minutes = {int(self.web.ghost_after_minutes)}",
+            f"expire_after_minutes = {int(self.web.expire_after_minutes)}",
             "",
             "[database]",
             f'path = "{esc(self.database.path)}"',
@@ -302,6 +326,12 @@ class Config:
             f"min_stations = {int(self.alerts.min_stations)}",
             f"min_distance_km = {float(self.alerts.min_distance_km)}",
             f"cooldown_seconds = {int(self.alerts.cooldown_seconds)}",
+            f'quiet_start = "{esc(self.alerts.quiet_start)}"',
+            f'quiet_end = "{esc(self.alerts.quiet_end)}"',
+            f"msg_notify_enabled = {'true' if self.alerts.msg_notify_enabled else 'false'}",
+            f"msg_discord_enabled = {'true' if self.alerts.msg_discord_enabled else 'false'}",
+            f"msg_email_enabled = {'true' if self.alerts.msg_email_enabled else 'false'}",
+            f"msg_sms_enabled = {'true' if self.alerts.msg_sms_enabled else 'false'}",
             f"discord_enabled = {'true' if self.alerts.discord_enabled else 'false'}",
             f'discord_webhook_url = "{esc(self.alerts.discord_webhook_url)}"',
             f"email_enabled = {'true' if self.alerts.email_enabled else 'false'}",

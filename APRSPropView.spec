@@ -40,4 +40,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    version='C:\\Users\\NCFI Student\\aprs-propview\\version_info.txt',
+    icon=['C:\\Users\\NCFI Student\\aprs-propview\\ico\\favicon.ico'],
+    manifest='C:\\Users\\NCFI Student\\aprs-propview\\APRSPropView.manifest',
 )

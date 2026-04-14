@@ -4,6 +4,8 @@
 Launch this to start the application. The web interface opens automatically.
 """
 
+APP_VERSION = "1.2.0"
+
 import asyncio
 import sys
 import logging
@@ -94,6 +96,12 @@ async def main():
         min_stations=config.alerts.min_stations,
         min_distance_km=config.alerts.min_distance_km,
         cooldown_seconds=config.alerts.cooldown_seconds,
+        quiet_start=config.alerts.quiet_start,
+        quiet_end=config.alerts.quiet_end,
+        msg_notify_enabled=config.alerts.msg_notify_enabled,
+        msg_discord_enabled=config.alerts.msg_discord_enabled,
+        msg_email_enabled=config.alerts.msg_email_enabled,
+        msg_sms_enabled=config.alerts.msg_sms_enabled,
         discord_enabled=config.alerts.discord_enabled,
         discord_webhook_url=config.alerts.discord_webhook_url,
         email_enabled=config.alerts.email_enabled,
@@ -107,6 +115,7 @@ async def main():
     )
     alert_manager = AlertManager(alert_config, config.station.full_callsign)
     tracker.set_alert_manager(alert_manager)
+    handler.set_alert_manager(alert_manager)
 
     logger.info(f"Alerts: {'enabled' if alert_config.enabled else 'disabled'}")
 
@@ -148,7 +157,7 @@ async def main():
 
     # ── Create web application ──────────────────────────────────────
 
-    app = create_app(config, db, tracker, ws_manager, handler, analytics, alert_manager, aprs_is, weather_manager)
+    app = create_app(config, db, tracker, ws_manager, handler, analytics, alert_manager, aprs_is, weather_manager, app_version=APP_VERSION)
 
     # ── Start background tasks ──────────────────────────────────────
 

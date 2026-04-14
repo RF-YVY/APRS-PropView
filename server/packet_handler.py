@@ -42,6 +42,9 @@ class PacketHandler:
         self.aprs_is = None
         self.rf_interfaces = []
 
+        # Alert manager (set later via set_alert_manager)
+        self._alert_manager = None
+
         # Message store — newest first
         self._messages: deque = deque(maxlen=MAX_MESSAGE_HISTORY)
         self._msg_id_counter = 1
@@ -61,6 +64,10 @@ class PacketHandler:
             "messages_tx": 0,
             "start_time": time.time(),
         }
+
+    def set_alert_manager(self, alert_manager):
+        """Inject the AlertManager for message notifications."""
+        self._alert_manager = alert_manager
 
     def add_rf_interface(self, interface):
         """Register an RF interface (KISS client)."""
@@ -165,7 +172,11 @@ class PacketHandler:
             self._handle_rej(from_call, rej_id)
             return
 
-        # Store message for any addressee (so we can see all traffic)
+        # Only store messages involving our station (from us or to us)
+        # This filters out telemetry and other station-to-station traffic
+        if addressee != my_call and from_call != my_call:
+            return
+
         msg_record = {
             "id": len(self._messages) + 1,
             "timestamp": time.time(),
@@ -191,6 +202,12 @@ class PacketHandler:
                 f"Message RX ({source}): {packet.from_call} → {packet.addressee}: "
                 f"{packet.message_text}"
             )
+
+            # Send message notification via configured channels
+            if self._alert_manager:
+                asyncio.ensure_future(
+                    self._alert_manager.send_message_notification(msg_record)
+                )
 
         self._messages.appendleft(msg_record)
 
@@ -300,6 +317,11 @@ class PacketHandler:
         """Return recent messages (newest first)."""
         return list(self._messages)[:limit]
 
+    def clear_messages(self):
+        """Clear all stored messages."""
+        self._messages.clear()
+        self._acked_ids.clear()
+
     async def _transmit_rf(self, frame: AX25Frame):
         """Transmit an AX.25 frame on all RF interfaces."""
         encoded = frame.encode()
@@ -328,6 +350,7 @@ class PacketHandler:
                 interval = self.config.station.beacon_interval
                 if interval <= 0:
                     # Beaconing disabled — check again after a while
+                    logger.debug("Beaconing disabled (interval=0)")
                     await asyncio.sleep(60)
                     continue
 
@@ -339,18 +362,20 @@ class PacketHandler:
                     )
                     interval = 600
 
+                logger.info(f"Sending beacon (next in {interval}s / {interval // 60}min)")
                 await self._send_beacon()
                 await asyncio.sleep(interval)
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Beacon error: {e}")
+                logger.error(f"Beacon error: {e}", exc_info=True)
                 await asyncio.sleep(60)
 
     async def _send_beacon(self):
         """Send our position beacon on RF and APRS-IS."""
         cfg = self.config.station
         if cfg.latitude == 0.0 and cfg.longitude == 0.0:
+            logger.debug("Beacon skipped — no position set (0,0)")
             return
 
         info = make_position_packet(
@@ -369,15 +394,29 @@ class PacketHandler:
             frame = AX25Frame()
             frame.source = AX25Address.from_string(cfg.full_callsign)
             frame.destination = AX25Address.from_string("APRSPV")
-            frame.digipeaters = [AX25Address.from_string("WIDE1-1")]
+
+            # Build digipeater path from config (e.g. "WIDE1-1,WIDE2-1")
+            path_str = (cfg.beacon_path or "").strip()
+            if path_str:
+                frame.digipeaters = [
+                    AX25Address.from_string(hop.strip())
+                    for hop in path_str.split(",")
+                    if hop.strip()
+                ]
+            else:
+                frame.digipeaters = []
+
             frame.info = info.encode("ascii")
             await self._transmit_rf(frame)
+            logger.info(f"Beacon RF TX: {cfg.full_callsign}>APRSPV via {path_str or 'DIRECT'}")
 
         # Beacon on APRS-IS
         if self.aprs_is and self.aprs_is.connected:
             await self.aprs_is.send_position()
+            logger.info("Beacon APRS-IS TX")
 
-        logger.info("Beacon sent")
+        if not self.rf_interfaces and not (self.aprs_is and self.aprs_is.connected):
+            logger.warning("Beacon: no RF or APRS-IS interfaces available")
 
     def get_status(self) -> dict:
         """Get current system status."""

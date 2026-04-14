@@ -79,7 +79,7 @@
                 html += `<div class="lb-row${p.rank <= 3 ? ' lb-top' : ''}">`;
                 html += `<span class="lb-rank">${medal}</span>`;
                 html += `<span class="lb-call">${_esc(p.callsign)}</span>`;
-                html += `<span class="lb-dist" title="${distMi} mi">${distKm} km</span>`;
+                html += `<span class="lb-dist">${window.formatDist(p.distance_km)}</span>`;
                 html += `<span class="lb-time">${time}</span>`;
                 html += `</div>`;
             });
@@ -103,7 +103,7 @@
             const data = await resp.json();
 
             drawHeatmapChart('heatmap-stations-chart', data.grid, 'avg_stations', 'Avg Stations');
-            drawHeatmapChart('heatmap-distance-chart', data.grid, 'max_distance_km', 'Max Distance (km)');
+            drawHeatmapChart('heatmap-distance-chart', data.grid, 'max_distance_km', `Max Distance (${window.distLabel()})`);
 
         } catch (e) {
             console.error('Heatmap error:', e);
@@ -155,7 +155,8 @@
                 ctx.fillStyle = '#e6edf3';
                 ctx.font = '9px sans-serif';
                 ctx.textAlign = 'center';
-                const displayVal = val >= 100 ? Math.round(val) : val.toFixed(1);
+                const dv = field.includes('distance') ? (window.convertDist ? window.convertDist(val) : val) : val;
+                const displayVal = dv >= 100 ? Math.round(dv) : dv.toFixed(1);
                 ctx.fillText(displayVal, x + barW / 2, y - 3);
             }
         });
@@ -212,7 +213,7 @@
             data.stations.forEach(s => {
                 const gradeClass = `grade-${s.grade.toLowerCase()}`;
                 const intLabel = s.avg_interval_min > 0 ? `${s.avg_interval_min} min` : '—';
-                const distLabel = s.distance_km ? `${s.distance_km} km` : '';
+                const distLabel = s.distance_km ? window.formatDist(s.distance_km) : '';
 
                 html += `<div class="rel-row">`;
                 html += `<span class="rel-grade ${gradeClass}">${s.grade}</span>`;
@@ -251,7 +252,7 @@
                     html += `<div class="best-hour-medal">${medals[i] || ''}</div>`;
                     html += `<div class="best-hour-time">${h.label}</div>`;
                     html += `<div class="best-hour-score">Score: ${h.composite_score}</div>`;
-                    html += `<div class="best-hour-detail">${h.avg_stations} avg stations · ${h.avg_max_distance_km} km max</div>`;
+                    html += `<div class="best-hour-detail">${h.avg_stations} avg stations \u00b7 ${window.formatDist(h.avg_max_distance_km, 0)} max</div>`;
                     html += `</div>`;
                 });
                 html += '</div>';

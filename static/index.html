@@ -4,6 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>APRS PropView — VHF Propagation Monitor</title>
+    <!-- Favicons -->
+    <link rel="icon" type="image/x-icon" href="/static/ico/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/ico/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/ico/favicon-16x16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/ico/apple-touch-icon.png">
+    <link rel="manifest" href="/static/ico/site.webmanifest">
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="/static/css/style.css" />
@@ -38,7 +44,7 @@
             <div class="header-stats">
                 <span title="RF Stations (1h)">RF: <b id="rf-count-1h">0</b></span>
                 <span title="APRS-IS Stations (1h)">IS: <b id="is-count-1h">0</b></span>
-                <span title="Max Distance">Max: <b id="max-distance">0</b> km</span>
+                <span title="Max Distance">Max: <b id="max-distance">0</b> <span class="dist-unit">mi</span></span>
             </div>
         </div>
     </header>
@@ -73,6 +79,7 @@
             <!-- Severe weather alert banners -->
             <div id="wx-alerts-container" class="wx-alerts-container"></div>
             <div id="map"></div>
+            <button id="sidebar-toggle" title="Toggle sidebar">▶</button>
             <div id="map-controls">
                 <button id="btn-center-map" title="Center on my station">📍</button>
                 <button id="btn-toggle-lines" title="Toggle propagation lines" class="active">📏</button>
@@ -81,6 +88,8 @@
                 <div class="map-control-divider"></div>
                 <button id="btn-pick-location" title="Pick station location on map">📌</button>
                 <button id="btn-toggle-theme" title="Toggle light/dark map" class="active">🌙</button>
+                <button id="btn-toggle-labels" title="Toggle station callsign labels">🏷️</button>
+                <button id="btn-toggle-autofit" title="Auto-zoom to fit all stations">🔎</button>
                 <div class="map-control-divider"></div>
                 <select id="line-time-filter" title="Filter lines by time">
                     <option value="1">1h lines</option>
@@ -113,6 +122,7 @@
                 <button class="tab-btn" data-tab="tab-prop">Propagation</button>
                 <button class="tab-btn" data-tab="tab-analytics">📊 Analytics</button>
                 <button class="tab-btn" data-tab="tab-settings">⚙ Settings</button>
+                <button class="tab-btn" data-tab="tab-about">ℹ About</button>
             </div>
 
             <!-- ── RF Stations Tab ───────────────────────────── -->
@@ -130,10 +140,10 @@
                     <label>Max dist:
                         <select id="rf-dist-filter">
                             <option value="0" selected>Any</option>
-                            <option value="50">50 km</option>
-                            <option value="100">100 km</option>
-                            <option value="200">200 km</option>
-                            <option value="500">500 km</option>
+                            <option value="50">31 mi</option>
+                            <option value="100">62 mi</option>
+                            <option value="200">124 mi</option>
+                            <option value="500">311 mi</option>
                         </select>
                     </label>
                     <label>Type:
@@ -223,11 +233,11 @@
                             <div class="prop-card-label">RF Stations (24h)</div>
                         </div>
                         <div class="prop-card">
-                            <div class="prop-card-value" id="prop-max-dist">0 km</div>
+                            <div class="prop-card-value" id="prop-max-dist">0 mi</div>
                             <div class="prop-card-label">Max Distance</div>
                         </div>
                         <div class="prop-card">
-                            <div class="prop-card-value" id="prop-avg-dist">0 km</div>
+                            <div class="prop-card-value" id="prop-avg-dist">0 mi</div>
                             <div class="prop-card-label">Avg Distance</div>
                         </div>
                         <div class="prop-card">
@@ -239,6 +249,13 @@
                     <canvas id="distance-chart" width="380" height="180"></canvas>
                     <h3>Propagation History (24h)</h3>
                     <canvas id="prop-history-chart" width="380" height="180"></canvas>
+
+                    <h3>Solar-Terrestrial Data</h3>
+                    <div class="solar-widget">
+                        <a href="https://www.hamqsl.com/solar.html" target="_blank" rel="noopener" title="Solar-Terrestrial Data — click for details">
+                            <img id="solar-img" src="https://www.hamqsl.com/solarbrief.php" alt="Solar-Terrestrial Data" loading="lazy">
+                        </a>
+                    </div>
                 </div>
             </div>
 
@@ -401,10 +418,19 @@
                             <input type="text" id="cfg-comment" placeholder="APRS PropView">
                         </div>
                         <div class="settings-row">
-                            <label for="cfg-beacon-interval">Beacon Interval (s)</label>
-                            <input type="number" id="cfg-beacon-interval" min="0" max="86400" value="1800">
+                            <label for="cfg-beacon-interval">Beacon Interval (min)</label>
+                            <input type="number" id="cfg-beacon-interval" min="0" max="1440" step="1" value="30">
                         </div>
-                        <p class="settings-hint">&#9432; APRS-IS policy: minimum 600s (10 min) for fixed stations. Set to 0 to disable beacons.</p>
+                        <p class="settings-hint">&#9432; APRS-IS policy: minimum 10 minutes for fixed stations. Set to 0 to disable beacons.</p>
+                        <div class="settings-row">
+                            <label for="cfg-beacon-path">Beacon Path</label>
+                            <select id="cfg-beacon-path">
+                                <option value="">DIRECT (no path)</option>
+                                <option value="WIDE1-1" selected>WIDE1-1</option>
+                                <option value="WIDE1-1,WIDE2-1">WIDE1-1,WIDE2-1</option>
+                                <option value="WIDE1-1,WIDE2-2">WIDE1-1,WIDE2-2</option>
+                            </select>
+                        </div>
                     </div>
 
                     <!-- Digipeater -->
@@ -419,8 +445,8 @@
                             <input type="text" id="cfg-digi-aliases" placeholder="WIDE1-1, WIDE2-1">
                         </div>
                         <div class="settings-row">
-                            <label for="cfg-digi-dedupe">Dedupe Interval (s)</label>
-                            <input type="number" id="cfg-digi-dedupe" min="1" max="300" value="30">
+                            <label for="cfg-digi-dedupe">Dedupe Interval (min)</label>
+                            <input type="number" id="cfg-digi-dedupe" min="0.1" max="5" step="0.1" value="0.5">
                         </div>
                     </div>
 
@@ -526,18 +552,44 @@
                             <label for="cfg-web-port">Port</label>
                             <input type="number" id="cfg-web-port" value="14501">
                         </div>
+                        <div class="settings-row">
+                            <label for="cfg-web-font">Font</label>
+                            <select id="cfg-web-font">
+                                <option value="">System Default</option>
+                                <option value="Inter, sans-serif">Inter</option>
+                                <option value="'Segoe UI', sans-serif">Segoe UI</option>
+                                <option value="Roboto, sans-serif">Roboto</option>
+                                <option value="'Helvetica Neue', Arial, sans-serif">Helvetica Neue</option>
+                                <option value="Arial, sans-serif">Arial</option>
+                                <option value="Verdana, sans-serif">Verdana</option>
+                                <option value="Tahoma, sans-serif">Tahoma</option>
+                                <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+                                <option value="Consolas, monospace">Consolas (Mono)</option>
+                                <option value="'Courier New', monospace">Courier New (Mono)</option>
+                            </select>
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-web-ghost">Ghost After (min)</label>
+                            <input type="number" id="cfg-web-ghost" min="0" max="1440" step="5" value="60">
+                        </div>
+                        <p class="settings-hint" style="color:var(--text-muted);font-size:11px;margin:2px 0 8px 0;">Fade map markers not heard in this many minutes. 0 = disabled.</p>
+                        <div class="settings-row">
+                            <label for="cfg-web-expire">Expire After (min)</label>
+                            <input type="number" id="cfg-web-expire" min="0" max="1440" step="5" value="0">
+                        </div>
+                        <p class="settings-hint" style="color:var(--text-muted);font-size:11px;margin:2px 0 8px 0;">Remove stations from map after this many minutes since last heard. 0 = never expire.</p>
                     </div>
 
                     <!-- Tracking -->
                     <div class="settings-section">
                         <h3>Tracking</h3>
                         <div class="settings-row">
-                            <label for="cfg-track-age">Max Station Age (s)</label>
-                            <input type="number" id="cfg-track-age" value="86400">
+                            <label for="cfg-track-age">Max Station Age (min)</label>
+                            <input type="number" id="cfg-track-age" min="1" step="1" value="1440">
                         </div>
                         <div class="settings-row">
-                            <label for="cfg-track-cleanup">Cleanup Interval (s)</label>
-                            <input type="number" id="cfg-track-cleanup" value="3600">
+                            <label for="cfg-track-cleanup">Cleanup Interval (min)</label>
+                            <input type="number" id="cfg-track-cleanup" min="1" step="1" value="60">
                         </div>
                     </div>
 
@@ -582,27 +634,59 @@
                             <input type="number" id="cfg-alerts-min-stations" min="1" max="100" value="5">
                         </div>
                         <div class="settings-row">
-                            <label for="cfg-alerts-min-dist">Min Max-Distance (km)</label>
+                            <label for="cfg-alerts-min-dist">Min Max-Distance (<span class="dist-unit">mi</span>)</label>
                             <input type="number" id="cfg-alerts-min-dist" min="1" max="2000" value="100">
                         </div>
                         <div class="settings-row">
-                            <label for="cfg-alerts-cooldown">Cooldown (seconds)</label>
-                            <input type="number" id="cfg-alerts-cooldown" min="60" max="86400" value="1800">
+                            <label for="cfg-alerts-cooldown">Cooldown (min)</label>
+                            <input type="number" id="cfg-alerts-cooldown" min="1" max="1440" step="1" value="30">
                         </div>
-                        <h4 style="color:var(--accent-purple);margin:10px 0 6px;">Discord</h4>
                         <div class="settings-row">
-                            <label for="cfg-alerts-discord">Discord Enabled</label>
+                            <label for="cfg-alerts-quiet-start">Quiet Hours Start</label>
+                            <input type="time" id="cfg-alerts-quiet-start" placeholder="22:00">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-alerts-quiet-end">Quiet Hours End</label>
+                            <input type="time" id="cfg-alerts-quiet-end" placeholder="08:00">
+                        </div>
+                        <p class="settings-hint" style="color:var(--text-muted);font-size:11px;margin:2px 0 8px 0;">Suppress all notifications during this window (local time). Leave blank to disable.</p>
+
+                        <h4 style="color:var(--accent-purple);margin:10px 0 6px;">Band Opening Channels</h4>
+                        <p class="settings-hint" style="color:var(--text-muted);font-size:11px;margin:2px 0 8px 0;">Select which channels receive band opening alerts.</p>
+                        <div class="settings-row">
+                            <label for="cfg-alerts-discord">Discord</label>
                             <input type="checkbox" id="cfg-alerts-discord">
                         </div>
+                        <div class="settings-row">
+                            <label for="cfg-alerts-email">Email</label>
+                            <input type="checkbox" id="cfg-alerts-email">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-alerts-sms">SMS</label>
+                            <input type="checkbox" id="cfg-alerts-sms">
+                        </div>
+
+                        <h4 style="color:var(--accent-orange);margin:10px 0 6px;">Message Notification Channels</h4>
+                        <p class="settings-hint" style="color:var(--text-muted);font-size:11px;margin:2px 0 8px 0;">Select which channels receive APRS message notifications. Enable at least one to get notified.</p>
+                        <div class="settings-row">
+                            <label for="cfg-alerts-msg-discord">Discord</label>
+                            <input type="checkbox" id="cfg-alerts-msg-discord">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-alerts-msg-email">Email</label>
+                            <input type="checkbox" id="cfg-alerts-msg-email">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-alerts-msg-sms">SMS</label>
+                            <input type="checkbox" id="cfg-alerts-msg-sms">
+                        </div>
+
+                        <h4 style="color:var(--accent-purple);margin:10px 0 6px;">Discord Settings</h4>
                         <div class="settings-row">
                             <label for="cfg-alerts-discord-url">Webhook URL</label>
                             <input type="text" id="cfg-alerts-discord-url" placeholder="https://discord.com/api/webhooks/...">
                         </div>
-                        <h4 style="color:var(--accent-orange);margin:10px 0 6px;">Email</h4>
-                        <div class="settings-row">
-                            <label for="cfg-alerts-email">Email Enabled</label>
-                            <input type="checkbox" id="cfg-alerts-email">
-                        </div>
+                        <h4 style="color:var(--accent-orange);margin:10px 0 6px;">Email Settings</h4>
                         <div class="settings-row">
                             <label for="cfg-alerts-smtp">SMTP Server</label>
                             <input type="text" id="cfg-alerts-smtp" placeholder="smtp.gmail.com">
@@ -623,11 +707,7 @@
                             <label for="cfg-alerts-email-pw">Email Password</label>
                             <input type="password" id="cfg-alerts-email-pw" placeholder="App password">
                         </div>
-                        <h4 style="color:var(--accent-green);margin:10px 0 6px;">SMS (Email-to-SMS Gateway)</h4>
-                        <div class="settings-row">
-                            <label for="cfg-alerts-sms">SMS Enabled</label>
-                            <input type="checkbox" id="cfg-alerts-sms">
-                        </div>
+                        <h4 style="color:var(--accent-green);margin:10px 0 6px;">SMS Settings (Email-to-SMS Gateway)</h4>
                         <div class="settings-row">
                             <label for="cfg-alerts-sms-addr">Gateway Address</label>
                             <input type="text" id="cfg-alerts-sms-addr" placeholder="5551234567@tmomail.net">
@@ -637,6 +717,40 @@
                     <div class="settings-actions">
                         <button id="btn-save-settings" class="btn-primary">💾 Save Configuration</button>
                         <p class="settings-note">Most settings apply immediately. KISS and web host/port changes require a restart.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── About Tab ─────────────────────────────────── -->
+            <div id="tab-about" class="tab-content">
+                <div class="about-panel">
+                    <div class="about-header">
+                        <h2>APRS PropView</h2>
+                        <span id="about-version" class="about-version">v1.1.0</span>
+                    </div>
+                    <div class="about-section">
+                        <p>A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions.</p>
+                    </div>
+                    <div class="about-section">
+                        <h3>Created By</h3>
+                        <p>Brett Wicker &amp; AI Agent</p>
+                        <p class="about-company">Wicker Made, LLC</p>
+                    </div>
+                    <div class="about-section">
+                        <h3>Contact</h3>
+                        <p><a href="mailto:madebywicker@gmail.com" class="about-link">madebywicker@gmail.com</a></p>
+                    </div>
+                    <div class="about-section">
+                        <h3>Build Info</h3>
+                        <p>Version: <span id="about-version-detail">1.1.0</span></p>
+                        <p>Release Date: <span id="about-date">April 14, 2026</span></p>
+                    </div>
+                    <div class="about-section">
+                        <h3>License</h3>
+                        <p>MIT</p>
+                    </div>
+                    <div class="about-section" style="text-align:center;margin-top:12px;">
+                        <button id="btn-open-help" class="btn-primary" style="font-size:14px;padding:10px 28px;">📖 Help &amp; User Guide</button>
                     </div>
                 </div>
             </div>
@@ -673,6 +787,130 @@
             <div id="icon-picker-grid" class="icon-picker-grid"></div>
             <div class="modal-footer">
                 <span id="icon-picker-selection" class="icon-selection-info">Click an icon to select</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Help Modal ──────────────────────────────────────────── -->
+    <div id="help-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-content help-modal">
+            <div class="modal-header">
+                <h3>📖 APRS PropView — Help &amp; User Guide</h3>
+                <button id="help-modal-close" class="modal-close">&times;</button>
+            </div>
+            <div class="help-body">
+
+                <section class="help-section">
+                    <h3>Overview</h3>
+                    <p>APRS PropView is a real-time APRS digipeater and Internet Gateway (IGate) application focused on visualizing VHF propagation conditions. It decodes APRS packets from RF (via a TNC) and from the APRS-IS network, plots stations on a live map, draws signal paths, and scores current propagation quality.</p>
+                </section>
+
+                <section class="help-section">
+                    <h3>🗺️ Map</h3>
+                    <p>The central map shows your station (blue dot), RF stations (red border), and APRS-IS stations (blue border). Propagation lines animate from each RF station toward your position, color-coded by distance:</p>
+                    <ul>
+                        <li><b style="color:#f85149;">Red</b> — &lt; 31 mi (50 km)</li>
+                        <li><b style="color:#d29922;">Orange</b> — 31–62 mi (50–100 km)</li>
+                        <li><b style="color:#3fb950;">Green</b> — 62–124 mi (100–200 km)</li>
+                        <li><b style="color:#bc8cff;">Purple</b> — &gt; 124 mi (200 km) — DX!</li>
+                    </ul>
+                    <p>Small white dots along a path indicate digipeater hops.</p>
+                </section>
+
+                <section class="help-section">
+                    <h3>🎛️ Map Controls</h3>
+                    <table class="help-table">
+                        <tr><td>📍</td><td><b>Center Map</b> — Re-center on your station.</td></tr>
+                        <tr><td>📏</td><td><b>Toggle Lines</b> — Show/hide propagation path lines.</td></tr>
+                        <tr><td>🔴</td><td><b>Toggle RF</b> — Show/hide RF station markers.</td></tr>
+                        <tr><td>🔵</td><td><b>Toggle APRS-IS</b> — Show/hide Internet-heard stations.</td></tr>
+                        <tr><td>📌</td><td><b>Pick Location</b> — Click on the map to set your station coordinates.</td></tr>
+                        <tr><td>🌙 / ☀️</td><td><b>Theme</b> — Toggle dark/light map tiles.</td></tr>
+                        <tr><td>🏷️</td><td><b>Callsign Labels</b> — Show/hide callsign text above each station icon.</td></tr>
+                        <tr><td>🔎</td><td><b>Auto-Fit</b> — Automatically zoom to fit all visible stations. Disabled when you manually pan or zoom; click again to re-enable.</td></tr>
+                        <tr><td>⏱️</td><td><b>Line Time Filter</b> — Only show path lines from stations heard within the selected window (1h, 6h, 12h, 24h, or all time).</td></tr>
+                        <tr><td>🏷️ Types ▾</td><td><b>Type Filter</b> — Check/uncheck station categories (Digipeater, Weather, House, Car, etc.) to control which types appear on the map.</td></tr>
+                    </table>
+                    <p>All map toggle states, zoom level, position, and filter selections are saved automatically and persist across restarts.</p>
+                </section>
+
+                <section class="help-section">
+                    <h3>📻 RF Stations &amp; 🌐 APRS-IS Tabs</h3>
+                    <p>Scrollable lists of stations heard on RF or via the APRS-IS network. Each entry shows the station's APRS icon, callsign, distance, heading, last heard time, and packet count. Use the filter dropdowns to narrow by time window, distance range, or station type.</p>
+                </section>
+
+                <section class="help-section">
+                    <h3>📦 Packets Tab</h3>
+                    <p>A live feed of decoded APRS packets. Each entry shows the source (RF or IS), timestamp, raw packet contents, and decoded fields. Use the source filter dropdown or the Clear button to manage the list.</p>
+                </section>
+
+                <section class="help-section">
+                    <h3>💬 Messages Tab</h3>
+                    <p>Send and receive APRS messages. Type a destination callsign and message text (max 67 characters), then click Send. Incoming messages appear with ack/rej status indicators. Click any received message's callsign to auto-fill the To field for a quick reply.</p>
+                    <p>Message notification channels (Discord, Email, SMS) are configured separately from band-opening alert channels in Settings → Alerts.</p>
+                </section>
+
+                <section class="help-section">
+                    <h3>📊 Propagation Tab</h3>
+                    <p>Real-time propagation scoring with stat cards: RF stations (1h/6h/24h), max distance, average distance, and APRS-IS count. Includes a distance distribution histogram and a 24-hour propagation history chart showing station count and max distance over time.</p>
+                </section>
+
+                <section class="help-section">
+                    <h3>📊 Analytics Tab</h3>
+                    <p>Advanced analysis subtabs:</p>
+                    <ul>
+                        <li><b>Longest Paths</b> — Leaderboard of the greatest distances reached.</li>
+                        <li><b>Heatmap</b> — Time-of-day vs. distance heatmap showing when propagation peaks.</li>
+                        <li><b>Station Reliability</b> — Which stations are heard most consistently.</li>
+                        <li><b>Best Times</b> — Hourly chart showing the best time of day for propagation.</li>
+                        <li><b>Alerts</b> — History of band-opening alerts triggered by the system.</li>
+                    </ul>
+                </section>
+
+                <section class="help-section">
+                    <h3>⚙️ Settings</h3>
+                    <p>All settings are saved to <code>config.toml</code> next to the executable. Some changes (callsign, TNC, APRS-IS) require a restart; the app will notify you.</p>
+                    <h4>Station</h4>
+                    <p>Your callsign, SSID, latitude/longitude (or use the 📌 map picker), APRS symbol, status comment, beacon interval (minutes), and beacon path (e.g. <code>WIDE1-1</code>).</p>
+                    <h4>Digipeater</h4>
+                    <p>Enable/disable the digipeater. Configure which aliases to respond to (<code>WIDE1-1, WIDE2-1</code>) and the de-duplication window to prevent re-digipeating the same packet.</p>
+                    <h4>IGate</h4>
+                    <p>Enable/disable Internet gateway. Choose RF→IS (gate heard RF packets to APRS-IS), IS→RF (gate APRS-IS packets to local RF), or both.</p>
+                    <h4>APRS-IS</h4>
+                    <p>Server/port (default: <code>rotate.aprs2.net:14580</code>), your APRS-IS passcode, range filter in miles (auto-generates the <code>r/lat/lon/km</code> server filter), and any extra filter expressions (e.g. <code>b/CALL</code>).</p>
+                    <h4>KISS Serial / KISS TCP</h4>
+                    <p>Connect to your TNC via serial port (COM port + baud rate) or TCP (host + port). Enable one or both.</p>
+                    <h4>Web Interface</h4>
+                    <p><b>Host/Port</b> — Bind address and port for the web UI (default <code>127.0.0.1:14501</code>). Use <code>0.0.0.0</code> to allow network access.</p>
+                    <p><b>Font</b> — Choose a display font for the entire UI.</p>
+                    <p><b>Ghost After (min)</b> — Stations not heard within this time will fade (pulsing dashed border, reduced opacity). Set to 0 to disable ghosting.</p>
+                    <p><b>Expire After (min)</b> — Stations not heard within this time are completely removed from the map. Set to 0 to never auto-expire. Ghost time should be shorter than expiry time so stations fade before disappearing.</p>
+                    <h4>Tracking</h4>
+                    <p><b>Max Station Age</b> — How long (minutes) to keep a station in the database before cleanup removes it. <b>Cleanup Interval</b> — How often (minutes) to run the cleanup process.</p>
+                    <h4>Alerts — Band Opening Channels</h4>
+                    <p>Trigger an alert when propagation exceeds thresholds (min RF stations + min distance). Cooldown prevents repeated alerts. Quiet hours suppress alerts during specified times. Channels: Discord webhook, Email (SMTP), and SMS via email gateway.</p>
+                    <h4>Alerts — Message Notification Channels</h4>
+                    <p>Separate channel toggles for forwarding incoming APRS messages to Discord, Email, or SMS — independent from band-opening channels.</p>
+                    <h4>Weather</h4>
+                    <p>Enable weather display with an NWS location code (e.g. a US grid point or zone). Severe weather alerts within the configured range will appear as banners above the map. Refresh interval controls how often conditions are fetched.</p>
+                </section>
+
+                <section class="help-section">
+                    <h3>📱 Mobile View</h3>
+                    <p>Access <code>/mobile</code> from a phone browser (e.g. via Tailscale) for a touch-optimized interface with Messages, Map, Stations, Propagation, and About tabs.</p>
+                </section>
+
+                <section class="help-section">
+                    <h3>⌨️ Tips</h3>
+                    <ul>
+                        <li>Distance units (mi/km) can be toggled via the button in the map legend — the setting persists across sessions.</li>
+                        <li>All map UI preferences (toggles, filters, zoom, position, theme) are saved automatically to your browser and restored on next launch.</li>
+                        <li>Ghost + Expire work together: set Ghost to 60 min and Expire to 180 min, for example, so stations fade at 1 hour and vanish at 3 hours.</li>
+                        <li>Auto-Fit zoom (🔎) will keep all visible stations in view and zoom back in as stations expire. It pauses when you manually pan or zoom — click the button again to re-enable.</li>
+                        <li>The propagation score is calculated from RF station count, maximum distance, and average distance within the last hour.</li>
+                    </ul>
+                </section>
+
             </div>
         </div>
     </div>

@@ -4,6 +4,7 @@ import asyncio
 import logging
 import time
 import json
+from datetime import datetime
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 
@@ -18,6 +19,16 @@ class AlertConfig:
     min_stations: int = 5          # Minimum RF stations in 1h to trigger
     min_distance_km: float = 100.0 # Minimum max-distance to trigger
     cooldown_seconds: int = 1800   # 30 min between alerts
+
+    # Quiet hours (local time, HH:MM 24h)
+    quiet_start: str = ""          # e.g. "22:00"
+    quiet_end: str = ""            # e.g. "08:00"
+
+    # Message notifications
+    msg_notify_enabled: bool = False
+    msg_discord_enabled: bool = False
+    msg_email_enabled: bool = False
+    msg_sms_enabled: bool = False
 
     # Discord webhook
     discord_enabled: bool = False
@@ -46,9 +57,29 @@ class AlertManager:
         self._alert_history: List[Dict[str, Any]] = []
         self._band_open: bool = False
 
+    def _is_quiet_time(self) -> bool:
+        """Check if current local time falls within the quiet window."""
+        qs = self.config.quiet_start.strip()
+        qe = self.config.quiet_end.strip()
+        if not qs or not qe:
+            return False
+        try:
+            now = datetime.now().strftime("%H:%M")
+            if qs <= qe:
+                # Same-day window, e.g. 08:00–18:00
+                return qs <= now < qe
+            else:
+                # Overnight window, e.g. 22:00–08:00
+                return now >= qs or now < qe
+        except Exception:
+            return False
+
     def check_and_alert(self, prop_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Check propagation data against thresholds. Returns alert dict if triggered."""
         if not self.config.enabled:
+            return None
+
+        if self._is_quiet_time():
             return None
 
         now = time.time()
@@ -62,47 +93,51 @@ class AlertManager:
             and max_dist >= self.config.min_distance_km
         )
 
-        # Detect band opening (transition from below to above threshold)
-        if meets_threshold and not self._band_open:
-            self._band_open = True
-
-            # Check cooldown
-            if now - self._last_alert_time < self.config.cooldown_seconds:
-                return None
-
-            self._last_alert_time = now
-
-            alert = {
-                "type": "band_opening",
-                "timestamp": now,
-                "rf_stations": rf_count,
-                "max_distance_km": round(max_dist, 1),
-                "score": round(score, 1),
-                "level": level,
-                "message": (
-                    f"🚨 VHF Band Opening Detected!\n"
-                    f"Station: {self.station_callsign}\n"
-                    f"RF Stations (1h): {rf_count}\n"
-                    f"Max Distance: {max_dist:.1f} km ({max_dist * 0.621371:.1f} mi)\n"
-                    f"Propagation: {level.upper()} (Score: {score:.0f})"
-                ),
-            }
-
-            self._alert_history.append(alert)
-            # Keep only last 100 alerts
-            if len(self._alert_history) > 100:
-                self._alert_history = self._alert_history[-100:]
-
-            return alert
-
-        elif not meets_threshold:
+        if not meets_threshold:
             self._band_open = False
+            return None
 
-        return None
+        # Check cooldown — re-alert after cooldown even if band stays open
+        if now - self._last_alert_time < self.config.cooldown_seconds:
+            return None
+
+        was_open = self._band_open
+        self._band_open = True
+        self._last_alert_time = now
+
+        label = "VHF Band Opening Detected" if not was_open else "VHF Band Still Open"
+
+        alert = {
+            "type": "band_opening",
+            "timestamp": now,
+            "rf_stations": rf_count,
+            "max_distance_km": round(max_dist, 1),
+            "score": round(score, 1),
+            "level": level,
+            "message": (
+                f"🚨 {label}!\n"
+                f"Station: {self.station_callsign}\n"
+                f"RF Stations (1h): {rf_count}\n"
+                f"Max Distance: {max_dist:.1f} km ({max_dist * 0.621371:.1f} mi)\n"
+                f"Propagation: {level.upper()} (Score: {score:.0f})"
+            ),
+        }
+
+        self._alert_history.append(alert)
+        # Keep only last 100 alerts
+        if len(self._alert_history) > 100:
+            self._alert_history = self._alert_history[-100:]
+
+        return alert
 
     async def send_alert(self, alert: Dict[str, Any]):
         """Send alert via all configured channels."""
         tasks = []
+
+        logger.info(
+            f"send_alert called — discord={self.config.discord_enabled}, "
+            f"email={self.config.email_enabled}, sms={self.config.sms_enabled}"
+        )
 
         if self.config.discord_enabled and self.config.discord_webhook_url:
             tasks.append(self._send_discord(alert))
@@ -113,11 +148,14 @@ class AlertManager:
         if self.config.sms_enabled and self.config.sms_gateway_address:
             tasks.append(self._send_sms(alert))
 
-        if tasks:
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            for i, result in enumerate(results):
-                if isinstance(result, Exception):
-                    logger.error(f"Alert send error: {result}")
+        if not tasks:
+            logger.warning("Alert triggered but no notification channels are configured/enabled")
+            return
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error(f"Alert channel {i} failed: {result}", exc_info=result)
 
     async def _send_discord(self, alert: Dict[str, Any]):
         """Send alert to Discord webhook."""
@@ -142,12 +180,14 @@ class AlertManager:
             req = urllib.request.Request(
                 self.config.discord_webhook_url,
                 data=payload,
-                headers={"Content-Type": "application/json"},
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "APRSPropView/1.0",
+                },
                 method="POST",
             )
 
-            # Run in executor to avoid blocking
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             ctx = ssl.create_default_context()
             await loop.run_in_executor(
                 None,
@@ -156,7 +196,8 @@ class AlertManager:
             logger.info("Discord alert sent successfully")
 
         except Exception as e:
-            logger.error(f"Discord alert failed: {e}")
+            logger.error(f"Discord alert failed: {e}", exc_info=True)
+            raise
 
     async def _send_email(self, alert: Dict[str, Any]):
         """Send alert via email SMTP."""
@@ -169,20 +210,32 @@ class AlertManager:
             msg["From"] = self.config.email_from
             msg["To"] = self.config.email_to
 
-            loop = asyncio.get_event_loop()
+            smtp_server = self.config.email_smtp_server
+            smtp_port = self.config.email_smtp_port
+            email_from = self.config.email_from
+            email_pw = self.config.email_password
+
+            loop = asyncio.get_running_loop()
 
             def _send():
-                with smtplib.SMTP(self.config.email_smtp_server, self.config.email_smtp_port, timeout=15) as server:
-                    server.starttls()
-                    if self.config.email_password:
-                        server.login(self.config.email_from, self.config.email_password)
-                    server.send_message(msg)
+                if smtp_port == 465:
+                    with smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=15) as server:
+                        if email_pw:
+                            server.login(email_from, email_pw)
+                        server.send_message(msg)
+                else:
+                    with smtplib.SMTP(smtp_server, smtp_port, timeout=15) as server:
+                        server.starttls()
+                        if email_pw:
+                            server.login(email_from, email_pw)
+                        server.send_message(msg)
 
             await loop.run_in_executor(None, _send)
             logger.info(f"Email alert sent to {self.config.email_to}")
 
         except Exception as e:
-            logger.error(f"Email alert failed: {e}")
+            logger.error(f"Email alert failed: {e}", exc_info=True)
+            raise
 
     async def _send_sms(self, alert: Dict[str, Any]):
         """Send SMS via email-to-SMS gateway."""
@@ -190,7 +243,6 @@ class AlertManager:
             import smtplib
             from email.mime.text import MIMEText
 
-            # SMS messages should be short
             sms_text = (
                 f"VHF BAND OPENING! "
                 f"RF:{alert['rf_stations']} "
@@ -203,20 +255,155 @@ class AlertManager:
             msg["From"] = self.config.email_from
             msg["To"] = self.config.sms_gateway_address
 
-            loop = asyncio.get_event_loop()
+            smtp_server = self.config.email_smtp_server
+            smtp_port = self.config.email_smtp_port
+            email_from = self.config.email_from
+            email_pw = self.config.email_password
+
+            loop = asyncio.get_running_loop()
 
             def _send():
-                with smtplib.SMTP(self.config.email_smtp_server, self.config.email_smtp_port, timeout=15) as server:
-                    server.starttls()
-                    if self.config.email_password:
-                        server.login(self.config.email_from, self.config.email_password)
-                    server.send_message(msg)
+                if smtp_port == 465:
+                    with smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=15) as server:
+                        if email_pw:
+                            server.login(email_from, email_pw)
+                        server.send_message(msg)
+                else:
+                    with smtplib.SMTP(smtp_server, smtp_port, timeout=15) as server:
+                        server.starttls()
+                        if email_pw:
+                            server.login(email_from, email_pw)
+                        server.send_message(msg)
 
             await loop.run_in_executor(None, _send)
             logger.info(f"SMS alert sent to {self.config.sms_gateway_address}")
 
         except Exception as e:
-            logger.error(f"SMS alert failed: {e}")
+            logger.error(f"SMS alert failed: {e}", exc_info=True)
+            raise
+
+    async def send_message_notification(self, msg: Dict[str, Any]):
+        """Send notification when an APRS message is received for our station."""
+        if not self.config.msg_notify_enabled:
+            return
+        if self._is_quiet_time():
+            return
+
+        from_call = msg.get("from", "???")
+        text = msg.get("text", "")
+        source = msg.get("source", "?")
+
+        alert = {
+            "type": "message_received",
+            "timestamp": time.time(),
+            "message": (
+                f"\U0001f4ac APRS Message Received\n"
+                f"From: {from_call} ({source.upper()})\n"
+                f"To: {self.station_callsign}\n"
+                f"Message: {text}"
+            ),
+            # Fields needed by _send_discord embed
+            "rf_stations": 0,
+            "max_distance_km": 0,
+            "score": 0,
+            "level": "message",
+        }
+
+        tasks = []
+        if self.config.msg_discord_enabled and self.config.discord_webhook_url:
+            tasks.append(self._send_discord_message(alert, from_call, text, source))
+        if self.config.msg_email_enabled and self.config.email_smtp_server:
+            tasks.append(self._send_email(alert))
+        if self.config.msg_sms_enabled and self.config.sms_gateway_address:
+            tasks.append(self._send_sms_message(from_call, text))
+
+        if not tasks:
+            return
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error(f"Message notification channel {i} failed: {result}", exc_info=result)
+
+    async def _send_discord_message(self, alert: Dict[str, Any], from_call: str, text: str, source: str):
+        """Send incoming message notification to Discord."""
+        try:
+            import urllib.request
+            import ssl
+
+            payload = json.dumps({
+                "content": alert["message"],
+                "embeds": [{
+                    "title": "\U0001f4ac APRS Message Received",
+                    "color": 0x58A6FF,
+                    "fields": [
+                        {"name": "From", "value": from_call, "inline": True},
+                        {"name": "Source", "value": source.upper(), "inline": True},
+                        {"name": "Message", "value": text or "(empty)", "inline": False},
+                    ],
+                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(alert["timestamp"])),
+                }],
+            }).encode("utf-8")
+
+            req = urllib.request.Request(
+                self.config.discord_webhook_url,
+                data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "APRSPropView/1.0",
+                },
+                method="POST",
+            )
+
+            loop = asyncio.get_running_loop()
+            ctx = ssl.create_default_context()
+            await loop.run_in_executor(
+                None,
+                lambda: urllib.request.urlopen(req, context=ctx, timeout=10),
+            )
+            logger.info("Discord message notification sent")
+        except Exception as e:
+            logger.error(f"Discord message notification failed: {e}", exc_info=True)
+            raise
+
+    async def _send_sms_message(self, from_call: str, text: str):
+        """Send incoming message notification via SMS."""
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+
+            sms_text = f"APRS MSG from {from_call}: {text}"[:160]
+
+            msg = MIMEText(sms_text)
+            msg["Subject"] = ""
+            msg["From"] = self.config.email_from
+            msg["To"] = self.config.sms_gateway_address
+
+            smtp_server = self.config.email_smtp_server
+            smtp_port = self.config.email_smtp_port
+            email_from = self.config.email_from
+            email_pw = self.config.email_password
+
+            loop = asyncio.get_running_loop()
+
+            def _send():
+                if smtp_port == 465:
+                    with smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=15) as server:
+                        if email_pw:
+                            server.login(email_from, email_pw)
+                        server.send_message(msg)
+                else:
+                    with smtplib.SMTP(smtp_server, smtp_port, timeout=15) as server:
+                        server.starttls()
+                        if email_pw:
+                            server.login(email_from, email_pw)
+                        server.send_message(msg)
+
+            await loop.run_in_executor(None, _send)
+            logger.info(f"SMS message notification sent to {self.config.sms_gateway_address}")
+        except Exception as e:
+            logger.error(f"SMS message notification failed: {e}", exc_info=True)
+            raise
 
     def get_alert_history(self) -> List[Dict[str, Any]]:
         """Return recent alert history."""

@@ -87,10 +87,10 @@ def _validate_config(body: Dict[str, Any]) -> Optional[str]:
             try:
                 bi = int(bi)
                 if bi < 0 or bi > 86400:
-                    return "Beacon interval must be 0-86400 seconds."
+                    return "Beacon interval must be 0–1440 minutes (0 disables)."
                 # APRS-IS policy: minimum 600s (10 min) for beacons
                 if 0 < bi < 600:
-                    return "Beacon interval must be at least 600 seconds (10 minutes) per APRS-IS usage policy. Set to 0 to disable beacons."
+                    return "Beacon interval must be at least 10 minutes per APRS-IS usage policy. Set to 0 to disable beacons."
             except (ValueError, TypeError):
                 return "Beacon interval must be a number."
         # Validate symbol chars (single printable ASCII)
@@ -180,10 +180,11 @@ def create_app(
     alert_manager: AlertManager = None,
     aprs_is: APRSISClient = None,
     weather_manager: WeatherManager = None,
+    app_version: str = "1.0.0",
 ) -> FastAPI:
     """Create and configure the FastAPI application."""
 
-    app = FastAPI(title="APRS PropView", version="1.0.0")
+    app = FastAPI(title="APRS PropView", version=app_version)
 
     # ── CORS — restrict to same-origin only ──────────────────────────
     web_origin = f"http://{config.web.host}:{config.web.port}"
@@ -201,6 +202,14 @@ def create_app(
     @app.get("/")
     async def index():
         return FileResponse(str(STATIC_DIR / "index.html"))
+
+    @app.get("/mobile")
+    async def mobile_page():
+        return FileResponse(str(STATIC_DIR / "mobile.html"))
+
+    @app.get("/favicon.ico")
+    async def favicon():
+        return FileResponse(str(STATIC_DIR / "ico" / "favicon.ico"))
 
     # ── WebSocket ───────────────────────────────────────────────────
 
@@ -243,6 +252,10 @@ def create_app(
             ws_manager.disconnect(websocket)
 
     # ── REST API ────────────────────────────────────────────────────
+
+    @app.get("/api/version")
+    async def get_version():
+        return {"version": app_version}
 
     @app.get("/api/status")
     async def get_status():
@@ -317,6 +330,12 @@ def create_app(
     ):
         messages = handler.get_messages(limit=limit)
         return {"messages": messages, "count": len(messages)}
+
+    @app.delete("/api/messages")
+    async def clear_messages():
+        """Clear all stored messages."""
+        handler.clear_messages()
+        return {"success": True, "message": "Messages cleared."}
 
     @app.post("/api/messages/send")
     async def send_message(request: Request):
@@ -470,6 +489,7 @@ def create_app(
                 "symbol_code": config.station.symbol_code,
                 "comment": config.station.comment,
                 "beacon_interval": config.station.beacon_interval,
+                "beacon_path": config.station.beacon_path,
             },
             "digipeater": {
                 "enabled": config.digipeater.enabled,
@@ -501,6 +521,9 @@ def create_app(
             "web": {
                 "host": config.web.host,
                 "port": config.web.port,
+                "font_family": config.web.font_family,
+                "ghost_after_minutes": config.web.ghost_after_minutes,
+                "expire_after_minutes": config.web.expire_after_minutes,
             },
             "database": {
                 "path": config.database.path,
@@ -514,6 +537,12 @@ def create_app(
                 "min_stations": config.alerts.min_stations,
                 "min_distance_km": config.alerts.min_distance_km,
                 "cooldown_seconds": config.alerts.cooldown_seconds,
+                "quiet_start": config.alerts.quiet_start,
+                "quiet_end": config.alerts.quiet_end,
+                "msg_notify_enabled": config.alerts.msg_notify_enabled,
+                "msg_discord_enabled": config.alerts.msg_discord_enabled,
+                "msg_email_enabled": config.alerts.msg_email_enabled,
+                "msg_sms_enabled": config.alerts.msg_sms_enabled,
                 "discord_enabled": config.alerts.discord_enabled,
                 "discord_webhook_url": config.alerts.discord_webhook_url,
                 "email_enabled": config.alerts.email_enabled,
@@ -570,6 +599,7 @@ def create_app(
                 config.station.symbol_code = s.get("symbol_code", config.station.symbol_code)
                 config.station.comment = s.get("comment", config.station.comment)
                 config.station.beacon_interval = int(s.get("beacon_interval", config.station.beacon_interval))
+                config.station.beacon_path = s.get("beacon_path", config.station.beacon_path)
                 live_applied.append("station info & beacon")
 
             # Update digipeater config
@@ -637,6 +667,9 @@ def create_app(
                 w = body["web"]
                 config.web.host = w.get("host", config.web.host)
                 config.web.port = int(w.get("port", config.web.port))
+                config.web.font_family = w.get("font_family", config.web.font_family) or ""
+                config.web.ghost_after_minutes = int(w.get("ghost_after_minutes", config.web.ghost_after_minutes))
+                config.web.expire_after_minutes = int(w.get("expire_after_minutes", config.web.expire_after_minutes))
                 need_restart.append("web host/port")
 
             # Update database config
@@ -659,6 +692,12 @@ def create_app(
                 config.alerts.min_stations = int(al.get("min_stations", config.alerts.min_stations))
                 config.alerts.min_distance_km = float(al.get("min_distance_km", config.alerts.min_distance_km))
                 config.alerts.cooldown_seconds = int(al.get("cooldown_seconds", config.alerts.cooldown_seconds))
+                config.alerts.quiet_start = al.get("quiet_start", config.alerts.quiet_start) or ""
+                config.alerts.quiet_end = al.get("quiet_end", config.alerts.quiet_end) or ""
+                config.alerts.msg_notify_enabled = bool(al.get("msg_notify_enabled", config.alerts.msg_notify_enabled))
+                config.alerts.msg_discord_enabled = bool(al.get("msg_discord_enabled", config.alerts.msg_discord_enabled))
+                config.alerts.msg_email_enabled = bool(al.get("msg_email_enabled", config.alerts.msg_email_enabled))
+                config.alerts.msg_sms_enabled = bool(al.get("msg_sms_enabled", config.alerts.msg_sms_enabled))
                 config.alerts.discord_enabled = bool(al.get("discord_enabled", config.alerts.discord_enabled))
                 config.alerts.discord_webhook_url = al.get("discord_webhook_url", config.alerts.discord_webhook_url)
                 config.alerts.email_enabled = bool(al.get("email_enabled", config.alerts.email_enabled))
@@ -680,6 +719,12 @@ def create_app(
                         min_stations=config.alerts.min_stations,
                         min_distance_km=config.alerts.min_distance_km,
                         cooldown_seconds=config.alerts.cooldown_seconds,
+                        quiet_start=config.alerts.quiet_start,
+                        quiet_end=config.alerts.quiet_end,
+                        msg_notify_enabled=config.alerts.msg_notify_enabled,
+                        msg_discord_enabled=config.alerts.msg_discord_enabled,
+                        msg_email_enabled=config.alerts.msg_email_enabled,
+                        msg_sms_enabled=config.alerts.msg_sms_enabled,
                         discord_enabled=config.alerts.discord_enabled,
                         discord_webhook_url=config.alerts.discord_webhook_url,
                         email_enabled=config.alerts.email_enabled,
