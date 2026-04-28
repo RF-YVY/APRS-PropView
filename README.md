@@ -6,6 +6,8 @@ A real-time APRS digipeater and IGate application focused on visualizing VHF pro
 
 <img width="1915" height="944" alt="Image" src="https://github.com/user-attachments/assets/707a80fd-cfde-486b-808c-12eae8fab351" />
 
+<img width="660" height="1434" alt="Image" src="https://github.com/user-attachments/assets/91327ab2-6687-4eed-b91e-5618036595ea" />
+
 ## Features
 
 ### Core
