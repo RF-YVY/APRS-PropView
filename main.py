@@ -48,6 +48,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger("propview")
 
+# The Windows proactor loop is prone to noisy ConnectionResetError logs when
+# browsers close WebSocket connections abruptly. The selector loop is quieter
+# and works well for this app's socket usage.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 
 # ── System Tray ─────────────────────────────────────────────────────
 
@@ -134,8 +140,10 @@ async def main():
 
     alert_config = AlertConfig(
         enabled=config.alerts.enabled,
-        min_stations=config.alerts.min_stations,
-        min_distance_km=config.alerts.min_distance_km,
+        my_min_stations=config.alerts.my_min_stations,
+        my_min_distance_km=config.alerts.my_min_distance_km,
+        regional_min_stations=config.alerts.regional_min_stations,
+        regional_min_distance_km=config.alerts.regional_min_distance_km,
         cooldown_seconds=config.alerts.cooldown_seconds,
         quiet_start=config.alerts.quiet_start,
         quiet_end=config.alerts.quiet_end,
@@ -156,6 +164,7 @@ async def main():
     )
     alert_manager = AlertManager(alert_config, config.station.full_callsign)
     tracker.set_alert_manager(alert_manager)
+    tracker.set_analytics(analytics)
     handler.set_alert_manager(alert_manager)
 
     logger.info(f"Alerts: {'enabled' if alert_config.enabled else 'disabled'}")
@@ -195,6 +204,25 @@ async def main():
         logger.info(f"Weather: enabled, location={config.weather.location_code}")
     else:
         logger.info("Weather: disabled or no location set")
+
+    # ── MQTT Publisher (optional) ──────────────────────────────────
+
+    mqtt_publisher = None
+    if config.mqtt.enabled:
+        from server.export import MQTTPublisher
+        mqtt_publisher = MQTTPublisher(
+            host=config.mqtt.broker,
+            port=config.mqtt.port,
+            topic_prefix=config.mqtt.topic_prefix,
+            username=config.mqtt.username,
+            password=config.mqtt.password,
+        )
+        connected = await mqtt_publisher.connect()
+        if connected:
+            logger.info(f"MQTT: connected to {config.mqtt.broker}:{config.mqtt.port}")
+        else:
+            logger.warning("MQTT: failed to connect (will retry or check paho-mqtt installation)")
+            mqtt_publisher = None
 
     # ── Create web application ──────────────────────────────────────
 
@@ -267,6 +295,8 @@ async def main():
         logger.info("Shutting down...")
         for task in tasks:
             task.cancel()
+        if mqtt_publisher:
+            await mqtt_publisher.close()
         if aprs_is:
             await aprs_is.close()
         for iface in handler.rf_interfaces:

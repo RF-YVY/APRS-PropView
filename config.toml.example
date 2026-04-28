@@ -8,6 +8,8 @@ latitude = 0.0
 longitude = 0.0
 symbol_table = "/"
 symbol_code = "#"
+phg = ""
+equipment = ""
 comment = "APRS PropView Digi/IGate"
 beacon_interval = 1800  # seconds, 0 to disable
 

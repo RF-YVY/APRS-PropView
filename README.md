@@ -9,10 +9,11 @@ A real-time APRS digipeater and IGate application focused on visualizing VHF pro
 ### Core
 
 - **Digipeater** — WIDEn-N compliant packet digipeating via KISS TNC (serial or TCP)
-- **IGate** — Bidirectional RF ↔ APRS-IS gateway with proper q-construct handling
+- **IGate** — Bidirectional RF ↔ APRS-IS gateway with proper q-construct handling and third-party IS→RF forwarding
 - **RF Station Tracking** — Separate list of stations heard directly on RF
 - **APRS-IS Station Tracking** — Separate list of stations received from APRS-IS
-- **Propagation Map** — Interactive Leaflet map with APRS sprite icons (16px markers, 32px in popup), animated directional path lines, and light/dark theme toggle
+- **Propagation Map** — Interactive Leaflet map with APRS sprite icons (16px markers, 32px in popup), directional arrowed path lines, and light/dark theme toggle
+- **Dual Propagation Meters** — Header gauges: "VHF Propagation My Station" (direct-heard RF only) and "Regional VHF Propagation" (all RF including via digipeater), each with configurable scoring thresholds
 - **Animated Path Lines** — Dashed propagation lines flow from remote stations toward your position, color-coded by distance (red/orange/green/purple)
 - **Callsign Labels** — Toggle persistent callsign labels above each station icon on the map
 - **Auto-Fit Zoom** — Automatically zoom the map to fit all visible stations; zooms back in as stations expire; overridden by manual pan/zoom
@@ -76,10 +77,13 @@ A real-time APRS digipeater and IGate application focused on visualizing VHF pro
 
 ### APRS-IS Policy Compliance
 
+- Lossless APRS packet handling across RF and APRS-IS transports (no UTF-8 re-encoding or trailing-space trimming)
 - Proper amateur callsign format validation (rejects N0CALL, NOCALL, etc.)
 - Minimum 10-minute beacon interval enforced per APRS-IS usage policy
 - Read-only mode: unverified connections (passcode `-1`) cannot transmit or gate
+- RF→IS gating does not deduplicate or suppress traffic except for `NOGATE` / `RFONLY`
 - IS→RF gated packets do not request further digipeating (no WIDE path)
+- IS→RF gated packets use APRS third-party format to avoid loops
 - APRS-IS filter token syntax validation
 - Policy guidance displayed in the settings UI
 
@@ -134,6 +138,7 @@ All settings are in `config.toml` and can be edited from the web UI **Settings**
 | `[web]` | Web interface bind address, port, font, ghost time, expire time |
 | `[tracking]` | Station age limits and cleanup intervals |
 | `[database]` | SQLite database path |
+| `[propagation]` | Scoring thresholds for My Station and Regional propagation meters |
 | `[alerts]` | Band opening thresholds, Discord/email/SMS notification settings |
 | `[weather]` | Weather enabled, location code (zip/ICAO), alert range miles, refresh interval |
 
@@ -198,13 +203,23 @@ aprs-propview/
         └── websocket.js     # WebSocket client
 ```
 
+## Support
+
+If APRS PropView is useful to you, you can support continued development through
+the official donation link:
+
+- [Donate via PayPal](https://www.paypal.com/ncp/payment/2TZHQAECTSDGC)
+
 ## License
 
-MIT
+This project is licensed under the Apache License, Version 2.0. See
+[LICENSE](LICENSE), [NOTICE](NOTICE), and [TRADEMARKS.md](TRADEMARKS.md).
 
 ## About
 
 APRS PropView was created by **Brett Wicker** with the assistance of an **AI agent**.
+
+Official project support: [Donate via PayPal](https://www.paypal.com/ncp/payment/2TZHQAECTSDGC)
 
 **Wicker Made, LLC**\
 Contact: [madebywicker@gmail.com](mailto:madebywicker@gmail.com)

@@ -41,6 +41,7 @@ port = 8001
 [web]
 host = "127.0.0.1"
 port = 14501
+mobile_pin = "2043"
 
 [database]
 path = "propview.db"
