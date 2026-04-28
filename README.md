@@ -9,6 +9,8 @@ A real-time APRS digipeater and IGate application focused on visualizing VHF pro
 
 
 ## >>Mobile Phone View
+Mobile companion designed to allow quick access to sending and recieving messages with brief overview of your stations conditions<br>
+Where ever you and your phone may be. (use of TailScale or similar VPN needed for setup)
 <img width="330" height="717" alt="Image" src="https://github.com/user-attachments/assets/91327ab2-6687-4eed-b91e-5618036595ea" />
 </p>
 
