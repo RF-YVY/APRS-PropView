@@ -191,6 +191,7 @@ async def fetch_current_weather(lat: float, lon: float) -> Optional[Dict[str, An
         "wind_direction": c.get("wind_direction_10m"),
         "wind_gusts_mph": c.get("wind_gusts_10m"),
         "pressure_mb": c.get("pressure_msl"),
+        "surface_pressure_mb": c.get("surface_pressure"),
         "cloud_cover": c.get("cloud_cover"),
         "precipitation_in": c.get("precipitation"),
         "weather_code": code,
@@ -200,6 +201,179 @@ async def fetch_current_weather(lat: float, lon: float) -> Optional[Dict[str, An
         "is_thunderstorm": is_thunderstorm,
         "timestamp": time.time(),
         "timezone": data.get("timezone", ""),
+    }
+
+
+# ── Tropospheric Ducting Index ───────────────────────────────────────
+
+async def fetch_ducting_data(lat: float, lon: float) -> Optional[Dict[str, Any]]:
+    """Fetch atmospheric data and compute a VHF ducting probability index.
+
+    Uses Open-Meteo pressure-level API for temperature at 850 hPa and surface,
+    plus surface humidity and pressure trends. The ducting index (0-100) estimates
+    the likelihood of tropospheric ducting conditions.
+
+    Key factors:
+    - Temperature inversion (surface temp < 850 hPa temp, or small lapse rate)
+    - High surface pressure (> 1020 mb) and rising trend
+    - High relative humidity (moisture gradient aids ducting)
+    - Low wind speed (stable atmosphere)
+    """
+    # Fetch current conditions + hourly pressure for trend + 850 hPa temp
+    url = (
+        f"https://api.open-meteo.com/v1/forecast?"
+        f"latitude={lat:.4f}&longitude={lon:.4f}"
+        f"&current=temperature_2m,relative_humidity_2m,pressure_msl,"
+        f"surface_pressure,wind_speed_10m"
+        f"&hourly=pressure_msl,temperature_850hPa"
+        f"&past_hours=6&forecast_hours=1"
+        f"&temperature_unit=fahrenheit"
+        f"&wind_speed_unit=mph"
+        f"&timezone=auto"
+    )
+    data = await _async_http_get(url, timeout=15)
+    if not data or "current" not in data:
+        return None
+
+    c = data["current"]
+    surface_temp_f = c.get("temperature_2m")
+    humidity = c.get("relative_humidity_2m")
+    pressure_msl = c.get("pressure_msl")
+    wind_speed = c.get("wind_speed_10m", 0)
+
+    # Extract 850 hPa temperature from hourly data (most recent value)
+    temp_850 = None
+    hourly = data.get("hourly", {})
+    temps_850 = hourly.get("temperature_850hPa", [])
+    if temps_850:
+        # Get the last non-null value
+        for t in reversed(temps_850):
+            if t is not None:
+                temp_850 = t
+                break
+
+    # Compute pressure trend from hourly MSL pressure (last 6 hours)
+    pressure_trend = None
+    pressures = hourly.get("pressure_msl", [])
+    if len(pressures) >= 3:
+        valid_pressures = [p for p in pressures if p is not None]
+        if len(valid_pressures) >= 2:
+            pressure_trend = valid_pressures[-1] - valid_pressures[0]
+
+    # ── Ducting index calculation ──────────────────────────────
+    score = 0.0
+    factors = {}
+
+    # 1. Temperature inversion check (0-35 points)
+    # Normal lapse rate: surface should be warmer than 850 hPa
+    # If the difference is small or inverted, ducting is more likely
+    inversion_detected = False
+    if surface_temp_f is not None and temp_850 is not None:
+        # Convert both to same unit for comparison (both already Fahrenheit)
+        lapse = surface_temp_f - temp_850
+        # Normal lapse: surface 20-40°F warmer than 850 hPa (~5000ft)
+        # Inversion: surface cooler than or close to 850 hPa
+        if lapse < 0:
+            # True inversion
+            score += 35
+            inversion_detected = True
+            factors["inversion"] = f"Strong inversion (lapse={lapse:.1f}°F)"
+        elif lapse < 10:
+            score += 25
+            inversion_detected = True
+            factors["inversion"] = f"Weak inversion (lapse={lapse:.1f}°F)"
+        elif lapse < 20:
+            score += 10
+            factors["inversion"] = f"Reduced lapse rate ({lapse:.1f}°F)"
+        else:
+            factors["inversion"] = f"Normal lapse rate ({lapse:.1f}°F)"
+
+    # 2. Surface pressure (0-25 points)
+    # High pressure systems favor ducting
+    if pressure_msl is not None:
+        if pressure_msl >= 1030:
+            score += 25
+            factors["pressure"] = f"Very high ({pressure_msl:.0f} mb)"
+        elif pressure_msl >= 1025:
+            score += 20
+            factors["pressure"] = f"High ({pressure_msl:.0f} mb)"
+        elif pressure_msl >= 1020:
+            score += 12
+            factors["pressure"] = f"Above average ({pressure_msl:.0f} mb)"
+        elif pressure_msl >= 1013:
+            score += 5
+            factors["pressure"] = f"Normal ({pressure_msl:.0f} mb)"
+        else:
+            factors["pressure"] = f"Low ({pressure_msl:.0f} mb)"
+
+    # 3. Pressure trend — rising is favorable (0-15 points)
+    if pressure_trend is not None:
+        if pressure_trend > 3:
+            score += 15
+            factors["trend"] = f"Rising fast (+{pressure_trend:.1f} mb/6h)"
+        elif pressure_trend > 1:
+            score += 10
+            factors["trend"] = f"Rising (+{pressure_trend:.1f} mb/6h)"
+        elif pressure_trend > 0:
+            score += 5
+            factors["trend"] = f"Slight rise (+{pressure_trend:.1f} mb/6h)"
+        elif pressure_trend > -1:
+            factors["trend"] = f"Steady ({pressure_trend:+.1f} mb/6h)"
+        else:
+            factors["trend"] = f"Falling ({pressure_trend:+.1f} mb/6h)"
+
+    # 4. Humidity — moderate to high favors ducting (0-15 points)
+    if humidity is not None:
+        if humidity >= 80:
+            score += 15
+            factors["humidity"] = f"High ({humidity}%)"
+        elif humidity >= 60:
+            score += 10
+            factors["humidity"] = f"Moderate ({humidity}%)"
+        elif humidity >= 40:
+            score += 5
+            factors["humidity"] = f"Low-moderate ({humidity}%)"
+        else:
+            factors["humidity"] = f"Low ({humidity}%)"
+
+    # 5. Wind speed — calm conditions favor stable layers (0-10 points)
+    if wind_speed is not None:
+        if wind_speed < 5:
+            score += 10
+            factors["wind"] = f"Calm ({wind_speed:.0f} mph)"
+        elif wind_speed < 10:
+            score += 7
+            factors["wind"] = f"Light ({wind_speed:.0f} mph)"
+        elif wind_speed < 15:
+            score += 3
+            factors["wind"] = f"Moderate ({wind_speed:.0f} mph)"
+        else:
+            factors["wind"] = f"Strong ({wind_speed:.0f} mph)"
+
+    score = min(score, 100)
+
+    # Classify level
+    if score >= 70:
+        level = "high"
+    elif score >= 45:
+        level = "moderate"
+    elif score >= 20:
+        level = "low"
+    else:
+        level = "minimal"
+
+    return {
+        "ducting_index": round(score, 1),
+        "level": level,
+        "inversion_detected": inversion_detected,
+        "factors": factors,
+        "surface_temp_f": surface_temp_f,
+        "temp_850hPa_f": temp_850,
+        "pressure_mb": pressure_msl,
+        "pressure_trend": round(pressure_trend, 2) if pressure_trend is not None else None,
+        "humidity": humidity,
+        "wind_speed_mph": wind_speed,
+        "timestamp": time.time(),
     }
 
 
@@ -308,8 +482,10 @@ class WeatherManager:
         self._location: Optional[Dict[str, Any]] = None  # resolved lat/lon/name
         self._current: Optional[Dict[str, Any]] = None
         self._alerts: List[Dict[str, Any]] = []
+        self._ducting: Optional[Dict[str, Any]] = None
         self._last_fetch: float = 0
         self._last_alert_fetch: float = 0
+        self._last_ducting_fetch: float = 0
         self._location_code_resolved: str = ""  # last code we resolved
 
     @property
@@ -381,10 +557,30 @@ class WeatherManager:
         self._last_alert_fetch = time.time()
         return self._alerts
 
+    async def get_ducting(self, force: bool = False) -> Optional[Dict[str, Any]]:
+        """Get ducting index data, fetching from API if cache is stale."""
+        if not self.is_configured or not self._location:
+            return None
+
+        # Refresh ducting data every 15 minutes
+        if not force and self._ducting and (time.time() - self._last_ducting_fetch < 900):
+            return self._ducting
+
+        ducting = await fetch_ducting_data(
+            self._location["latitude"],
+            self._location["longitude"],
+        )
+        if ducting:
+            self._ducting = ducting
+            self._last_ducting_fetch = time.time()
+
+        return self._ducting
+
     async def get_all(self, force: bool = False) -> Dict[str, Any]:
-        """Get combined weather + alerts payload."""
+        """Get combined weather + alerts + ducting payload."""
         current = await self.get_current_weather(force=force)
         alerts = await self.get_alerts(force=force)
+        ducting = await self.get_ducting(force=force)
 
         return {
             "enabled": self.config.weather.enabled,
@@ -392,6 +588,7 @@ class WeatherManager:
             "location": self._location,
             "current": current,
             "alerts": alerts,
+            "ducting": ducting,
             "alert_count": len(alerts),
             "warning_count": sum(1 for a in alerts if a["alert_type"] == "warning"),
             "watch_count": sum(1 for a in alerts if a["alert_type"] == "watch"),

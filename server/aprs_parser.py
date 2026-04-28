@@ -507,3 +507,24 @@ def make_position_packet(
         f"{symbol_code}"
         f"{comment}"
     )
+
+
+def build_station_beacon_comment(
+    comment: str = "",
+    phg: str = "",
+    equipment: str = "",
+) -> str:
+    """Build a position comment with optional PHG and equipment text."""
+    parts = []
+    phg_value = (phg or "").strip().upper()
+    equipment_text = (equipment or "").strip()
+    comment_text = (comment or "").strip()
+
+    if phg_value:
+        parts.append(f"PHG{phg_value}")
+    if equipment_text:
+        parts.append(equipment_text)
+    if comment_text:
+        parts.append(comment_text)
+
+    return " ".join(parts)

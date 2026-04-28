@@ -10,6 +10,7 @@ class PropViewMap {
         this.rfMarkers = {};    // callsign -> marker
         this.isMarkers = {};    // callsign -> marker
         this.rfLines = {};      // callsign -> polyline
+        this.rfArrows = {};     // callsign -> [arrowhead markers]
         this.rfLineData = {};   // callsign -> {last_heard, distance_km}
         this.showLines = true;
         this.showRF = true;
@@ -19,6 +20,7 @@ class PropViewMap {
         this.isLayer = null;
         this.lineLayer = null;
         this.rangeCircles = null;
+        this.observedRangeLayer = null;
         this.pickMode = false;
         this.pickMarker = null;
         this.onLocationPicked = null; // callback(lat, lng)
@@ -32,6 +34,8 @@ class PropViewMap {
         this.autoFit = false;      // auto-zoom to fit all stations
         this._userInteracted = false; // true when user manually pans/zooms
         this._autoFitPending = false; // debounce flag
+        this._observedRangeFetchedAt = 0;
+        this._observedRangeRequest = null;
     }
 
     init(lat, lng) {
@@ -140,6 +144,74 @@ class PropViewMap {
         }
     }
 
+    async updateObservedRange(propTimestamp) {
+        if (!this.myPosition) return;
+        const now = Date.now();
+        const cacheMs = 5 * 60 * 1000;
+        const serverTsMs = propTimestamp ? propTimestamp * 1000 : 0;
+        const freshEnough = this._observedRangeFetchedAt && (now - this._observedRangeFetchedAt) < cacheMs;
+        if (freshEnough && (!serverTsMs || serverTsMs <= this._observedRangeFetchedAt)) return;
+        if (this._observedRangeRequest) return this._observedRangeRequest;
+
+        this._observedRangeRequest = (async () => {
+            const resp = await fetch('/api/analytics/observed-range?hours=24');
+            const data = await resp.json();
+
+            // Remove old observed range layer
+            if (this.observedRangeLayer) {
+                this.observedRangeLayer.remove();
+                this.observedRangeLayer = null;
+            }
+
+            if (!data.sectors || data.sectors.length === 0) return;
+
+            const lat = this.myPosition.lat;
+            const lng = this.myPosition.lng;
+
+            // Build polygon from sector max distances
+            const sectorAngles = { 'N': 0, 'NNE': 22.5, 'NE': 45, 'ENE': 67.5, 'E': 90, 'ESE': 112.5, 'SE': 135, 'SSE': 157.5, 'S': 180, 'SSW': 202.5, 'SW': 225, 'WSW': 247.5, 'W': 270, 'WNW': 292.5, 'NW': 315, 'NNW': 337.5 };
+
+            const points = [];
+            data.sectors.forEach(s => {
+                const angleDeg = sectorAngles[s.sector];
+                if (angleDeg === undefined || !s.current_max_km || s.current_max_km <= 0) return;
+
+                // Calculate point at bearing and distance from center
+                const distKm = s.current_max_km;
+                const R = 6371; // Earth radius km
+                const latR = lat * Math.PI / 180;
+                const lngR = lng * Math.PI / 180;
+                const bearing = angleDeg * Math.PI / 180;
+                const d = distKm / R;
+
+                const newLat = Math.asin(Math.sin(latR) * Math.cos(d) + Math.cos(latR) * Math.sin(d) * Math.cos(bearing));
+                const newLng = lngR + Math.atan2(Math.sin(bearing) * Math.sin(d) * Math.cos(latR), Math.cos(d) - Math.sin(latR) * Math.sin(newLat));
+
+                points.push([newLat * 180 / Math.PI, newLng * 180 / Math.PI]);
+            });
+
+            if (points.length < 3) return;
+
+            // Close the polygon
+            points.push(points[0]);
+
+            this.observedRangeLayer = L.polygon(points, {
+                color: 'rgba(63,185,80,0.5)',
+                fillColor: 'rgba(63,185,80,0.08)',
+                weight: 1.5,
+                dashArray: '6 4',
+                interactive: false,
+            }).addTo(this.map);
+            this._observedRangeFetchedAt = Date.now();
+        })().catch((e) => {
+            console.error('Observed range update error:', e);
+        }).finally(() => {
+            this._observedRangeRequest = null;
+        });
+
+        return this._observedRangeRequest;
+    }
+
     addOrUpdateStation(station) {
         if (!station.latitude || !station.longitude) return;
         if (station.latitude === 0 && station.longitude === 0) return;
@@ -175,6 +247,14 @@ class PropViewMap {
 
         const popupSprite = (typeof getAPRSSpriteHTML === 'function') ? getAPRSSpriteHTML(symTable, symCode, 32) : emoji;
 
+        // Determine direct-heard vs via-digi for RF stations
+        const isDirect = source === 'rf' ? this._isDirectPath(station.last_path) : null;
+        const heardViaHtml = isDirect === true
+            ? '<span style="color:#3fb950;font-weight:600;">Direct</span>'
+            : isDirect === false
+                ? '<span style="color:#d29922;font-weight:600;">Via Digipeater</span>'
+                : '';
+
         // Time ago string
         let agoStr = '';
         if (station.last_heard) {
@@ -197,6 +277,7 @@ class PropViewMap {
                 <tr><td class="popup-lbl">Packets</td><td>${countStr}</td></tr>
                 ${station.last_comment ? `<tr><td class="popup-lbl">Comment</td><td>${station.last_comment}</td></tr>` : ''}
                 ${station.last_path ? `<tr><td class="popup-lbl">Path</td><td class="popup-path">${station.last_path}</td></tr>` : ''}
+                ${heardViaHtml ? `<tr><td class="popup-lbl">Via</td><td>${heardViaHtml}</td></tr>` : ''}
                 <tr><td class="popup-lbl">Position</td><td>${lat.toFixed(4)}, ${lng.toFixed(4)}</td></tr>
             </table>
         `;
@@ -261,6 +342,12 @@ class PropViewMap {
             delete this.rfLineData[callsign];
         }
 
+        // Remove arrow markers
+        if (this.rfArrows[callsign]) {
+            this.rfArrows[callsign].forEach(m => this.lineLayer.removeLayer(m));
+            delete this.rfArrows[callsign];
+        }
+
         // Remove hop markers
         if (this.hopMarkers[callsign]) {
             this.hopMarkers[callsign].forEach(m => this.lineLayer.removeLayer(m));
@@ -309,6 +396,7 @@ class PropViewMap {
         this.rfMarkers = {};
         this.isMarkers = {};
         this.rfLines = {};
+        this.rfArrows = {};
         this.rfLineData = {};
         this.hopMarkers = {};
     }
@@ -373,31 +461,36 @@ class PropViewMap {
         // Color based on distance
         let color;
         if (!distance) {
-            color = 'rgba(248, 81, 73, 0.4)';
+            color = '#f85149';
         } else if (distance > 200) {
-            color = 'rgba(188, 140, 255, 0.7)'; // Purple for long DX
+            color = '#bc8cff'; // Purple for long DX
         } else if (distance > 100) {
-            color = 'rgba(63, 185, 80, 0.6)';  // Green for good
+            color = '#3fb950'; // Green for good
         } else if (distance > 50) {
-            color = 'rgba(210, 153, 34, 0.5)';  // Orange for medium
+            color = '#d29922'; // Orange for medium
         } else {
-            color = 'rgba(248, 81, 73, 0.4)';  // Red for close
+            color = '#f85149'; // Red for close
         }
 
         const weight = distance && distance > 100 ? 2.5 : 1.5;
+        const opacity = 0.7;
 
         if (this.rfLines[callsign]) {
             this.rfLines[callsign].setLatLngs(points);
-            this.rfLines[callsign].setStyle({ color, weight, dashArray: '8 6' });
+            this.rfLines[callsign].setStyle({ color, weight, opacity });
         } else {
             this.rfLines[callsign] = L.polyline(points, {
                 color,
                 weight,
-                opacity: 0.8,
-                dashArray: '8 6',
-                className: 'prop-line',
+                opacity,
             }).addTo(this.lineLayer);
         }
+
+        // Update arrowhead markers
+        if (this.rfArrows[callsign]) {
+            this.rfArrows[callsign].forEach(m => this.lineLayer.removeLayer(m));
+        }
+        this.rfArrows[callsign] = this._createArrowheads(points, color, opacity);
 
         // Update hop waypoint markers
         if (this.hopMarkers[callsign]) {
@@ -419,6 +512,72 @@ class PropViewMap {
     }
 
     /**
+     * Determine if an RF station was heard directly (no used digi callsign hops).
+     */
+    _isDirectPath(path) {
+        if (!path) return true;
+        const aliasRe = /^(WIDE|RELAY|TRACE|TCPIP|qA[A-Z])\d?(-\d)?$/i;
+        for (const part of path.split(',')) {
+            const hop = part.trim();
+            if (!hop) continue;
+            if (hop.endsWith('*')) {
+                const call = hop.replace('*', '');
+                if (!aliasRe.test(call)) return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Calculate bearing in degrees from point A to point B.
+     * Returns degrees clockwise from north (CSS: 0° = up).
+     */
+    _bearing(from, to) {
+        const toRad = Math.PI / 180;
+        const lat1 = from.lat * toRad;
+        const lat2 = to.lat * toRad;
+        const dLng = (to.lng - from.lng) * toRad;
+        const y = Math.sin(dLng) * Math.cos(lat2);
+        const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+        return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
+    }
+
+    /**
+     * Create arrowhead triangle markers along a polyline.
+     * Places an arrow at the midpoint of each segment, pointing toward myPos.
+     */
+    _createArrowheads(points, color, opacity) {
+        const arrows = [];
+        for (let i = 0; i < points.length - 1; i++) {
+            const from = L.latLng(points[i]);
+            const to = L.latLng(points[i + 1]);
+            const angle = this._bearing(from, to);
+            const mid = L.latLng(
+                (from.lat + to.lat) / 2,
+                (from.lng + to.lng) / 2
+            );
+            const arrowIcon = L.divIcon({
+                className: 'arrow-icon',
+                html: `<div style="
+                    width: 0; height: 0;
+                    border-left: 6px solid transparent;
+                    border-right: 6px solid transparent;
+                    border-bottom: 10px solid ${color};
+                    opacity: ${opacity};
+                    transform: rotate(${angle}deg);
+                    transform-origin: center center;
+                "></div>`,
+                iconSize: [12, 10],
+                iconAnchor: [6, 5],
+            });
+            arrows.push(
+                L.marker(mid, { icon: arrowIcon, interactive: false }).addTo(this.lineLayer)
+            );
+        }
+        return arrows;
+    }
+
+    /**
      * Set line time filter and re-apply to all lines.
      * @param {number} hours - 0 for all time, otherwise hours
      */
@@ -437,6 +596,7 @@ class PropViewMap {
         if (!line || !data) return;
 
         const hops = this.hopMarkers[callsign] || [];
+        const arrows = this.rfArrows[callsign] || [];
         let visible = true;
 
         if (this.lineTimeFilter !== 0) {
@@ -448,9 +608,11 @@ class PropViewMap {
         if (visible) {
             if (!this.lineLayer.hasLayer(line)) this.lineLayer.addLayer(line);
             hops.forEach(m => { if (!this.lineLayer.hasLayer(m)) this.lineLayer.addLayer(m); });
+            arrows.forEach(m => { if (!this.lineLayer.hasLayer(m)) this.lineLayer.addLayer(m); });
         } else {
             if (this.lineLayer.hasLayer(line)) this.lineLayer.removeLayer(line);
             hops.forEach(m => { if (this.lineLayer.hasLayer(m)) this.lineLayer.removeLayer(m); });
+            arrows.forEach(m => { if (this.lineLayer.hasLayer(m)) this.lineLayer.removeLayer(m); });
         }
     }
 
@@ -504,6 +666,8 @@ class PropViewMap {
                 if (this.lineLayer.hasLayer(line)) this.lineLayer.removeLayer(line);
                 const hops = this.hopMarkers[callsign] || [];
                 hops.forEach(m => { if (this.lineLayer.hasLayer(m)) this.lineLayer.removeLayer(m); });
+                const arrows = this.rfArrows[callsign] || [];
+                arrows.forEach(m => { if (this.lineLayer.hasLayer(m)) this.lineLayer.removeLayer(m); });
             }
         }
     }

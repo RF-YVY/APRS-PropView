@@ -9,8 +9,8 @@
 <title>APRS PropView Mobile</title>
 <link rel="icon" type="image/x-icon" href="/static/ico/favicon.ico">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="/static/js/icons.js"></script>
+<script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script defer src="/static/js/icons.js"></script>
 <style>
 :root {
     --bg: #0d1117;
@@ -41,10 +41,63 @@ html, body {
     padding: 8px 12px; background: var(--bg-card); border-bottom: 1px solid var(--border);
     flex-shrink: 0; min-height: 42px;
 }
+.m-header-left { display: flex; align-items: center; min-width: 0; }
+.m-header-right { display: flex; align-items: center; gap: 8px; }
 .m-header .title { font-size: 14px; font-weight: 600; color: var(--accent-blue); }
 .m-header .status { font-size: 11px; color: var(--text-muted); }
 .m-header .ws-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; background: var(--accent-red); vertical-align: middle; }
 .m-header .ws-dot.ok { background: var(--accent-green); }
+.m-header .is-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 8px; border-radius: 999px; border: 1px solid var(--border);
+    font-size: 10px; background: var(--bg-input); color: var(--text);
+}
+.m-header .is-chip .label { color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
+.m-header .is-chip.online { border-color: rgba(63,185,80,.45); }
+.m-header .is-chip.online .value { color: var(--accent-green); }
+.m-header .is-chip.read-only { border-color: rgba(210,153,34,.45); }
+.m-header .is-chip.read-only .value { color: var(--accent-orange); }
+.m-header .is-chip.reconnecting,
+.m-header .is-chip.offline { border-color: rgba(248,81,73,.45); }
+.m-header .is-chip.reconnecting .value,
+.m-header .is-chip.offline .value { color: var(--accent-red); }
+.m-quick-actions {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+.m-quick-actions button {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 8px 6px;
+    cursor: pointer;
+    position: relative;
+}
+.m-quick-actions button.active { border-color: var(--accent-blue); color: var(--accent-blue); background: rgba(88,166,255,0.08); }
+.m-quick-actions button:active { opacity: 0.7; }
+.m-quick-actions .qa-badge {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    min-width: 16px;
+    height: 16px;
+    line-height: 16px;
+    border-radius: 999px;
+    background: var(--accent-red);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 0 4px;
+    display: none;
+}
 .m-content { flex: 1; overflow: hidden; position: relative; }
 .m-tab { display: none; height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .m-tab.active { display: flex; flex-direction: column; }
@@ -99,6 +152,16 @@ html, body {
 }
 .msg-compose button:active { opacity: 0.7; }
 .msg-empty { color: var(--text-muted); text-align: center; padding: 40px 20px; font-size: 13px; }
+.m-empty {
+    margin: 10px 8px;
+    padding: 14px 12px;
+    border: 1px dashed rgba(88,166,255,0.18);
+    border-radius: 12px;
+    background: rgba(28,33,40,0.55);
+    color: var(--text-muted);
+}
+.m-empty .title { color: var(--text); font-weight: 700; font-size: 13px; margin-bottom: 4px; }
+.m-empty .copy { font-size: 12px; line-height: 1.45; }
 .msg-filter-bar {
     display: flex; gap: 4px; padding: 6px 8px; background: var(--bg-card);
     border-bottom: 1px solid var(--border); flex-shrink: 0;
@@ -204,13 +267,24 @@ html, body {
 <div class="m-app" id="m-app" style="display:none;">
     <!-- Header -->
     <div class="m-header">
-        <span class="title">📡 APRS PropView</span>
-        <span class="status"><span class="ws-dot" id="m-ws-dot"></span><span id="m-call">—</span></span>
+        <div class="m-header-left">
+            <span class="title">📡 APRS PropView</span>
+        </div>
+        <div class="m-header-right">
+            <span id="m-is-chip" class="is-chip offline"><span class="label">IS</span><span id="m-is-text" class="value">Offline</span></span>
+            <span class="status"><span class="ws-dot" id="m-ws-dot"></span><span id="m-call">—</span></span>
+        </div>
     </div>
 
     <!-- Weather banners -->
     <div class="wx-alert" id="m-wx-alert"></div>
     <div class="wx-banner" id="m-wx-banner"></div>
+    <div class="m-quick-actions">
+        <button type="button" data-quick-tab="mtab-messages">Messages<span class="qa-badge" id="m-qa-msg-badge">0</span></button>
+        <button type="button" data-quick-tab="mtab-map">Map</button>
+        <button type="button" id="m-btn-center">Center Me</button>
+        <button type="button" data-quick-tab="mtab-stations">Stations</button>
+    </div>
 
     <!-- Content panels -->
     <div class="m-content">
@@ -357,6 +431,9 @@ html, body {
 })();
 
 // ── State ──────────────────────────────────────────────────
+const MOBILE_TAB_KEY = 'pvMobileTab';
+const MOBILE_MSG_FILTER_KEY = 'pvMobileMsgFilter';
+
 const S = {
     ws: null, connected: false, myCall: '', messages: [], msgFilter: 'all',
     rfStations: {}, isStations: {},
@@ -364,38 +441,61 @@ const S = {
     rfLayer: null, isLayer: null, myMarker: null, myPos: null,
     startTime: 0, ghostMinutes: 60, stationMeta: {},
     unreadCount: 0, activeTab: 'mtab-messages', propData: null,
+    messagesLoaded: false, stationsLoaded: false, replyContext: null,
+    aprsIsConnected: false, aprsIsVerified: false,
 };
 
 // ── Helpers ────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
 function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 function timeAgo(ts) {
-    if (!ts) return '—';
+    if (!ts) return '--';
     const s = Math.floor(Date.now() / 1000 - ts);
     if (s < 60) return s + 's';
     if (s < 3600) return Math.floor(s / 60) + 'm';
     if (s < 86400) return Math.floor(s / 3600) + 'h';
     return Math.floor(s / 86400) + 'd';
 }
-function fmtDist(km) { if (!km) return '—'; return (km * 0.621371).toFixed(1) + ' mi'; }
+function fmtDist(km) { if (!km) return '--'; return (km * 0.621371).toFixed(1) + ' mi'; }
 function fmtTime(ts) { if (!ts) return ''; return new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+function syncQuickActions() {
+    document.querySelectorAll('.m-quick-actions button[data-quick-tab]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.quickTab === S.activeTab);
+    });
+}
+function syncMsgFilterButtons() {
+    document.querySelectorAll('.msg-filter-bar button[data-f]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.f === S.msgFilter);
+    });
+}
 
 // ── Tab switching ──────────────────────────────────────────
-document.querySelector('.m-nav').addEventListener('click', e => {
-    const btn = e.target.closest('button[data-tab]');
-    if (!btn) return;
-    const tab = btn.dataset.tab;
+function activateTab(tab) {
     S.activeTab = tab;
+    localStorage.setItem(MOBILE_TAB_KEY, tab);
 
     document.querySelectorAll('.m-nav button').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
+    document.querySelector(`.m-nav button[data-tab="${tab}"]`)?.classList.add('active');
     document.querySelectorAll('.m-tab').forEach(t => t.classList.remove('active'));
     $(tab)?.classList.add('active');
+    syncQuickActions();
 
     if (tab === 'mtab-map' && !S.mapReady) initMap();
     if (tab === 'mtab-map' && S.map) setTimeout(() => S.map.invalidateSize(), 50);
     if (tab === 'mtab-messages') { S.unreadCount = 0; updateBadge(); }
     if (tab === 'mtab-prop') loadLeaderboard();
+}
+
+document.querySelector('.m-nav').addEventListener('click', e => {
+    const btn = e.target.closest('button[data-tab]');
+    if (!btn) return;
+    activateTab(btn.dataset.tab);
+});
+
+document.querySelector('.m-quick-actions').addEventListener('click', e => {
+    const btn = e.target.closest('button[data-quick-tab]');
+    if (!btn) return;
+    activateTab(btn.dataset.quickTab);
 });
 
 // ── Message filter ─────────────────────────────────────────
@@ -403,8 +503,8 @@ document.querySelector('.msg-filter-bar').addEventListener('click', e => {
     const btn = e.target.closest('button[data-f]');
     if (!btn) return;
     S.msgFilter = btn.dataset.f;
-    document.querySelectorAll('.msg-filter-bar button').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
+    localStorage.setItem(MOBILE_MSG_FILTER_KEY, S.msgFilter);
+    syncMsgFilterButtons();
     renderMessages();
 });
 
@@ -412,20 +512,25 @@ document.querySelector('.msg-filter-bar').addEventListener('click', e => {
 $('m-btn-send').addEventListener('click', sendMsg);
 $('m-msg-text').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); sendMsg(); } });
 $('m-msg-to').addEventListener('input', e => { e.target.value = e.target.value.toUpperCase(); });
+$('m-msg-to').addEventListener('input', e => {
+    const to = e.target.value.trim().toUpperCase();
+    if (S.replyContext && to !== S.replyContext.to) S.replyContext = null;
+});
 
 async function sendMsg() {
     const to = $('m-msg-to').value.trim().toUpperCase();
     const text = $('m-msg-text').value.trim();
+    const replySource = S.replyContext && S.replyContext.to === to ? S.replyContext.source : '';
     if (!to || !text) return;
     $('m-btn-send').disabled = true;
     try {
         const r = await fetch('/api/messages/send', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ to, text }),
+            body: JSON.stringify({ to, text, reply_source: replySource || undefined }),
         });
         const j = await r.json();
-        if (j.success) { $('m-msg-text').value = ''; $('m-msg-text').focus(); }
+        if (j.success) { $('m-msg-text').value = ''; S.replyContext = null; $('m-msg-text').focus(); }
         else alert(j.message || 'Send failed');
     } catch { alert('Network error'); }
     finally { $('m-btn-send').disabled = false; }
@@ -434,8 +539,12 @@ async function sendMsg() {
 // ── Tap message to reply ───────────────────────────────────
 $('m-msg-list').addEventListener('click', e => {
     const bub = e.target.closest('.msg-bubble');
-    if (!bub || !bub.dataset.from) return;
-    $('m-msg-to').value = bub.dataset.from.toUpperCase();
+    if (!bub || !bub.dataset.replyCall) return;
+    $('m-msg-to').value = bub.dataset.replyCall.toUpperCase();
+    S.replyContext = {
+        to: bub.dataset.replyCall.toUpperCase(),
+        source: bub.dataset.replySource || '',
+    };
     $('m-msg-text').focus();
 });
 
@@ -447,7 +556,17 @@ function renderMessages() {
     else if (S.msgFilter === 'rx') msgs = msgs.filter(m => m.direction === 'rx');
     else if (S.msgFilter === 'tx') msgs = msgs.filter(m => m.direction === 'tx');
 
-    if (!msgs.length) { list.innerHTML = '<div class="msg-empty">No messages yet.</div>'; return; }
+    if (!msgs.length) {
+        if (!S.messagesLoaded) {
+            list.innerHTML = '<div class="m-empty"><div class="title">Loading messages</div><div class="copy">Checking recent APRS message history and waiting for live traffic.</div></div>';
+            return;
+        }
+        const copy = S.connected
+            ? 'Send a message or wait for incoming APRS traffic.'
+            : 'The live connection is offline. Messages will refresh after reconnect.';
+        list.innerHTML = `<div class="m-empty"><div class="title">No messages yet</div><div class="copy">${copy}</div></div>`;
+        return;
+    }
 
     // Oldest first (chat style)
     const sorted = [...msgs].reverse();
@@ -459,8 +578,10 @@ function renderMessages() {
             else if (m.rejected) ackHtml = '<span class="rej-icon">✗</span>';
             else ackHtml = '⏳';
         }
-        const src = m.source === 'rf' ? 'RF' : (m.source === 'aprs_is' ? 'IS' : 'TX');
-        return `<div class="msg-bubble ${isTx ? 'tx' : 'rx'}" data-from="${escHtml(m.from || '')}">
+        const src = m.source === 'rf' ? 'RF' : (m.source === 'aprs_is' ? 'IS' : (m.source === 'both' ? 'RF+IS' : 'TX'));
+        const replyCall = !isTx ? (m.from || '') : '';
+        const replySource = !isTx ? (m.source || '') : '';
+        return `<div class="msg-bubble ${isTx ? 'tx' : 'rx'}" data-reply-call="${escHtml(replyCall)}" data-reply-source="${escHtml(replySource)}">
             <div class="from">${escHtml(m.from || '?')} → ${escHtml(m.to || '?')}</div>
             ${escHtml(m.text || '')}
             <div class="meta"><span>${fmtTime(m.timestamp)}</span><span>${src}</span>${ackHtml}</div>
@@ -471,8 +592,18 @@ function renderMessages() {
 
 function updateBadge() {
     const b = $('m-msg-badge');
-    if (S.unreadCount > 0) { b.textContent = S.unreadCount; b.style.display = 'block'; }
-    else b.style.display = 'none';
+    const qa = $('m-qa-msg-badge');
+    if (S.unreadCount > 0) {
+        b.textContent = S.unreadCount;
+        b.style.display = 'block';
+        if (qa) {
+            qa.textContent = S.unreadCount;
+            qa.style.display = 'block';
+        }
+    } else {
+        b.style.display = 'none';
+        if (qa) qa.style.display = 'none';
+    }
 }
 
 // ── Map ────────────────────────────────────────────────────
@@ -569,7 +700,18 @@ function renderStationList(stations, container, countEl) {
     const arr = Object.values(stations).sort((a, b) => (b.last_heard || 0) - (a.last_heard || 0));
     if (countEl) countEl.textContent = arr.length;
     if (!container) return;
-    if (!arr.length) { container.innerHTML = '<div class="msg-empty">No stations.</div>'; return; }
+    if (!arr.length) {
+        if (!S.stationsLoaded) {
+            container.innerHTML = '<div class="m-empty"><div class="title">Loading stations</div><div class="copy">Waiting for the first live station snapshot.</div></div>';
+            return;
+        }
+        const sourceLabel = countEl?.id === 'm-rf-count' ? 'RF' : 'APRS-IS';
+        const copy = S.connected
+            ? `No ${sourceLabel} stations are available yet. Check back after more traffic is heard.`
+            : `The live connection is offline, so ${sourceLabel} stations will appear after reconnect.`;
+        container.innerHTML = `<div class="m-empty"><div class="title">No stations yet</div><div class="copy">${copy}</div></div>`;
+        return;
+    }
     container.innerHTML = arr.map(st => {
         const sym = (typeof getAPRSSpriteHTML === 'function') ? getAPRSSpriteHTML(st.symbol_table || '/', st.symbol_code || '-', 20) : '📍';
         return `<div class="stn-card">
@@ -578,9 +720,15 @@ function renderStationList(stations, container, countEl) {
                 <div class="stn-call">${escHtml(st.callsign)}</div>
                 <div class="stn-detail">${fmtDist(st.distance_km)} · ${st.packet_count || 1} pkts${st.last_comment ? ' · ' + escHtml(st.last_comment).substring(0, 30) : ''}</div>
             </div>
-            <div class="stn-time">${timeAgo(st.last_heard)}</div>
+            <div class="stn-time" data-last-heard="${st.last_heard || 0}">${timeAgo(st.last_heard)}</div>
         </div>`;
     }).join('');
+}
+
+function refreshStationTimes() {
+    document.querySelectorAll('.stn-time[data-last-heard]').forEach(el => {
+        el.textContent = timeAgo(parseFloat(el.dataset.lastHeard || '0'));
+    });
 }
 
 // ── Propagation ────────────────────────────────────────────
@@ -668,11 +816,17 @@ function connectWS() {
     S.ws.onopen = () => {
         S.connected = true;
         $('m-ws-dot').classList.add('ok');
+        updateAprsIsChip();
+        renderStations();
+        renderMessages();
     };
 
     S.ws.onclose = () => {
         S.connected = false;
         $('m-ws-dot').classList.remove('ok');
+        updateAprsIsChip();
+        renderStations();
+        renderMessages();
         setTimeout(connectWS, 3000);
     };
 
@@ -688,6 +842,7 @@ function connectWS() {
                 break;
 
             case 'initial_stations':
+                S.stationsLoaded = true;
                 (msg.rf || []).forEach(st => { st.source = 'rf'; S.rfStations[st.callsign] = st; if (S.mapReady) addMapMarker(st); });
                 (msg.aprs_is || []).forEach(st => { st.source = 'aprs_is'; S.isStations[st.callsign] = st; if (S.mapReady) addMapMarker(st); });
                 renderStations();
@@ -695,6 +850,7 @@ function connectWS() {
 
             case 'station_update':
                 if (msg.station) {
+                    S.stationsLoaded = true;
                     const st = msg.station;
                     if (st.source === 'rf') S.rfStations[st.callsign] = st;
                     else S.isStations[st.callsign] = st;
@@ -755,14 +911,44 @@ function connectWS() {
     };
 }
 
+function updateAprsIsChip() {
+    const chip = $('m-is-chip');
+    const text = $('m-is-text');
+    if (!chip || !text) return;
+
+    let state = 'offline';
+    let label = 'Offline';
+
+    if (!S.connected) {
+        state = 'reconnecting';
+        label = 'UI reconnect';
+    } else if (S.aprsIsConnected && S.aprsIsVerified) {
+        state = 'online';
+        label = 'Connected';
+    } else if (S.aprsIsConnected) {
+        state = 'read-only';
+        label = 'Read-only';
+    } else {
+        state = 'offline';
+        label = 'Disconnected';
+    }
+
+    chip.classList.remove('online', 'read-only', 'reconnecting', 'offline');
+    chip.classList.add(state);
+    text.textContent = label;
+}
+
 function handleStatus(data) {
     if (!data) return;
-    S.myCall = (data.station?.callsign || '').toUpperCase();
+    S.myCall = (data.station_info?.callsign || data.station || '').toUpperCase();
     $('m-call').textContent = S.myCall || '—';
-    S.startTime = data.start_time || 0;
+    S.startTime = data.start_time || data.uptime_seconds || 0;
+    S.aprsIsConnected = !!data.aprs_is_connected;
+    S.aprsIsVerified = !!data.aprs_is_verified;
+    updateAprsIsChip();
 
-    const lat = data.station?.latitude;
-    const lng = data.station?.longitude;
+    const lat = data.station_info?.latitude ?? data.latitude;
+    const lng = data.station_info?.longitude ?? data.longitude;
     if (lat && lng && lat !== 0) {
         S.myPos = [lat, lng];
         if (S.mapReady && !S.myMarker) {
@@ -776,14 +962,21 @@ function handleStatus(data) {
 
 // ── Init ───────────────────────────────────────────────────
 async function init() {
+    S.activeTab = localStorage.getItem(MOBILE_TAB_KEY) || S.activeTab;
+    S.msgFilter = localStorage.getItem(MOBILE_MSG_FILTER_KEY) || S.msgFilter;
+    syncMsgFilterButtons();
+    activateTab(S.activeTab);
+    renderMessages();
+    renderStations();
     connectWS();
 
     // Load messages via REST
     try {
         const r = await fetch('/api/messages?limit=500');
         const d = await r.json();
-        if (d.messages) { S.messages = d.messages; renderMessages(); }
+        if (d.messages) { S.messages = d.messages; }
     } catch { /* silent */ }
+    finally { S.messagesLoaded = true; renderMessages(); }
 
     // Load version
     try {
@@ -805,9 +998,17 @@ async function init() {
 
     // Periodic refreshes
     setInterval(updateUptime, 1000);
-    setInterval(renderStations, 15000);
+    setInterval(refreshStationTimes, 15000);
     setInterval(ghostStaleMarkers, 30000);
 }
+
+$('m-btn-center').addEventListener('click', () => {
+    activateTab('mtab-map');
+    if (S.myPos && S.map) {
+        S.map.setView(S.myPos, 8);
+        if (S.myMarker) S.myMarker.openPopup();
+    }
+});
 
 document.addEventListener('DOMContentLoaded', init);
 </script>

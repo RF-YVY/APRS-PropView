@@ -33,14 +33,22 @@ class StationTracker:
         # Alert manager (set later via set_alert_manager)
         self._alert_manager = None
 
+        # Analytics engine (set later via set_analytics)
+        self._analytics = None
+
     def set_alert_manager(self, alert_manager):
         """Inject the AlertManager instance for band-opening detection."""
         self._alert_manager = alert_manager
+
+    def set_analytics(self, analytics):
+        """Inject the AnalyticsEngine for anomaly and Es checks."""
+        self._analytics = analytics
 
     async def track_packet(self, packet: APRSPacket):
         """Process a parsed packet and update station tracking."""
         source = packet.source  # 'rf' or 'aprs_is'
         callsign = packet.from_call
+        is_direct = source == "rf" and self._is_direct_path(packet.path)
 
         if not callsign:
             return
@@ -60,6 +68,11 @@ class StationTracker:
                 self.my_lat, self.my_lon, packet.latitude, packet.longitude
             )
 
+        # Detect first-heard station (before upsert creates the record)
+        is_first_heard = False
+        if source == "rf":
+            is_first_heard = not await self.db.is_station_known(callsign, source)
+
         # Update database
         station = await self.db.upsert_station(
             callsign=callsign,
@@ -73,6 +86,7 @@ class StationTracker:
             raw=packet.raw,
             distance_km=distance_km,
             heading=heading,
+            commit=False,
         )
 
         # Log packet
@@ -85,7 +99,50 @@ class StationTracker:
             packet_type=packet.packet_type,
             latitude=packet.latitude,
             longitude=packet.longitude,
+            commit=False,
         )
+
+        # Track path quality for RF stations
+        if source == "rf":
+            hop_count = self._count_hops(packet.path)
+            await self.db.log_path_event(
+                callsign=callsign,
+                distance_km=distance_km,
+                heading=heading,
+                path=packet.path,
+                hop_count=hop_count,
+                is_direct=is_direct,
+                commit=False,
+            )
+
+        # Log and alert on first-heard stations
+        if is_first_heard:
+            await self.db.log_first_heard(
+                callsign=callsign,
+                source=source,
+                distance_km=distance_km,
+                heading=heading,
+                latitude=packet.latitude,
+                longitude=packet.longitude,
+                commit=False,
+            )
+            # Broadcast first-heard event to web clients
+            await self.ws.broadcast({
+                "type": "first_heard",
+                "data": {
+                    "callsign": callsign,
+                    "distance_km": distance_km,
+                    "heading": heading,
+                    "timestamp": time.time(),
+                },
+            })
+            # Trigger first-heard alert if alert manager is available
+            if self._alert_manager and distance_km and (source != "rf" or is_direct):
+                await self._alert_manager.check_first_heard(
+                    callsign, distance_km, heading
+                )
+
+        await self.db.commit()
 
         # Update in-memory cache
         cache = self._rf_stations if source == "rf" else self._is_stations
@@ -146,61 +203,129 @@ class StationTracker:
         aprs_is = await self.get_is_stations(since=since)
         return {"rf": rf, "aprs_is": aprs_is}
 
-    async def get_propagation_data(self) -> Dict[str, Any]:
-        """Calculate current propagation metrics."""
+    @staticmethod
+    def _is_direct_path(path: str) -> bool:
+        """Return True if the APRS path indicates a direct (no digipeater) reception.
+
+        A station is direct-heard if:
+        - The path is empty, OR
+        - None of the path hops have a '*' (used) suffix with a real callsign
+          (i.e. WIDE1-1* alone doesn't count as relayed through another digi)
+        """
+        if not path:
+            return True
+        hops = [h.strip() for h in path.split(",") if h.strip()]
+        for hop in hops:
+            if hop.endswith("*"):
+                base = hop[:-1]
+                # WIDE/RELAY/TRACE aliases with * don't indicate a foreign digi
+                if not any(base.upper().startswith(a) for a in ("WIDE", "RELAY", "TRACE")):
+                    return False
+        return True
+
+    @staticmethod
+    def _count_hops(path: str) -> int:
+        """Count the number of digipeater hops in the path."""
+        if not path:
+            return 0
+        hops = [h.strip() for h in path.split(",") if h.strip()]
+        count = 0
+        for hop in hops:
+            if hop.endswith("*"):
+                count += 1
+        return count
+
+    async def get_propagation_data(self, log_sample: bool = False) -> Dict[str, Any]:
+        """Calculate current propagation metrics for both meters."""
         now = time.time()
         stats = await self.db.get_stats()
+        prop_cfg = self.config.propagation
 
         # Get RF stations with distances for the last hour
         rf_1h = await self.db.get_stations(source="rf", since=now - 3600)
-        distances = [s["distance_km"] for s in rf_1h if s.get("distance_km")]
 
-        max_dist = max(distances) if distances else 0
-        avg_dist = sum(distances) / len(distances) if distances else 0
-        station_count = len(rf_1h)
+        # Split RF stations into direct-heard local and relayed regional groups
+        all_distances = [s["distance_km"] for s in rf_1h if s.get("distance_km")]
+        direct_stations = [s for s in rf_1h if self._is_direct_path(s.get("last_path", ""))]
+        direct_distances = [s["distance_km"] for s in direct_stations if s.get("distance_km")]
+        regional_stations = [s for s in rf_1h if not self._is_direct_path(s.get("last_path", ""))]
+        regional_distances = [s["distance_km"] for s in regional_stations if s.get("distance_km")]
 
-        # Propagation score: weighted combination of station count and distance
-        # Score 0-100 where higher = better propagation
-        count_score = min(station_count * 5, 50)  # Up to 50 points for 10+ stations
-        dist_score = min(max_dist / 4, 50)  # Up to 50 points for 200+ km
-        prop_score = min(count_score + dist_score, 100)
+        rf_6h = await self.db.get_stations(source="rf", since=now - 21600)
+        rf_24h = await self.db.get_stations(source="rf", since=now - 86400)
+        regional_count_6h = sum(1 for s in rf_6h if not self._is_direct_path(s.get("last_path", "")))
+        regional_count_24h = sum(1 for s in rf_24h if not self._is_direct_path(s.get("last_path", "")))
 
-        # Determine propagation level
-        if prop_score >= 75:
-            prop_level = "excellent"
-        elif prop_score >= 50:
-            prop_level = "good"
-        elif prop_score >= 25:
-            prop_level = "fair"
-        elif prop_score > 0:
-            prop_level = "poor"
-        else:
-            prop_level = "none"
+        # ── My Station meter (direct-heard only) ────────────
+        my_count = len(direct_stations)
+        my_max_dist = max(direct_distances) if direct_distances else 0
+        my_avg_dist = sum(direct_distances) / len(direct_distances) if direct_distances else 0
+        my_full_count = max(prop_cfg.my_station_full_count, 1)
+        my_full_dist = max(prop_cfg.my_station_full_dist_km, 1)
+        my_count_score = min(my_count / my_full_count * 50, 50)
+        my_dist_score = min(my_max_dist / my_full_dist * 50, 50)
+        my_score = min(my_count_score + my_dist_score, 100)
+        my_level = self._score_to_level(my_score)
+
+        # ── Regional meter (all RF stations) ─────────────────
+        reg_count = len(regional_stations)
+        reg_max_dist = max(regional_distances) if regional_distances else 0
+        reg_avg_dist = sum(regional_distances) / len(regional_distances) if regional_distances else 0
+        reg_full_count = max(prop_cfg.regional_full_count, 1)
+        reg_full_dist = max(prop_cfg.regional_full_dist_km, 1)
+        reg_count_score = min(reg_count / reg_full_count * 50, 50)
+        reg_dist_score = min(reg_max_dist / reg_full_dist * 50, 50)
+        reg_score = min(reg_count_score + reg_dist_score, 100)
+        reg_level = self._score_to_level(reg_score)
 
         result = {
-            "score": round(prop_score, 1),
-            "level": prop_level,
+            # My Station meter
+            "my_score": round(my_score, 1),
+            "my_level": my_level,
+            "my_stations_1h": my_count,
+            "my_max_distance_km": round(my_max_dist, 1),
+            "my_avg_distance_km": round(my_avg_dist, 1),
+            # Regional meter
+            "score": round(reg_score, 1),
+            "level": reg_level,
             "rf_stations_1h": stats.get("rf_stations_1h", 0),
             "rf_stations_6h": stats.get("rf_stations_6h", 0),
             "rf_stations_24h": stats.get("rf_stations_24h", 0),
+            "regional_stations_1h": reg_count,
+            "regional_stations_6h": regional_count_6h,
+            "regional_stations_24h": regional_count_24h,
             "is_stations_1h": stats.get("is_stations_1h", 0),
-            "max_distance_km": round(max_dist, 1),
-            "avg_distance_km": round(avg_dist, 1),
-            "distances": sorted(distances),
+            "max_distance_km": round(reg_max_dist, 1),
+            "avg_distance_km": round(reg_avg_dist, 1),
+            "distances": sorted(all_distances),
+            "direct_distances": sorted(direct_distances),
+            "regional_distances": sorted(regional_distances),
             "timestamp": now,
         }
 
-        # Log propagation data periodically
-        await self.db.log_propagation(
-            rf_count=station_count,
-            max_dist=max_dist if max_dist else None,
-            avg_dist=avg_dist if avg_dist else None,
-            unique_1h=stats.get("rf_stations_1h", 0),
-            unique_6h=stats.get("rf_stations_6h", 0),
-            unique_24h=stats.get("rf_stations_24h", 0),
-        )
+        if log_sample:
+            await self.db.log_propagation(
+                rf_count=reg_count,
+                max_dist=reg_max_dist if reg_max_dist else None,
+                avg_dist=reg_avg_dist if reg_avg_dist else None,
+                unique_1h=reg_count,
+                unique_6h=regional_count_6h,
+                unique_24h=regional_count_24h,
+            )
 
         return result
+
+    @staticmethod
+    def _score_to_level(score: float) -> str:
+        if score >= 75:
+            return "excellent"
+        elif score >= 50:
+            return "good"
+        elif score >= 25:
+            return "fair"
+        elif score > 0:
+            return "poor"
+        return "none"
 
     async def cleanup_loop(self):
         """Periodically clean up old station data."""
@@ -248,17 +373,31 @@ class StationTracker:
         while True:
             try:
                 await asyncio.sleep(60)
-                prop_data = await self.get_propagation_data()
+                prop_data = await self.get_propagation_data(log_sample=True)
                 await self.ws.broadcast({"type": "propagation", "data": prop_data})
 
                 # Check for band opening alerts
                 if self._alert_manager:
-                    alert = self._alert_manager.check_and_alert(prop_data)
-                    if alert:
-                        logger.info(f"Band opening alert triggered! Score: {alert['score']}")
+                    alerts = self._alert_manager.check_and_alert(prop_data)
+                    for alert in alerts:
+                        logger.info(f"Alert triggered: {alert['type']} — Score: {alert['score']}")
                         await self._alert_manager.send_alert(alert)
-                        # Notify web clients of alert
                         await self.ws.broadcast({"type": "alert", "data": alert})
+
+                # Check for anomaly and sporadic-E (every 5th cycle = ~5 min)
+                if self._analytics and self._alert_manager:
+                    try:
+                        anomaly = await self._analytics.get_anomaly_status()
+                        await self._alert_manager.check_anomaly(anomaly)
+                        # Broadcast anomaly status to frontend
+                        await self.ws.broadcast({"type": "anomaly", "data": anomaly})
+
+                        es_data = await self._analytics.detect_sporadic_e()
+                        await self._alert_manager.check_sporadic_e(es_data)
+                        if es_data.get("es_level") in ("likely", "possible"):
+                            await self.ws.broadcast({"type": "sporadic_e", "data": es_data})
+                    except Exception as e:
+                        logger.error(f"Anomaly/Es check error: {e}")
 
             except asyncio.CancelledError:
                 break

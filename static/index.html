@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0d1117">
     <title>APRS PropView — VHF Propagation Monitor</title>
     <!-- Favicons -->
     <link rel="icon" type="image/x-icon" href="/static/ico/favicon.ico">
@@ -14,24 +15,36 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="/static/css/style.css" />
     <!-- Leaflet JS -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
     <!-- ── Header Bar ─────────────────────────────────────────── -->
     <header id="header">
         <div class="header-left">
-            <h1>📡 APRS PropView</h1>
+            <img src="/static/img/header.webp" alt="APRS PropView" class="header-logo" decoding="async" fetchpriority="high">
             <span id="station-call" class="station-badge">N0CALL</span>
         </div>
         <div class="header-center">
-            <div class="prop-gauge">
-                <div class="prop-label">VHF Propagation</div>
-                <div class="prop-bar-container">
-                    <div id="prop-bar" class="prop-bar" style="width: 0%"></div>
+            <div class="prop-gauges-row">
+                <div class="prop-gauge">
+                    <div class="prop-label">VHF Propagation My Station</div>
+                    <div class="prop-bar-container">
+                        <div id="prop-bar-my" class="prop-bar" style="width: 0%"></div>
+                    </div>
+                    <div class="prop-stats">
+                        <span id="prop-level-my" class="prop-level">—</span>
+                        <span id="prop-score-my" class="prop-score">0</span>
+                    </div>
                 </div>
-                <div class="prop-stats">
-                    <span id="prop-level" class="prop-level">—</span>
-                    <span id="prop-score" class="prop-score">0</span>
+                <div class="prop-gauge">
+                    <div class="prop-label">Regional VHF Propagation</div>
+                    <div class="prop-bar-container">
+                        <div id="prop-bar-reg" class="prop-bar" style="width: 0%"></div>
+                    </div>
+                    <div class="prop-stats">
+                        <span id="prop-level-reg" class="prop-level">—</span>
+                        <span id="prop-score-reg" class="prop-score">0</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -40,6 +53,21 @@
                 <span id="rf-status" class="status-dot disconnected" title="RF TNC">RF</span>
                 <span id="is-status" class="status-dot disconnected" title="APRS-IS">IS</span>
                 <span id="ws-status" class="status-dot disconnected" title="WebSocket">WS</span>
+            </div>
+            <div class="header-action">
+                <div class="header-action-controls">
+                    <button id="btn-manual-beacon" class="btn-primary btn-header-action" type="button" title="Transmit a beacon immediately">Transmit Beacon</button>
+                    <select id="manual-beacon-mode" class="header-action-select" title="Choose where to transmit the beacon">
+                        <option value="both">RF + APRS-IS</option>
+                        <option value="rf">RF only</option>
+                        <option value="aprs_is">APRS-IS only</option>
+                    </select>
+                </div>
+                <span id="manual-beacon-status" class="header-action-status" title=""></span>
+            </div>
+            <div id="aprs-is-chip" class="aprs-is-chip offline" title="APRS-IS connection state">
+                <span class="chip-label">APRS-IS</span>
+                <span id="aprs-is-chip-text" class="chip-value">Offline</span>
             </div>
             <div class="header-stats">
                 <span title="RF Stations (1h)">RF: <b id="rf-count-1h">0</b></span>
@@ -73,6 +101,7 @@
                         <span title="Pressure">📊 <span id="wx-pressure">--</span> mb</span>
                     </span>
                     <span class="wx-location" id="wx-location">--</span>
+                    <span class="wx-ducting" id="wx-ducting" style="display:none;" title="Tropospheric Ducting Index">🌊 <span id="wx-ducting-value">--</span></span>
                     <button id="wx-refresh-btn" class="wx-refresh-btn" title="Refresh weather">🔄</button>
                 </div>
             </div>
@@ -86,7 +115,6 @@
                 <button id="btn-toggle-rf" title="Toggle RF stations" class="active">🔴</button>
                 <button id="btn-toggle-is" title="Toggle APRS-IS stations" class="active">🔵</button>
                 <div class="map-control-divider"></div>
-                <button id="btn-pick-location" title="Pick station location on map">📌</button>
                 <button id="btn-toggle-theme" title="Toggle light/dark map" class="active">🌙</button>
                 <button id="btn-toggle-labels" title="Toggle station callsign labels">🏷️</button>
                 <button id="btn-toggle-autofit" title="Auto-zoom to fit all stations">🔎</button>
@@ -225,6 +253,10 @@
                             <div class="prop-card-label">RF Stations (1h)</div>
                         </div>
                         <div class="prop-card">
+                            <div class="prop-card-value" id="prop-direct-1h">0</div>
+                            <div class="prop-card-label">Direct Heard (1h)</div>
+                        </div>
+                        <div class="prop-card">
                             <div class="prop-card-value" id="prop-rf-6h">0</div>
                             <div class="prop-card-label">RF Stations (6h)</div>
                         </div>
@@ -234,11 +266,15 @@
                         </div>
                         <div class="prop-card">
                             <div class="prop-card-value" id="prop-max-dist">0 mi</div>
-                            <div class="prop-card-label">Max Distance</div>
+                            <div class="prop-card-label">Max Distance (All RF)</div>
+                        </div>
+                        <div class="prop-card">
+                            <div class="prop-card-value" id="prop-max-dist-direct">0 mi</div>
+                            <div class="prop-card-label">Max Distance (Direct)</div>
                         </div>
                         <div class="prop-card">
                             <div class="prop-card-value" id="prop-avg-dist">0 mi</div>
-                            <div class="prop-card-label">Avg Distance</div>
+                            <div class="prop-card-label">Avg Distance (All RF)</div>
                         </div>
                         <div class="prop-card">
                             <div class="prop-card-value" id="prop-is-1h">0</div>
@@ -268,6 +304,12 @@
                         <button class="analytics-subtab" data-section="sec-heatmap">🌡️ Heatmap</button>
                         <button class="analytics-subtab" data-section="sec-reliability">⭐ Reliability</button>
                         <button class="analytics-subtab" data-section="sec-besttime">🕐 Best Times</button>
+                        <button class="analytics-subtab" data-section="sec-anomaly">📈 Anomaly</button>
+                        <button class="analytics-subtab" data-section="sec-bearing">🧭 Sectors</button>
+                        <button class="analytics-subtab" data-section="sec-historical">📊 History</button>
+                        <button class="analytics-subtab" data-section="sec-sporadic-e">⚡ Sporadic-E</button>
+                        <button class="analytics-subtab" data-section="sec-first-heard">🆕 First Heard</button>
+                        <button class="analytics-subtab" data-section="sec-export">💾 Export</button>
                         <button class="analytics-subtab" data-section="sec-alerts">🚨 Alerts</button>
                     </div>
 
@@ -355,6 +397,103 @@
                         </div>
                         <p class="analytics-desc" style="margin-top:10px;">Configure alert thresholds and notification channels in the <b>Settings</b> tab under <b>Band Opening Alerts</b>.</p>
                     </div>
+
+                    <!-- Anomaly Detection -->
+                    <div id="sec-anomaly" class="analytics-section">
+                        <div class="analytics-header">
+                            <h3>📈 Propagation Anomaly</h3>
+                        </div>
+                        <p class="analytics-desc">Compares current conditions to your 7-day baseline by hour-of-day.</p>
+                        <div id="anomaly-status" class="anomaly-status-card">
+                            <div class="analytics-empty">Calculating...</div>
+                        </div>
+                    </div>
+
+                    <!-- Bearing Sectors -->
+                    <div id="sec-bearing" class="analytics-section">
+                        <div class="analytics-header">
+                            <h3>🧭 Bearing Sectors</h3>
+                            <select id="bearing-hours">
+                                <option value="6">6h</option>
+                                <option value="12">12h</option>
+                                <option value="24" selected>24h</option>
+                                <option value="48">48h</option>
+                                <option value="168">7d</option>
+                            </select>
+                        </div>
+                        <p class="analytics-desc">Station distribution across 8 compass sectors from your station.</p>
+                        <canvas id="bearing-radar-chart" width="300" height="300"></canvas>
+                        <div id="bearing-sector-list" class="bearing-sector-list">
+                            <div class="analytics-empty">No data yet.</div>
+                        </div>
+                    </div>
+
+                    <!-- Historical Comparison -->
+                    <div id="sec-historical" class="analytics-section">
+                        <div class="analytics-header">
+                            <h3>📊 Historical Comparison</h3>
+                        </div>
+                        <p class="analytics-desc">Today vs. yesterday vs. 7-day average — station count and max distance by hour.</p>
+                        <h4>Station Count</h4>
+                        <canvas id="historical-count-chart" width="380" height="160"></canvas>
+                        <h4>Max Distance (km)</h4>
+                        <canvas id="historical-dist-chart" width="380" height="160"></canvas>
+                    </div>
+
+                    <!-- Sporadic-E Detection -->
+                    <div id="sec-sporadic-e" class="analytics-section">
+                        <div class="analytics-header">
+                            <h3>⚡ Sporadic-E Detection</h3>
+                        </div>
+                        <p class="analytics-desc">Heuristic detection of possible sporadic-E openings based on distance, transience, and seasonal patterns.</p>
+                        <div id="es-status" class="es-status-card">
+                            <div class="analytics-empty">Analyzing...</div>
+                        </div>
+                        <div id="es-candidates" class="es-candidates-list"></div>
+                    </div>
+
+                    <!-- First Heard Log -->
+                    <div id="sec-first-heard" class="analytics-section">
+                        <div class="analytics-header">
+                            <h3>🆕 First Heard Stations</h3>
+                            <select id="first-heard-hours">
+                                <option value="6">6h</option>
+                                <option value="12">12h</option>
+                                <option value="24" selected>24h</option>
+                                <option value="48">48h</option>
+                                <option value="168">7d</option>
+                            </select>
+                        </div>
+                        <p class="analytics-desc">Stations heard on RF for the first time ever — great for spotting propagation openings.</p>
+                        <div id="first-heard-list" class="first-heard-list">
+                            <div class="analytics-empty">No new stations heard yet.</div>
+                        </div>
+                    </div>
+
+                    <!-- Data Export -->
+                    <div id="sec-export" class="analytics-section">
+                        <div class="analytics-header">
+                            <h3>💾 Data Export</h3>
+                        </div>
+                        <p class="analytics-desc">Download station, packet, and propagation data in CSV or JSON format.</p>
+                        <div class="export-buttons">
+                            <div class="export-group">
+                                <span>Stations</span>
+                                <button class="btn btn-small" onclick="pvAnalytics.exportData('stations','csv')">CSV</button>
+                                <button class="btn btn-small" onclick="pvAnalytics.exportData('stations','json')">JSON</button>
+                            </div>
+                            <div class="export-group">
+                                <span>Packets (24h)</span>
+                                <button class="btn btn-small" onclick="pvAnalytics.exportData('packets','csv')">CSV</button>
+                                <button class="btn btn-small" onclick="pvAnalytics.exportData('packets','json')">JSON</button>
+                            </div>
+                            <div class="export-group">
+                                <span>Propagation (24h)</span>
+                                <button class="btn btn-small" onclick="pvAnalytics.exportData('propagation','csv')">CSV</button>
+                                <button class="btn btn-small" onclick="pvAnalytics.exportData('propagation','json')">JSON</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -364,7 +503,7 @@
                     <div id="settings-status" class="settings-status" style="display:none;"></div>
 
                     <!-- Station -->
-                    <div class="settings-section">
+                    <div class="settings-section" data-settings-key="station" data-summary="Callsign, location, beacon path, and station identity.">
                         <h3>Station</h3>
                         <div class="settings-row">
                             <label for="cfg-callsign">Callsign</label>
@@ -414,6 +553,14 @@
                         <input type="hidden" id="cfg-symbol-table" value="/">
                         <input type="hidden" id="cfg-symbol-code" value="#">
                         <div class="settings-row">
+                            <label for="cfg-phg">PHG</label>
+                            <input type="text" id="cfg-phg" maxlength="4" placeholder="5130">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-equipment">Equipment</label>
+                            <input type="text" id="cfg-equipment" placeholder="Yaesu FT-2900R">
+                        </div>
+                        <div class="settings-row">
                             <label for="cfg-comment">Comment</label>
                             <input type="text" id="cfg-comment" placeholder="APRS PropView">
                         </div>
@@ -421,7 +568,6 @@
                             <label for="cfg-beacon-interval">Beacon Interval (min)</label>
                             <input type="number" id="cfg-beacon-interval" min="0" max="1440" step="1" value="30">
                         </div>
-                        <p class="settings-hint">&#9432; APRS-IS policy: minimum 10 minutes for fixed stations. Set to 0 to disable beacons.</p>
                         <div class="settings-row">
                             <label for="cfg-beacon-path">Beacon Path</label>
                             <select id="cfg-beacon-path">
@@ -434,7 +580,7 @@
                     </div>
 
                     <!-- Digipeater -->
-                    <div class="settings-section">
+                    <div class="settings-section" data-settings-key="digipeater" data-summary="Aliases and dedupe behavior for local digipeating.">
                         <h3>Digipeater</h3>
                         <div class="settings-row">
                             <label for="cfg-digi-enabled">Enabled</label>
@@ -451,7 +597,7 @@
                     </div>
 
                     <!-- IGate -->
-                    <div class="settings-section">
+                    <div class="settings-section" data-settings-key="igate" data-summary="Control RF to APRS-IS and APRS-IS to RF gating.">
                         <h3>IGate</h3>
                         <div class="settings-row">
                             <label for="cfg-igate-enabled">Enabled</label>
@@ -465,11 +611,10 @@
                             <label for="cfg-igate-is2rf">APRS-IS → RF</label>
                             <input type="checkbox" id="cfg-igate-is2rf">
                         </div>
-                        <p class="settings-hint">&#9432; RF→IS requires a valid APRS-IS passcode (not -1). IS→RF only gates messages to stations heard on RF. Gated packets will not request further digipeating per APRS-IS policy.</p>
                     </div>
 
                     <!-- APRS-IS -->
-                    <div class="settings-section">
+                    <div class="settings-section" data-settings-key="aprsis" data-summary="Server, passcode, and APRS-IS filter configuration.">
                         <h3>APRS-IS</h3>
                         <div class="settings-row">
                             <label for="cfg-is-enabled">Enabled</label>
@@ -487,7 +632,6 @@
                             <label for="cfg-is-passcode">Passcode</label>
                             <input type="text" id="cfg-is-passcode" placeholder="-1">
                         </div>
-                        <p class="settings-hint">&#9432; Use -1 for read-only (receive only). A valid passcode is required to transmit, beacon, or gate packets to APRS-IS. Only licensed amateur radio operators should transmit.</p>
                         <div class="settings-row">
                             <label for="cfg-is-range-miles">Range (miles)</label>
                             <input type="number" id="cfg-is-range-miles" min="0" max="500" step="1" placeholder="e.g. 100">
@@ -508,7 +652,7 @@
                     </div>
 
                     <!-- KISS Serial -->
-                    <div class="settings-section">
+                    <div class="settings-section" data-settings-key="kiss-serial" data-summary="Serial TNC connection settings.">
                         <h3>KISS Serial TNC</h3>
                         <div class="settings-row">
                             <label for="cfg-ks-enabled">Enabled</label>
@@ -525,7 +669,7 @@
                     </div>
 
                     <!-- KISS TCP -->
-                    <div class="settings-section">
+                    <div class="settings-section" data-settings-key="kiss-tcp" data-summary="Network TNC host and port settings.">
                         <h3>KISS TCP TNC</h3>
                         <div class="settings-row">
                             <label for="cfg-kt-enabled">Enabled</label>
@@ -542,7 +686,7 @@
                     </div>
 
                     <!-- Web Interface -->
-                    <div class="settings-section">
+                    <div class="settings-section" data-settings-key="web" data-summary="Desktop and mobile web UI behavior, PIN, and marker aging.">
                         <h3>Web Interface</h3>
                         <div class="settings-row">
                             <label for="cfg-web-host">Host</label>
@@ -572,21 +716,18 @@
                             <label for="cfg-web-ghost">Ghost After (min)</label>
                             <input type="number" id="cfg-web-ghost" min="0" max="1440" step="5" value="60">
                         </div>
-                        <p class="settings-hint" style="color:var(--text-muted);font-size:11px;margin:2px 0 8px 0;">Fade map markers not heard in this many minutes. 0 = disabled.</p>
                         <div class="settings-row">
                             <label for="cfg-web-expire">Expire After (min)</label>
                             <input type="number" id="cfg-web-expire" min="0" max="1440" step="5" value="0">
                         </div>
-                        <p class="settings-hint" style="color:var(--text-muted);font-size:11px;margin:2px 0 8px 0;">Remove stations from map after this many minutes since last heard. 0 = never expire.</p>
                         <div class="settings-row">
                             <label for="cfg-web-pin">Mobile PIN</label>
                             <input type="text" id="cfg-web-pin" maxlength="8" placeholder="Leave blank = no PIN" autocomplete="off">
                         </div>
-                        <p class="settings-hint" style="color:var(--text-muted);font-size:11px;margin:2px 0 8px 0;">Require this PIN to access /mobile. Leave empty to allow open access.</p>
                     </div>
 
                     <!-- Tracking -->
-                    <div class="settings-section">
+                    <div class="settings-section" data-settings-key="tracking" data-summary="How long stations are kept and how often cleanup runs.">
                         <h3>Tracking</h3>
                         <div class="settings-row">
                             <label for="cfg-track-age">Max Station Age (min)</label>
@@ -599,7 +740,7 @@
                     </div>
 
                     <!-- Weather -->
-                    <div class="settings-section">
+                    <div class="settings-section" data-settings-key="weather" data-summary="Weather banner, alert range, and refresh interval.">
                         <h3>🌤️ Weather</h3>
                         <div class="settings-row">
                             <label for="cfg-wx-enabled">Weather Enabled</label>
@@ -624,24 +765,59 @@
                             <label for="cfg-wx-refresh">Refresh Interval (min)</label>
                             <input type="number" id="cfg-wx-refresh" min="5" max="120" value="15">
                         </div>
-                        <p class="settings-hint">ℹ️ Uses Open-Meteo (current conditions) and NWS (severe alerts). No API key required. Watches display in orange, warnings in red. Lightning data shown when thunderstorm activity detected.</p>
+                    </div>
+
+                    <!-- Propagation Meter Settings -->
+                    <div class="settings-section" data-settings-key="propagation" data-summary="Thresholds used to score both propagation meters.">
+                        <h3>📊 Propagation Meters</h3>
+                        <h4 style="color:var(--accent-green);margin:10px 0 6px;">My Station (Direct-Heard Only)</h4>
+                        <div class="settings-row">
+                            <label for="cfg-prop-my-count">Stations for Full Score</label>
+                            <input type="number" id="cfg-prop-my-count" min="1" max="200" value="10">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-prop-my-dist">Distance for Full Score (<span class="dist-unit">mi</span>)</label>
+                            <input type="number" id="cfg-prop-my-dist" min="1" max="2000" value="200">
+                        </div>
+                        <h4 style="color:var(--accent-purple);margin:10px 0 6px;">Regional (All RF Stations)</h4>
+                        <div class="settings-row">
+                            <label for="cfg-prop-reg-count">Stations for Full Score</label>
+                            <input type="number" id="cfg-prop-reg-count" min="1" max="200" value="10">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-prop-reg-dist">Distance for Full Score (<span class="dist-unit">mi</span>)</label>
+                            <input type="number" id="cfg-prop-reg-dist" min="1" max="2000" value="200">
+                        </div>
                     </div>
 
                     <!-- Band Opening Alerts -->
-                    <div class="settings-section">
+                    <div class="settings-section" data-settings-key="alerts" data-summary="Band-opening thresholds and notification channel settings.">
                         <h3>🚨 Band Opening Alerts</h3>
                         <div class="settings-row">
                             <label for="cfg-alerts-enabled">Alerts Enabled</label>
                             <input type="checkbox" id="cfg-alerts-enabled">
                         </div>
+
+                        <h4 style="color:var(--accent-orange);margin:10px 0 6px;">🚨 My Station — Band Opening Warning</h4>
                         <div class="settings-row">
-                            <label for="cfg-alerts-min-stations">Min RF Stations (1h)</label>
-                            <input type="number" id="cfg-alerts-min-stations" min="1" max="100" value="5">
+                            <label for="cfg-alerts-my-min-stations">Min Direct Stations (1h)</label>
+                            <input type="number" id="cfg-alerts-my-min-stations" min="1" max="100" value="3">
                         </div>
                         <div class="settings-row">
-                            <label for="cfg-alerts-min-dist">Min Max-Distance (<span class="dist-unit">mi</span>)</label>
-                            <input type="number" id="cfg-alerts-min-dist" min="1" max="2000" value="100">
+                            <label for="cfg-alerts-my-min-dist">Min Max-Distance (<span class="dist-unit">mi</span>)</label>
+                            <input type="number" id="cfg-alerts-my-min-dist" min="1" max="2000" value="100">
                         </div>
+
+                        <h4 style="color:var(--accent-blue);margin:10px 0 6px;">🔍 Regional — Band Watch</h4>
+                        <div class="settings-row">
+                            <label for="cfg-alerts-reg-min-stations">Min RF Stations (1h)</label>
+                            <input type="number" id="cfg-alerts-reg-min-stations" min="1" max="100" value="5">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-alerts-reg-min-dist">Min Max-Distance (<span class="dist-unit">mi</span>)</label>
+                            <input type="number" id="cfg-alerts-reg-min-dist" min="1" max="2000" value="100">
+                        </div>
+
                         <div class="settings-row">
                             <label for="cfg-alerts-cooldown">Cooldown (min)</label>
                             <input type="number" id="cfg-alerts-cooldown" min="1" max="1440" step="1" value="30">
@@ -654,10 +830,8 @@
                             <label for="cfg-alerts-quiet-end">Quiet Hours End</label>
                             <input type="time" id="cfg-alerts-quiet-end" placeholder="08:00">
                         </div>
-                        <p class="settings-hint" style="color:var(--text-muted);font-size:11px;margin:2px 0 8px 0;">Suppress all notifications during this window (local time). Leave blank to disable.</p>
 
                         <h4 style="color:var(--accent-purple);margin:10px 0 6px;">Band Opening Channels</h4>
-                        <p class="settings-hint" style="color:var(--text-muted);font-size:11px;margin:2px 0 8px 0;">Select which channels receive band opening alerts.</p>
                         <div class="settings-row">
                             <label for="cfg-alerts-discord">Discord</label>
                             <input type="checkbox" id="cfg-alerts-discord">
@@ -672,7 +846,6 @@
                         </div>
 
                         <h4 style="color:var(--accent-orange);margin:10px 0 6px;">Message Notification Channels</h4>
-                        <p class="settings-hint" style="color:var(--text-muted);font-size:11px;margin:2px 0 8px 0;">Select which channels receive APRS message notifications. Enable at least one to get notified.</p>
                         <div class="settings-row">
                             <label for="cfg-alerts-msg-discord">Discord</label>
                             <input type="checkbox" id="cfg-alerts-msg-discord">
@@ -719,6 +892,35 @@
                         </div>
                     </div>
 
+                    <!-- MQTT Integration -->
+                    <div class="settings-section" data-settings-key="mqtt" data-summary="MQTT publishing for propagation scores and alerts.">
+                        <h3>📡 MQTT Integration</h3>
+                        <div class="settings-row">
+                            <label for="cfg-mqtt-enabled">MQTT Enabled</label>
+                            <input type="checkbox" id="cfg-mqtt-enabled">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-mqtt-broker">Broker Host</label>
+                            <input type="text" id="cfg-mqtt-broker" placeholder="localhost">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-mqtt-port">Port</label>
+                            <input type="number" id="cfg-mqtt-port" min="1" max="65535" value="1883">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-mqtt-topic">Topic Prefix</label>
+                            <input type="text" id="cfg-mqtt-topic" placeholder="aprs/propview">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-mqtt-user">Username</label>
+                            <input type="text" id="cfg-mqtt-user" placeholder="(optional)">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-mqtt-pass">Password</label>
+                            <input type="password" id="cfg-mqtt-pass" placeholder="(optional)">
+                        </div>
+                    </div>
+
                     <div class="settings-actions">
                         <button id="btn-save-settings" class="btn-primary">💾 Save Configuration</button>
                         <p class="settings-note">Most settings apply immediately. KISS and web host/port changes require a restart.</p>
@@ -752,10 +954,25 @@
                     </div>
                     <div class="about-section">
                         <h3>License</h3>
-                        <p>MIT</p>
+                        <p>Apache License 2.0</p>
+                    </div>
+                    <div class="about-section about-donate">
+                        <h3>Support APRS PropView</h3>
+                        <p>If APRS PropView has been useful to you, you can support continued development here.</p>
+                        <form action="https://www.paypal.com/ncp/payment/2TZHQAECTSDGC" method="post" target="_blank" class="about-donate-form">
+                            <input class="about-donate-btn" type="submit" value="Thanks with a DONATE">
+                            <img src="https://www.paypalobjects.com/images/Debit_Credit_APM.svg" alt="Accepted payment cards" class="about-donate-cards">
+                            <section class="about-donate-powered">
+                                Powered by
+                                <img src="https://www.paypalobjects.com/paypal-ui/logos/svg/paypal-wordmark-color.svg" alt="PayPal" class="about-donate-paypal">
+                            </section>
+                        </form>
                     </div>
                     <div class="about-section" style="text-align:center;margin-top:12px;">
                         <button id="btn-open-help" class="btn-primary" style="font-size:14px;padding:10px 28px;">📖 Help &amp; User Guide</button>
+                    </div>
+                    <div class="about-section" style="text-align:center;margin-top:16px;">
+            <img src="/static/img/header.webp" alt="APRS PropView" style="width:350px;height:90px;object-fit:contain;border-radius:6px;" loading="lazy" decoding="async">
                     </div>
                 </div>
             </div>
@@ -829,7 +1046,6 @@
                         <tr><td>📏</td><td><b>Toggle Lines</b> — Show/hide propagation path lines.</td></tr>
                         <tr><td>🔴</td><td><b>Toggle RF</b> — Show/hide RF station markers.</td></tr>
                         <tr><td>🔵</td><td><b>Toggle APRS-IS</b> — Show/hide Internet-heard stations.</td></tr>
-                        <tr><td>📌</td><td><b>Pick Location</b> — Click on the map to set your station coordinates.</td></tr>
                         <tr><td>🌙 / ☀️</td><td><b>Theme</b> — Toggle dark/light map tiles.</td></tr>
                         <tr><td>🏷️</td><td><b>Callsign Labels</b> — Show/hide callsign text above each station icon.</td></tr>
                         <tr><td>🔎</td><td><b>Auto-Fit</b> — Automatically zoom to fit all visible stations. Disabled when you manually pan or zoom; click again to re-enable.</td></tr>
@@ -921,13 +1137,13 @@
     </div>
 
     <!-- ── Scripts ────────────────────────────────────────────── -->
-    <script src="/static/js/websocket.js"></script>
-    <script src="/static/js/map.js"></script>
-    <script src="/static/js/stations.js"></script>
-    <script src="/static/js/icons.js"></script>
-    <script src="/static/js/analytics.js"></script>
-    <script src="/static/js/messages.js"></script>
-    <script src="/static/js/weather.js"></script>
-    <script src="/static/js/app.js"></script>
+    <script defer src="/static/js/websocket.js"></script>
+    <script defer src="/static/js/map.js"></script>
+    <script defer src="/static/js/stations.js"></script>
+    <script defer src="/static/js/icons.js"></script>
+    <script defer src="/static/js/analytics.js"></script>
+    <script defer src="/static/js/messages.js"></script>
+    <script defer src="/static/js/weather.js"></script>
+    <script defer src="/static/js/app.js"></script>
 </body>
 </html>

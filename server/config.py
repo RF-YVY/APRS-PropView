@@ -24,6 +24,8 @@ latitude = 0.0
 longitude = 0.0
 symbol_table = "/"
 symbol_code = "#"
+phg = ""
+equipment = ""
 comment = "APRS PropView Digi/IGate"
 beacon_interval = 1800
 beacon_path = "WIDE1-1"
@@ -72,8 +74,10 @@ cleanup_interval = 3600
 
 [alerts]
 enabled = false
-min_stations = 5
-min_distance_km = 100.0
+my_min_stations = 3
+my_min_distance_km = 100.0
+regional_min_stations = 5
+regional_min_distance_km = 100.0
 cooldown_seconds = 1800
 quiet_start = ""
 quiet_end = ""
@@ -92,11 +96,25 @@ email_password = ""
 sms_enabled = false
 sms_gateway_address = ""
 
+[propagation]
+my_station_full_count = 10
+my_station_full_dist_km = 200.0
+regional_full_count = 10
+regional_full_dist_km = 200.0
+
 [weather]
 enabled = false
 location_code = ""
 alert_range_miles = 50
 refresh_minutes = 15
+
+[mqtt]
+enabled = false
+broker = "localhost"
+port = 1883
+topic_prefix = "aprs/propview"
+username = ""
+password = ""
 """
 
 
@@ -108,6 +126,8 @@ class StationConfig:
     longitude: float = 0.0
     symbol_table: str = "/"
     symbol_code: str = "#"
+    phg: str = ""
+    equipment: str = ""
     comment: str = "APRS PropView Digi/IGate"
     beacon_interval: int = 1800
     beacon_path: str = "WIDE1-1"
@@ -180,8 +200,10 @@ class TrackingConfig:
 @dataclass
 class AlertsConfig:
     enabled: bool = False
-    min_stations: int = 5
-    min_distance_km: float = 100.0
+    my_min_stations: int = 3
+    my_min_distance_km: float = 100.0
+    regional_min_stations: int = 5
+    regional_min_distance_km: float = 100.0
     cooldown_seconds: int = 1800
     quiet_start: str = ""       # HH:MM 24h — quiet period start (e.g. "22:00")
     quiet_end: str = ""         # HH:MM 24h — quiet period end (e.g. "08:00")
@@ -202,11 +224,29 @@ class AlertsConfig:
 
 
 @dataclass
+class PropagationConfig:
+    my_station_full_count: int = 10        # Direct stations for 100% count score
+    my_station_full_dist_km: float = 200.0  # Max direct distance for 100% dist score
+    regional_full_count: int = 10           # All RF stations for 100% count score
+    regional_full_dist_km: float = 200.0    # Max RF distance for 100% dist score
+
+
+@dataclass
 class WeatherConfig:
     enabled: bool = False
     location_code: str = ""       # US zip code or ICAO code
     alert_range_miles: int = 50    # Range for severe weather alerts
     refresh_minutes: int = 15      # How often to refresh weather data
+
+
+@dataclass
+class MQTTConfig:
+    enabled: bool = False
+    broker: str = "localhost"
+    port: int = 1883
+    topic_prefix: str = "aprs/propview"
+    username: str = ""
+    password: str = ""
 
 
 @dataclass
@@ -221,7 +261,9 @@ class Config:
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     tracking: TrackingConfig = field(default_factory=TrackingConfig)
     alerts: AlertsConfig = field(default_factory=AlertsConfig)
+    propagation: PropagationConfig = field(default_factory=PropagationConfig)
     weather: WeatherConfig = field(default_factory=WeatherConfig)
+    mqtt: MQTTConfig = field(default_factory=MQTTConfig)
 
     @staticmethod
     def create_default(path: Path):
@@ -245,7 +287,9 @@ class Config:
             "database": (DatabaseConfig, "database"),
             "tracking": (TrackingConfig, "tracking"),
             "alerts": (AlertsConfig, "alerts"),
+            "propagation": (PropagationConfig, "propagation"),
             "weather": (WeatherConfig, "weather"),
+            "mqtt": (MQTTConfig, "mqtt"),
         }
 
         for key, (cls, attr) in section_map.items():
@@ -278,6 +322,8 @@ class Config:
             f"longitude = {float(self.station.longitude)}",
             f'symbol_table = "{esc(self.station.symbol_table)}"',
             f'symbol_code = "{esc(self.station.symbol_code)}"',
+            f'phg = "{esc(self.station.phg)}"',
+            f'equipment = "{esc(self.station.equipment)}"',
             f'comment = "{esc(self.station.comment)}"',
             f"beacon_interval = {int(self.station.beacon_interval)}",
             f'beacon_path = "{esc(self.station.beacon_path)}"',
@@ -326,8 +372,10 @@ class Config:
             "",
             "[alerts]",
             f"enabled = {'true' if self.alerts.enabled else 'false'}",
-            f"min_stations = {int(self.alerts.min_stations)}",
-            f"min_distance_km = {float(self.alerts.min_distance_km)}",
+            f"my_min_stations = {int(self.alerts.my_min_stations)}",
+            f"my_min_distance_km = {float(self.alerts.my_min_distance_km)}",
+            f"regional_min_stations = {int(self.alerts.regional_min_stations)}",
+            f"regional_min_distance_km = {float(self.alerts.regional_min_distance_km)}",
             f"cooldown_seconds = {int(self.alerts.cooldown_seconds)}",
             f'quiet_start = "{esc(self.alerts.quiet_start)}"',
             f'quiet_end = "{esc(self.alerts.quiet_end)}"',
@@ -346,10 +394,24 @@ class Config:
             f"sms_enabled = {'true' if self.alerts.sms_enabled else 'false'}",
             f'sms_gateway_address = "{esc(self.alerts.sms_gateway_address)}"',
             "",
+            "[propagation]",
+            f"my_station_full_count = {int(self.propagation.my_station_full_count)}",
+            f"my_station_full_dist_km = {float(self.propagation.my_station_full_dist_km)}",
+            f"regional_full_count = {int(self.propagation.regional_full_count)}",
+            f"regional_full_dist_km = {float(self.propagation.regional_full_dist_km)}",
+            "",
             "[weather]",
             f"enabled = {'true' if self.weather.enabled else 'false'}",
             f'location_code = "{esc(self.weather.location_code)}"',
             f"alert_range_miles = {int(self.weather.alert_range_miles)}",
             f"refresh_minutes = {int(self.weather.refresh_minutes)}",
+            "",
+            "[mqtt]",
+            f"enabled = {'true' if self.mqtt.enabled else 'false'}",
+            f'broker = "{esc(self.mqtt.broker)}"',
+            f"port = {int(self.mqtt.port)}",
+            f'topic_prefix = "{esc(self.mqtt.topic_prefix)}"',
+            f'username = "{esc(self.mqtt.username)}"',
+            f'password = "{esc(self.mqtt.password)}"',
         ]
         path.write_text("\n".join(lines) + "\n")

@@ -10,7 +10,7 @@ from server.config import Config
 from server.ax25 import AX25Frame
 from server.aprs_parser import (
     parse_packet, make_position_packet, make_message_packet,
-    make_ack_packet, APRSPacket,
+    make_ack_packet, APRSPacket, build_station_beacon_comment,
 )
 from server.digipeater import Digipeater
 from server.igate import IGate
@@ -21,6 +21,8 @@ logger = logging.getLogger("propview.handler")
 
 # Maximum number of messages to keep in memory
 MAX_MESSAGE_HISTORY = 500
+AX25_UI_CONTROL = 0x03
+AX25_PID_NO_LAYER3 = 0xF0
 
 
 class PacketHandler:
@@ -64,6 +66,48 @@ class PacketHandler:
             "messages_tx": 0,
             "start_time": time.time(),
         }
+
+    def _find_recent_rx_source(self, callsign: str) -> Optional[str]:
+        """Return the most recent inbound transport seen for a station."""
+        wanted = (callsign or "").strip().upper()
+        if not wanted:
+            return None
+
+        for msg in self._messages:
+            if (
+                msg.get("direction") == "rx"
+                and (msg.get("from") or "").strip().upper() == wanted
+                and msg.get("source") in {"rf", "aprs_is"}
+            ):
+                return msg["source"]
+        return None
+
+    def _can_send_via(self, source: str) -> bool:
+        """Check whether the requested transport is currently available."""
+        if source == "rf":
+            return bool(self.rf_interfaces)
+        if source == "aprs_is":
+            return bool(self.aprs_is and self.aprs_is.connected)
+        return False
+
+    def _resolve_message_source(
+        self,
+        to_call: str,
+        preferred_source: Optional[str] = None,
+    ) -> str:
+        """Choose the outbound transport for a message."""
+        if preferred_source:
+            if not self._can_send_via(preferred_source):
+                if preferred_source == "rf":
+                    raise ValueError("Cannot reply over RF because no RF interface is available.")
+                raise ValueError("Cannot reply over APRS-IS because APRS-IS is not connected.")
+            return preferred_source
+
+        inferred_source = self._find_recent_rx_source(to_call)
+        if inferred_source and self._can_send_via(inferred_source):
+            return inferred_source
+
+        return "both"
 
     def set_alert_manager(self, alert_manager):
         """Inject the AlertManager for message notifications."""
@@ -112,12 +156,24 @@ class PacketHandler:
                 self.stats["digipeated"] += 1
 
         # IGate RF→IS
-        if self.igate and self.aprs_is:
-            gated = self.igate.should_gate_rf_to_is(raw_str, frame.from_call)
+        if (
+            self.igate
+            and self.aprs_is
+            and frame.control == AX25_UI_CONTROL
+            and frame.pid == AX25_PID_NO_LAYER3
+        ):
+            gated = self.igate.should_gate_rf_to_is(
+                raw_str,
+                frame.from_call,
+                can_tx_rf=any(iface.connected for iface in self.rf_interfaces),
+            )
             if gated:
                 await self.aprs_is.send(gated)
                 self.stats["gated_rf_to_is"] += 1
                 self.stats["is_tx"] += 1
+
+        # Push live stats to web clients
+        await self._broadcast_stats()
 
     async def handle_is_packet(self, raw_str: str):
         """Handle a packet received from APRS-IS."""
@@ -128,9 +184,14 @@ class PacketHandler:
 
         # Track the station
         await self.tracker.track_packet(packet)
+        if self.igate:
+            self.igate.note_is_station(packet.from_call)
 
         # Check for APRS message addressed to us
         await self._check_incoming_message(packet, source="aprs_is")
+
+        # Push live stats to web clients
+        await self._broadcast_stats()
 
         # IGate IS→RF
         if self.igate and self.rf_interfaces:
@@ -138,20 +199,18 @@ class PacketHandler:
                 raw_str, packet.from_call, packet.to_call
             )
             if gated_info:
-                # Build frame for RF transmission
-                frame = AX25Frame.from_aprs_string(raw_str)
-                if frame:
-                    # APRS-IS policy: gated packets must NOT request further
-                    # digipeating. Use only our callsign (with has-been-repeated
-                    # flag) — no WIDE path.
-                    from server.ax25 import AX25Address
+                # APRS-IS policy: gated packets must be sent as third-party
+                # traffic to prevent loops and false local reachability.
+                from server.ax25 import AX25Address
 
-                    frame.digipeaters = [
-                        AX25Address.from_string(self.config.station.full_callsign + "*"),
-                    ]
-                    await self._transmit_rf(frame)
-                    self.stats["gated_is_to_rf"] += 1
-                    self.stats["rf_tx"] += 1
+                frame = AX25Frame()
+                frame.source = AX25Address.from_string(self.config.station.full_callsign)
+                frame.destination = AX25Address.from_string("APRS")
+                frame.digipeaters = []
+                frame.info = gated_info.encode("latin-1")
+                await self._transmit_rf(frame)
+                self.stats["gated_is_to_rf"] += 1
+                self.stats["rf_tx"] += 1
 
     async def _check_incoming_message(self, packet: APRSPacket, source: str):
         """Detect APRS messages and handle those addressed to our station."""
@@ -195,7 +254,7 @@ class PacketHandler:
 
             # Send ACK if message has an ID
             if packet.message_id:
-                await self._send_ack(packet.from_call, packet.message_id)
+                await self._send_ack(packet.from_call, packet.message_id, source)
                 msg_record["acked"] = True
 
             logger.info(
@@ -252,17 +311,23 @@ class PacketHandler:
             "data": {"from": from_call, "message_id": rej_id},
         }))
 
-    async def _send_ack(self, to_call: str, message_id: str):
+    async def _send_ack(self, to_call: str, message_id: str, source: str):
         """Send an ACK for a received message."""
         ack_info = make_ack_packet(to_call, message_id)
-        await self._send_aprs_message_raw(to_call, ack_info)
+        await self._send_aprs_message_raw(to_call, ack_info, source=source)
 
-    async def send_message(self, to_call: str, text: str) -> Dict[str, Any]:
+    async def send_message(
+        self,
+        to_call: str,
+        text: str,
+        preferred_source: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Send an APRS message to another station. Returns the message record."""
         msg_id = str(self._msg_id_counter)
         self._msg_id_counter += 1
 
         info = make_message_packet(to_call, text, msg_id)
+        resolved_source = self._resolve_message_source(to_call, preferred_source)
 
         msg_record = {
             "id": len(self._messages) + 1,
@@ -271,7 +336,7 @@ class PacketHandler:
             "to": to_call.strip(),
             "text": text,
             "message_id": msg_id,
-            "source": "local",
+            "source": resolved_source,
             "direction": "tx",
             "acked": False,
         }
@@ -279,10 +344,12 @@ class PacketHandler:
         self._messages.appendleft(msg_record)
         self.stats["messages_tx"] += 1
 
-        # Send on both RF and APRS-IS
-        await self._send_aprs_message_raw(to_call, info)
+        await self._send_aprs_message_raw(to_call, info, source=resolved_source)
 
-        logger.info(f"Message TX: {self.config.station.full_callsign} → {to_call}: {text}")
+        logger.info(
+            f"Message TX ({resolved_source}): "
+            f"{self.config.station.full_callsign} → {to_call}: {text}"
+        )
 
         # Broadcast to web clients
         await self.ws.broadcast({
@@ -292,23 +359,30 @@ class PacketHandler:
 
         return msg_record
 
-    async def _send_aprs_message_raw(self, to_call: str, info: str):
-        """Send an APRS info field on RF and APRS-IS."""
+    async def _send_aprs_message_raw(
+        self,
+        to_call: str,
+        info: str,
+        source: str = "both",
+    ):
+        """Send an APRS info field on the requested transport."""
         my_call = self.config.station.full_callsign
+        send_rf = source in {"rf", "both"}
+        send_is = source in {"aprs_is", "both"}
 
         # Send on RF
-        if self.rf_interfaces:
+        if send_rf and self.rf_interfaces:
             from server.ax25 import AX25Address
 
             frame = AX25Frame()
             frame.source = AX25Address.from_string(my_call)
             frame.destination = AX25Address.from_string("APRSPV")
             frame.digipeaters = [AX25Address.from_string("WIDE1-1")]
-            frame.info = info.encode("ascii", errors="replace")
+            frame.info = info.encode("latin-1")
             await self._transmit_rf(frame)
 
         # Send on APRS-IS
-        if self.aprs_is and self.aprs_is.connected:
+        if send_is and self.aprs_is and self.aprs_is.connected:
             is_packet = f"{my_call}>APRSPV,TCPIP*:{info}"
             await self.aprs_is.send(is_packet)
             self.stats["is_tx"] += 1
@@ -371,7 +445,71 @@ class PacketHandler:
                 logger.error(f"Beacon error: {e}", exc_info=True)
                 await asyncio.sleep(60)
 
-    async def _send_beacon(self):
+    def get_beacon_status(self, mode: str = "both") -> Dict[str, Any]:
+        """Return whether a beacon can be transmitted right now."""
+        cfg = self.config.station
+        has_position = not (cfg.latitude == 0.0 and cfg.longitude == 0.0)
+        rf_available = any(iface.connected for iface in self.rf_interfaces)
+        is_connected = bool(self.aprs_is and self.aprs_is.connected)
+        is_verified = bool(self.aprs_is and getattr(self.aprs_is, "verified", False))
+        aprs_is_available = is_connected and is_verified
+        send_rf = mode in {"rf", "both"}
+        send_is = mode in {"aprs_is", "both"}
+        rf_selected_ready = send_rf and rf_available
+        is_selected_ready = send_is and aprs_is_available
+
+        message = "Ready to transmit beacon."
+        if not has_position:
+            message = "Set station latitude and longitude before transmitting a beacon."
+        elif mode == "rf":
+            if rf_available:
+                message = "Beacon will transmit on RF only."
+            else:
+                message = "No connected RF interface is available."
+        elif mode == "aprs_is":
+            if aprs_is_available:
+                message = "Beacon will transmit on APRS-IS only."
+            elif is_connected and not is_verified:
+                message = "APRS-IS is connected in read-only mode."
+            else:
+                message = "No APRS-IS transmit path is available."
+        elif rf_available or aprs_is_available:
+            if rf_available and aprs_is_available:
+                message = "Beacon will transmit on RF and APRS-IS."
+            elif rf_available:
+                message = "Beacon will transmit on RF only."
+            else:
+                message = "Beacon will transmit on APRS-IS only."
+        elif is_connected and not is_verified:
+            message = "APRS-IS is connected in read-only mode and no RF interface is connected."
+        else:
+            message = "No RF interface or APRS-IS transmit path is available."
+
+        return {
+            "can_transmit": has_position and (rf_selected_ready or is_selected_ready),
+            "has_position": has_position,
+            "rf_available": rf_available,
+            "aprs_is_connected": is_connected,
+            "aprs_is_verified": is_verified,
+            "aprs_is_available": aprs_is_available,
+            "selected_mode": mode,
+            "message": message,
+        }
+
+    async def transmit_beacon_now(self, mode: str = "both") -> Dict[str, Any]:
+        """Transmit a one-shot beacon immediately."""
+        status = self.get_beacon_status(mode=mode)
+        if not status["can_transmit"]:
+            raise ValueError(status["message"])
+
+        await self._send_beacon(mode=mode)
+        await self._broadcast_stats()
+        return {
+            **status,
+            "message": status["message"].replace("will transmit", "transmitted"),
+        }
+
+    async def _send_beacon(self, mode: str = "both"):
         """Send our position beacon on RF and APRS-IS."""
         cfg = self.config.station
         if cfg.latitude == 0.0 and cfg.longitude == 0.0:
@@ -384,11 +522,15 @@ class PacketHandler:
             cfg.longitude,
             cfg.symbol_table,
             cfg.symbol_code,
-            cfg.comment,
+            build_station_beacon_comment(
+                comment=cfg.comment,
+                phg=cfg.phg,
+                equipment=cfg.equipment,
+            ),
         )
 
         # Beacon on RF
-        if self.rf_interfaces:
+        if mode in {"rf", "both"} and self.rf_interfaces:
             from server.ax25 import AX25Address
 
             frame = AX25Frame()
@@ -406,17 +548,25 @@ class PacketHandler:
             else:
                 frame.digipeaters = []
 
-            frame.info = info.encode("ascii")
+            frame.info = info.encode("latin-1")
             await self._transmit_rf(frame)
             logger.info(f"Beacon RF TX: {cfg.full_callsign}>APRSPV via {path_str or 'DIRECT'}")
 
         # Beacon on APRS-IS
-        if self.aprs_is and self.aprs_is.connected:
+        if mode in {"aprs_is", "both"} and self.aprs_is and self.aprs_is.connected:
             await self.aprs_is.send_position()
             logger.info("Beacon APRS-IS TX")
 
-        if not self.rf_interfaces and not (self.aprs_is and self.aprs_is.connected):
+        if mode == "rf" and not self.rf_interfaces:
+            logger.warning("Beacon: no RF interfaces available")
+        elif mode == "aprs_is" and not (self.aprs_is and self.aprs_is.connected):
+            logger.warning("Beacon: no APRS-IS interface available")
+        elif mode == "both" and not self.rf_interfaces and not (self.aprs_is and self.aprs_is.connected):
             logger.warning("Beacon: no RF or APRS-IS interfaces available")
+
+    async def _broadcast_stats(self):
+        """Push current stats to all connected web clients."""
+        await self.ws.broadcast({"type": "stats", "data": dict(self.stats)})
 
     def get_status(self) -> dict:
         """Get current system status."""
@@ -426,6 +576,11 @@ class PacketHandler:
 
         return {
             "station": self.config.station.full_callsign,
+            "station_info": {
+                "callsign": self.config.station.full_callsign,
+                "latitude": self.config.station.latitude,
+                "longitude": self.config.station.longitude,
+            },
             "latitude": self.config.station.latitude,
             "longitude": self.config.station.longitude,
             "uptime_seconds": round(uptime),
@@ -435,7 +590,9 @@ class PacketHandler:
                 for iface in self.rf_interfaces
             ],
             "aprs_is_connected": is_connected,
+            "aprs_is_verified": bool(self.aprs_is and getattr(self.aprs_is, "verified", False)),
             "digipeater_enabled": self.config.digipeater.enabled,
             "igate_enabled": self.config.igate.enabled,
+            "beacon": self.get_beacon_status(),
             "stats": dict(self.stats),
         }

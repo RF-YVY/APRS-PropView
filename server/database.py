@@ -52,11 +52,48 @@ CREATE TABLE IF NOT EXISTS propagation_log (
     unique_stations_24h INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS ducting_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp REAL NOT NULL,
+    ducting_index REAL,
+    pressure_mb REAL,
+    pressure_trend REAL,
+    temp_f REAL,
+    humidity REAL,
+    inversion_detected INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS path_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp REAL NOT NULL,
+    callsign TEXT NOT NULL,
+    distance_km REAL,
+    heading REAL,
+    path TEXT DEFAULT '',
+    hop_count INTEGER DEFAULT 0,
+    is_direct INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS first_heard_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp REAL NOT NULL,
+    callsign TEXT NOT NULL,
+    source TEXT NOT NULL,
+    distance_km REAL,
+    heading REAL,
+    latitude REAL,
+    longitude REAL
+);
+
 CREATE INDEX IF NOT EXISTS idx_stations_source ON stations(source);
 CREATE INDEX IF NOT EXISTS idx_stations_last_heard ON stations(last_heard);
 CREATE INDEX IF NOT EXISTS idx_packets_timestamp ON packets(timestamp);
 CREATE INDEX IF NOT EXISTS idx_packets_source ON packets(source);
 CREATE INDEX IF NOT EXISTS idx_propagation_timestamp ON propagation_log(timestamp);
+CREATE INDEX IF NOT EXISTS idx_ducting_timestamp ON ducting_log(timestamp);
+CREATE INDEX IF NOT EXISTS idx_path_history_callsign ON path_history(callsign);
+CREATE INDEX IF NOT EXISTS idx_path_history_timestamp ON path_history(timestamp);
+CREATE INDEX IF NOT EXISTS idx_first_heard_timestamp ON first_heard_log(timestamp);
 """
 
 
@@ -77,6 +114,10 @@ class Database:
         if self.db:
             await self.db.close()
 
+    async def commit(self):
+        if self.db:
+            await self.db.commit()
+
     # ── Station operations ──────────────────────────────────────────
 
     async def upsert_station(
@@ -92,6 +133,7 @@ class Database:
         raw: str = "",
         distance_km: Optional[float] = None,
         heading: Optional[float] = None,
+        commit: bool = True,
     ) -> Dict[str, Any]:
         """Insert or update a station record. Returns the station dict."""
         now = time.time()
@@ -140,7 +182,8 @@ class Database:
                     distance_km, heading,
                 ),
             )
-        await self.db.commit()
+        if commit:
+            await self.db.commit()
 
         # Return current station data
         result = await self.db.execute(
@@ -212,6 +255,7 @@ class Database:
         packet_type: str = "",
         latitude: Optional[float] = None,
         longitude: Optional[float] = None,
+        commit: bool = True,
     ):
         now = time.time()
         await self.db.execute(
@@ -220,7 +264,8 @@ class Database:
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (now, source, from_call, to_call, path, raw, packet_type, latitude, longitude),
         )
-        await self.db.commit()
+        if commit:
+            await self.db.commit()
 
     async def get_recent_packets(
         self, limit: int = 100, source: Optional[str] = None
@@ -252,6 +297,7 @@ class Database:
         unique_1h: int,
         unique_6h: int,
         unique_24h: int,
+        commit: bool = True,
     ):
         now = time.time()
         await self.db.execute(
@@ -261,7 +307,8 @@ class Database:
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (now, rf_count, max_dist, avg_dist, unique_1h, unique_6h, unique_24h),
         )
-        await self.db.commit()
+        if commit:
+            await self.db.commit()
 
     async def get_propagation_history(self, hours: int = 24) -> List[Dict[str, Any]]:
         cutoff = time.time() - (hours * 3600)
@@ -310,3 +357,146 @@ class Database:
         stats["total_packets"] = row[0] if row else 0
 
         return stats
+
+    # ── Ducting log ─────────────────────────────────────────────────
+
+    async def log_ducting(
+        self,
+        ducting_index: float,
+        pressure_mb: Optional[float],
+        pressure_trend: Optional[float],
+        temp_f: Optional[float],
+        humidity: Optional[float],
+        inversion_detected: bool = False,
+    ):
+        now = time.time()
+        await self.db.execute(
+            """INSERT INTO ducting_log
+               (timestamp, ducting_index, pressure_mb, pressure_trend, temp_f, humidity, inversion_detected)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (now, ducting_index, pressure_mb, pressure_trend, temp_f, humidity, 1 if inversion_detected else 0),
+        )
+        await self.db.commit()
+
+    async def get_ducting_history(self, hours: int = 24) -> List[Dict[str, Any]]:
+        cutoff = time.time() - (hours * 3600)
+        cursor = await self.db.execute(
+            "SELECT * FROM ducting_log WHERE timestamp >= ? ORDER BY timestamp ASC",
+            (cutoff,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+    # ── Path history ────────────────────────────────────────────────
+
+    async def log_path_event(
+        self,
+        callsign: str,
+        distance_km: Optional[float],
+        heading: Optional[float],
+        path: str = "",
+        hop_count: int = 0,
+        is_direct: bool = False,
+        commit: bool = True,
+    ):
+        now = time.time()
+        await self.db.execute(
+            """INSERT INTO path_history
+               (timestamp, callsign, distance_km, heading, path, hop_count, is_direct)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (now, callsign, distance_km, heading, path, hop_count, 1 if is_direct else 0),
+        )
+        if commit:
+            await self.db.commit()
+
+    async def get_path_history(self, callsign: str, hours: int = 24) -> List[Dict[str, Any]]:
+        cutoff = time.time() - (hours * 3600)
+        cursor = await self.db.execute(
+            """SELECT * FROM path_history
+               WHERE callsign = ? AND timestamp >= ?
+               ORDER BY timestamp ASC""",
+            (callsign, cutoff),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+    async def get_all_path_history(self, hours: int = 24) -> List[Dict[str, Any]]:
+        cutoff = time.time() - (hours * 3600)
+        cursor = await self.db.execute(
+            "SELECT * FROM path_history WHERE timestamp >= ? ORDER BY timestamp ASC",
+            (cutoff,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+    # ── First heard log ─────────────────────────────────────────────
+
+    async def log_first_heard(
+        self,
+        callsign: str,
+        source: str,
+        distance_km: Optional[float],
+        heading: Optional[float],
+        latitude: Optional[float],
+        longitude: Optional[float],
+        commit: bool = True,
+    ):
+        now = time.time()
+        await self.db.execute(
+            """INSERT INTO first_heard_log
+               (timestamp, callsign, source, distance_km, heading, latitude, longitude)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (now, callsign, source, distance_km, heading, latitude, longitude),
+        )
+        if commit:
+            await self.db.commit()
+
+    async def get_first_heard_log(self, hours: int = 24) -> List[Dict[str, Any]]:
+        cutoff = time.time() - (hours * 3600)
+        cursor = await self.db.execute(
+            "SELECT * FROM first_heard_log WHERE timestamp >= ? ORDER BY timestamp DESC",
+            (cutoff,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+    async def is_station_known(self, callsign: str, source: str) -> bool:
+        """Check if a station has ever been seen before."""
+        cursor = await self.db.execute(
+            "SELECT 1 FROM stations WHERE callsign = ? AND source = ?",
+            (callsign, source),
+        )
+        row = await cursor.fetchone()
+        return row is not None
+
+    # ── Export helpers ──────────────────────────────────────────────
+
+    async def export_stations(self, source: Optional[str] = None, hours: Optional[int] = None) -> List[Dict[str, Any]]:
+        query = "SELECT * FROM stations WHERE 1=1"
+        params = []
+        if source:
+            query += " AND source = ?"
+            params.append(source)
+        if hours:
+            cutoff = time.time() - (hours * 3600)
+            query += " AND last_heard >= ?"
+            params.append(cutoff)
+        query += " ORDER BY last_heard DESC"
+        cursor = await self.db.execute(query, params)
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+    async def export_packets(self, hours: int = 24, source: Optional[str] = None) -> List[Dict[str, Any]]:
+        cutoff = time.time() - (hours * 3600)
+        query = "SELECT * FROM packets WHERE timestamp >= ?"
+        params = [cutoff]
+        if source:
+            query += " AND source = ?"
+            params.append(source)
+        query += " ORDER BY timestamp DESC"
+        cursor = await self.db.execute(query, params)
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+    async def export_propagation(self, hours: int = 24) -> List[Dict[str, Any]]:
+        return await self.get_propagation_history(hours)

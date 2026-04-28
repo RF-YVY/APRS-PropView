@@ -15,10 +15,12 @@ logger = logging.getLogger("propview.alerts")
 class AlertConfig:
     """Alert thresholds and notification config."""
     enabled: bool = False
-    # Thresholds
-    min_stations: int = 5          # Minimum RF stations in 1h to trigger
-    min_distance_km: float = 100.0 # Minimum max-distance to trigger
-    cooldown_seconds: int = 1800   # 30 min between alerts
+    # Per-meter thresholds
+    my_min_stations: int = 3           # Direct-heard stations in 1h for My Station alert
+    my_min_distance_km: float = 100.0  # Max direct distance for My Station alert
+    regional_min_stations: int = 5     # All RF stations in 1h for Regional alert
+    regional_min_distance_km: float = 100.0  # Max RF distance for Regional alert
+    cooldown_seconds: int = 1800       # 30 min between alerts
 
     # Quiet hours (local time, HH:MM 24h)
     quiet_start: str = ""          # e.g. "22:00"
@@ -53,9 +55,14 @@ class AlertManager:
     def __init__(self, config: AlertConfig, station_callsign: str = ""):
         self.config = config
         self.station_callsign = station_callsign
-        self._last_alert_time: float = 0
+        self._last_my_alert_time: float = 0
+        self._last_regional_alert_time: float = 0
+        self._last_first_heard_alert_time: float = 0
+        self._last_es_alert_time: float = 0
+        self._last_anomaly_alert_time: float = 0
         self._alert_history: List[Dict[str, Any]] = []
-        self._band_open: bool = False
+        self._my_band_open: bool = False
+        self._regional_band_open: bool = False
 
     def _is_quiet_time(self) -> bool:
         """Check if current local time falls within the quiet window."""
@@ -74,61 +81,214 @@ class AlertManager:
         except Exception:
             return False
 
-    def check_and_alert(self, prop_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Check propagation data against thresholds. Returns alert dict if triggered."""
+    def check_and_alert(self, prop_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Check propagation data against thresholds. Returns list of alert dicts."""
         if not self.config.enabled:
-            return None
+            return []
 
         if self._is_quiet_time():
-            return None
+            return []
 
         now = time.time()
-        rf_count = prop_data.get("rf_stations_1h", 0)
+        alerts: List[Dict[str, Any]] = []
+
+        # --- MY STATION alert (direct-heard only) ---
+        my_count = prop_data.get("my_stations_1h", 0)
+        my_max_dist = prop_data.get("my_max_distance_km", 0)
+        my_score = prop_data.get("my_score", 0)
+        my_level = prop_data.get("my_level", "none")
+
+        my_meets = (
+            my_count >= self.config.my_min_stations
+            and my_max_dist >= self.config.my_min_distance_km
+        )
+
+        if not my_meets:
+            self._my_band_open = False
+        elif now - self._last_my_alert_time >= self.config.cooldown_seconds:
+            was_open = self._my_band_open
+            self._my_band_open = True
+            self._last_my_alert_time = now
+            label = "MY STATION Band Opening!" if not was_open else "MY STATION Band Still Open!"
+            alerts.append({
+                "type": "my_station_opening",
+                "timestamp": now,
+                "rf_stations": my_count,
+                "max_distance_km": round(my_max_dist, 1),
+                "score": round(my_score, 1),
+                "level": my_level,
+                "message": (
+                    f"\U0001f6a8 {label}\n"
+                    f"Station: {self.station_callsign}\n"
+                    f"Direct Stations (1h): {my_count}\n"
+                    f"Max Distance (Direct): {my_max_dist:.1f} km ({my_max_dist * 0.621371:.1f} mi)\n"
+                    f"My Station Propagation: {my_level.upper()} (Score: {my_score:.0f})"
+                ),
+            })
+
+        # --- REGIONAL alert (RF heard via another digipeater) ---
+        rf_count = prop_data.get("regional_stations_1h", prop_data.get("rf_stations_1h", 0))
         max_dist = prop_data.get("max_distance_km", 0)
         score = prop_data.get("score", 0)
         level = prop_data.get("level", "none")
 
-        meets_threshold = (
-            rf_count >= self.config.min_stations
-            and max_dist >= self.config.min_distance_km
+        reg_meets = (
+            rf_count >= self.config.regional_min_stations
+            and max_dist >= self.config.regional_min_distance_km
         )
 
-        if not meets_threshold:
-            self._band_open = False
-            return None
+        if not reg_meets:
+            self._regional_band_open = False
+        elif now - self._last_regional_alert_time >= self.config.cooldown_seconds:
+            was_open = self._regional_band_open
+            self._regional_band_open = True
+            self._last_regional_alert_time = now
+            label = "Regional VHF Band Watch" if not was_open else "Regional VHF Band Still Open"
+            alerts.append({
+                "type": "regional_watch",
+                "timestamp": now,
+                "rf_stations": rf_count,
+                "max_distance_km": round(max_dist, 1),
+                "score": round(score, 1),
+                "level": level,
+                "message": (
+                    f"\U0001f50d {label}\n"
+                    f"Station: {self.station_callsign}\n"
+                    f"Relayed RF Stations (1h): {rf_count}\n"
+                    f"Max Relayed Distance: {max_dist:.1f} km ({max_dist * 0.621371:.1f} mi)\n"
+                    f"Regional Propagation: {level.upper()} (Score: {score:.0f})"
+                ),
+            })
 
-        # Check cooldown — re-alert after cooldown even if band stays open
-        if now - self._last_alert_time < self.config.cooldown_seconds:
-            return None
+        # Store history
+        for alert in alerts:
+            self._alert_history.append(alert)
+        if len(self._alert_history) > 100:
+            self._alert_history = self._alert_history[-100:]
 
-        was_open = self._band_open
-        self._band_open = True
-        self._last_alert_time = now
+        return alerts
 
-        label = "VHF Band Opening Detected" if not was_open else "VHF Band Still Open"
+    async def check_first_heard(self, callsign: str, distance_km: float, heading: Optional[float]):
+        """Alert when a never-before-heard station appears on RF at distance."""
+        if not self.config.enabled or self._is_quiet_time():
+            return
 
+        now = time.time()
+
+        # Only alert for stations at meaningful distance
+        if distance_km < 50:
+            return
+
+        # Cooldown: don't spam first-heard alerts
+        if now - self._last_first_heard_alert_time < 300:  # 5 min cooldown
+            return
+
+        self._last_first_heard_alert_time = now
+
+        bearing_str = f"{heading:.0f}°" if heading else "?"
         alert = {
-            "type": "band_opening",
+            "type": "first_heard",
             "timestamp": now,
-            "rf_stations": rf_count,
-            "max_distance_km": round(max_dist, 1),
-            "score": round(score, 1),
-            "level": level,
+            "callsign": callsign,
+            "distance_km": round(distance_km, 1),
+            "heading": heading,
             "message": (
-                f"🚨 {label}!\n"
+                f"\U0001f195 New Station Heard on RF!\n"
                 f"Station: {self.station_callsign}\n"
-                f"RF Stations (1h): {rf_count}\n"
-                f"Max Distance: {max_dist:.1f} km ({max_dist * 0.621371:.1f} mi)\n"
-                f"Propagation: {level.upper()} (Score: {score:.0f})"
+                f"New Contact: {callsign}\n"
+                f"Distance: {distance_km:.1f} km ({distance_km * 0.621371:.1f} mi)\n"
+                f"Bearing: {bearing_str}"
             ),
         }
 
         self._alert_history.append(alert)
-        # Keep only last 100 alerts
         if len(self._alert_history) > 100:
             self._alert_history = self._alert_history[-100:]
 
-        return alert
+        await self.send_alert(alert)
+
+    async def check_anomaly(self, anomaly_data: Dict[str, Any]):
+        """Alert when propagation anomaly is detected (conditions significantly above baseline)."""
+        if not self.config.enabled or self._is_quiet_time():
+            return
+
+        now = time.time()
+        anomaly_score = anomaly_data.get("anomaly_score", 0)
+        anomaly_level = anomaly_data.get("anomaly_level", "normal")
+
+        # Only alert on significant+ anomalies
+        if anomaly_score < 1.5:
+            return
+
+        if now - self._last_anomaly_alert_time < self.config.cooldown_seconds:
+            return
+
+        self._last_anomaly_alert_time = now
+
+        count_pct = anomaly_data.get("count_pct_above_avg", 0)
+        dist_pct = anomaly_data.get("dist_pct_above_avg", 0)
+
+        alert = {
+            "type": "anomaly",
+            "timestamp": now,
+            "anomaly_score": anomaly_score,
+            "anomaly_level": anomaly_level,
+            "message": (
+                f"\U0001f4c8 Propagation Anomaly Detected!\n"
+                f"Station: {self.station_callsign}\n"
+                f"Level: {anomaly_level.upper()} ({anomaly_score:.1f}\u03c3)\n"
+                f"Stations: {count_pct:+.0f}% vs average\n"
+                f"Distance: {dist_pct:+.0f}% vs average"
+            ),
+        }
+
+        self._alert_history.append(alert)
+        if len(self._alert_history) > 100:
+            self._alert_history = self._alert_history[-100:]
+
+        await self.send_alert(alert)
+
+    async def check_sporadic_e(self, es_data: Dict[str, Any]):
+        """Alert when sporadic-E conditions are detected."""
+        if not self.config.enabled or self._is_quiet_time():
+            return
+
+        now = time.time()
+        es_level = es_data.get("es_level", "none")
+
+        if es_level not in ("likely", "possible"):
+            return
+
+        if now - self._last_es_alert_time < self.config.cooldown_seconds:
+            return
+
+        self._last_es_alert_time = now
+
+        candidates = es_data.get("candidates", [])
+        top_calls = ", ".join(c["callsign"] for c in candidates[:3])
+        max_dist = max((c["distance_km"] for c in candidates), default=0)
+
+        alert = {
+            "type": "sporadic_e",
+            "timestamp": now,
+            "es_level": es_level,
+            "candidate_count": len(candidates),
+            "max_distance_km": round(max_dist, 1),
+            "message": (
+                f"\u26a1 Possible Sporadic-E Event!\n"
+                f"Station: {self.station_callsign}\n"
+                f"Confidence: {es_level.upper()}\n"
+                f"Candidates: {len(candidates)} station(s)\n"
+                f"Max Distance: {max_dist:.1f} km ({max_dist * 0.621371:.1f} mi)\n"
+                f"Top: {top_calls}"
+            ),
+        }
+
+        self._alert_history.append(alert)
+        if len(self._alert_history) > 100:
+            self._alert_history = self._alert_history[-100:]
+
+        await self.send_alert(alert)
 
     async def send_alert(self, alert: Dict[str, Any]):
         """Send alert via all configured channels."""
@@ -157,6 +317,46 @@ class AlertManager:
             if isinstance(result, Exception):
                 logger.error(f"Alert channel {i} failed: {result}", exc_info=result)
 
+    def _alert_embed_title(self, alert: Dict[str, Any]) -> str:
+        alert_type = alert.get("type")
+        if alert_type == "my_station_opening":
+            return "\U0001f6a8 MY STATION Band Opening!"
+        if alert_type == "anomaly":
+            return "\U0001f4c8 Propagation Anomaly Detected"
+        if alert_type == "sporadic_e":
+            return "\u26a1 Possible Sporadic-E Event"
+        return "\U0001f50d Regional VHF Band Watch"
+
+    def _alert_embed_color(self, alert: Dict[str, Any]) -> int:
+        alert_type = alert.get("type")
+        if alert_type == "my_station_opening":
+            return 0xFF6B35
+        if alert_type == "anomaly":
+            return 0xE63946
+        if alert_type == "sporadic_e":
+            return 0xF4A261
+        return 0xFFA500
+
+    def _alert_embed_fields(self, alert: Dict[str, Any]) -> list[Dict[str, Any]]:
+        alert_type = alert.get("type")
+        if alert_type in {"my_station_opening", "regional_watch"}:
+            return [
+                {"name": "RF Stations", "value": str(alert.get("rf_stations", 0)), "inline": True},
+                {"name": "Max Distance", "value": f"{alert.get('max_distance_km', 0)} km", "inline": True},
+                {"name": "Propagation", "value": f"{str(alert.get('level', 'none')).upper()} ({alert.get('score', 0)})", "inline": True},
+            ]
+        if alert_type == "anomaly":
+            return [
+                {"name": "Level", "value": f"{str(alert.get('anomaly_level', 'normal')).upper()} ({alert.get('anomaly_score', 0):.1f}\u03c3)", "inline": True},
+            ]
+        if alert_type == "sporadic_e":
+            return [
+                {"name": "Confidence", "value": str(alert.get("es_level", "none")).upper(), "inline": True},
+                {"name": "Candidates", "value": str(alert.get("candidate_count", 0)), "inline": True},
+                {"name": "Max Distance", "value": f"{alert.get('max_distance_km', 0)} km", "inline": True},
+            ]
+        return []
+
     async def _send_discord(self, alert: Dict[str, Any]):
         """Send alert to Discord webhook."""
         try:
@@ -166,13 +366,9 @@ class AlertManager:
             payload = json.dumps({
                 "content": alert["message"],
                 "embeds": [{
-                    "title": "🚨 VHF Band Opening!",
-                    "color": 0xFF6B35,
-                    "fields": [
-                        {"name": "RF Stations", "value": str(alert["rf_stations"]), "inline": True},
-                        {"name": "Max Distance", "value": f"{alert['max_distance_km']} km", "inline": True},
-                        {"name": "Propagation", "value": f"{alert['level'].upper()} ({alert['score']})", "inline": True},
-                    ],
+                    "title": self._alert_embed_title(alert),
+                    "color": self._alert_embed_color(alert),
+                    "fields": self._alert_embed_fields(alert),
                     "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(alert["timestamp"])),
                 }],
             }).encode("utf-8")
@@ -205,8 +401,12 @@ class AlertManager:
             import smtplib
             from email.mime.text import MIMEText
 
+            subject = (
+                "APRS PropView \u2014 MY STATION Band Opening!" if alert.get("type") == "my_station_opening"
+                else "APRS PropView \u2014 Regional VHF Band Watch"
+            )
             msg = MIMEText(alert["message"])
-            msg["Subject"] = f"APRS PropView — VHF Band Opening Alert"
+            msg["Subject"] = subject
             msg["From"] = self.config.email_from
             msg["To"] = self.config.email_to
 
@@ -243,12 +443,19 @@ class AlertManager:
             import smtplib
             from email.mime.text import MIMEText
 
-            sms_text = (
-                f"VHF BAND OPENING! "
-                f"RF:{alert['rf_stations']} "
-                f"Max:{alert['max_distance_km']}km "
-                f"Prop:{alert['level'].upper()}"
+            sms_label = (
+                "MY STATION BAND OPENING!" if alert.get("type") == "my_station_opening"
+                else "REGIONAL VHF WATCH"
             )
+            if alert.get("type") in {"my_station_opening", "regional_watch"}:
+                sms_text = (
+                    f"{sms_label} "
+                    f"RF:{alert.get('rf_stations', 0)} "
+                    f"Max:{alert.get('max_distance_km', 0)}km "
+                    f"Prop:{str(alert.get('level', 'none')).upper()}"
+                )
+            else:
+                sms_text = alert["message"]
 
             msg = MIMEText(sms_text)
             msg["Subject"] = ""
@@ -413,8 +620,13 @@ class AlertManager:
         """Return current alert system status."""
         return {
             "enabled": self.config.enabled,
-            "band_open": self._band_open,
-            "last_alert": self._last_alert_time,
+            "my_band_open": self._my_band_open,
+            "regional_band_open": self._regional_band_open,
+            "last_my_alert": self._last_my_alert_time,
+            "last_regional_alert": self._last_regional_alert_time,
+            "last_first_heard_alert": self._last_first_heard_alert_time,
+            "last_anomaly_alert": self._last_anomaly_alert_time,
+            "last_es_alert": self._last_es_alert_time,
             "alert_count": len(self._alert_history),
             "channels": {
                 "discord": self.config.discord_enabled,
@@ -422,8 +634,10 @@ class AlertManager:
                 "sms": self.config.sms_enabled,
             },
             "thresholds": {
-                "min_stations": self.config.min_stations,
-                "min_distance_km": self.config.min_distance_km,
+                "my_min_stations": self.config.my_min_stations,
+                "my_min_distance_km": self.config.my_min_distance_km,
+                "regional_min_stations": self.config.regional_min_stations,
+                "regional_min_distance_km": self.config.regional_min_distance_km,
                 "cooldown_seconds": self.config.cooldown_seconds,
             },
         }

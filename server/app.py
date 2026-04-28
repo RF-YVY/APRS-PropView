@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from server.config import (
     Config, StationConfig, DigiConfig, IGateConfig, APRSISConfig,
     KISSSerialConfig, KISSTCPConfig, WebConfig, DatabaseConfig, TrackingConfig,
-    AlertsConfig, WeatherConfig,
+    AlertsConfig, PropagationConfig, WeatherConfig, MQTTConfig,
 )
 from server.database import Database
 from server.station_tracker import StationTracker
@@ -98,6 +98,15 @@ def _validate_config(body: Dict[str, Any]) -> Optional[str]:
             v = s.get(fld, "")
             if v and (len(v) != 1 or ord(v) < 32 or ord(v) > 126):
                 return f"{fld} must be a single printable ASCII character."
+        phg = (s.get("phg", "") or "").strip().upper()
+        if phg and not re.fullmatch(r"\d{4}", phg):
+            return "PHG must be four digits (Power, Height, Gain, Direction) or left blank."
+        for fld in ("equipment", "comment"):
+            v = s.get(fld)
+            if v is not None:
+                v = str(v)
+                if any(ord(ch) < 32 or ord(ch) > 126 for ch in v):
+                    return f"{fld} must use printable ASCII characters only."
 
     if "aprs_is" in body:
         a = body["aprs_is"]
@@ -267,6 +276,9 @@ def create_app(
 
         except WebSocketDisconnect:
             ws_manager.disconnect(websocket)
+        except (ConnectionResetError, OSError, RuntimeError) as e:
+            logger.info(f"WebSocket closed: {e}")
+            ws_manager.disconnect(websocket)
         except Exception as e:
             logger.error(f"WebSocket error: {e}")
             ws_manager.disconnect(websocket)
@@ -364,6 +376,7 @@ def create_app(
             body = await request.json()
             to_call = (body.get("to", "") or "").strip().upper()
             text = (body.get("text", "") or "").strip()
+            reply_source = (body.get("reply_source", "") or "").strip().lower()
 
             if not to_call:
                 return JSONResponse(
@@ -385,10 +398,24 @@ def create_app(
                     status_code=400,
                     content={"success": False, "message": "Invalid recipient callsign format."},
                 )
+            if reply_source and reply_source not in {"rf", "aprs_is"}:
+                return JSONResponse(
+                    status_code=400,
+                    content={"success": False, "message": "Invalid reply source."},
+                )
 
-            msg = await handler.send_message(to_call, text)
+            msg = await handler.send_message(
+                to_call,
+                text,
+                preferred_source=reply_source or None,
+            )
             return {"success": True, "message": msg}
 
+        except ValueError as e:
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": str(e)},
+            )
         except Exception as e:
             logger.error(f"Failed to send message: {e}")
             return JSONResponse(
@@ -397,6 +424,34 @@ def create_app(
             )
 
     # ── Analytics API ───────────────────────────────────────────
+
+    @app.post("/api/beacon/transmit")
+    async def transmit_beacon(request: Request):
+        """Transmit a beacon immediately, independent of the interval timer."""
+        try:
+            try:
+                body = await request.json()
+            except Exception:
+                body = {}
+            mode = (body.get("mode", "both") or "both").strip().lower()
+            if mode not in {"both", "rf", "aprs_is"}:
+                return JSONResponse(
+                    status_code=400,
+                    content={"success": False, "message": "Invalid beacon transmit mode."},
+                )
+            result = await handler.transmit_beacon_now(mode=mode)
+            return {"success": True, **result}
+        except ValueError as e:
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": str(e)},
+            )
+        except Exception as e:
+            logger.error(f"Failed to transmit beacon: {e}")
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "message": "Error transmitting beacon."},
+            )
 
     @app.get("/api/analytics/longest-paths")
     async def get_longest_paths(
@@ -432,6 +487,110 @@ def create_app(
         if not analytics:
             return {"hours": [], "best_hours": [], "days_analyzed": 0, "total_samples": 0, "day_of_week": []}
         return await analytics.get_best_times(days=days)
+
+    @app.get("/api/analytics/anomaly")
+    async def get_anomaly():
+        if not analytics:
+            return {"anomaly_score": 0, "anomaly_level": "normal"}
+        return await analytics.get_anomaly_status()
+
+    @app.get("/api/analytics/bearing-sectors")
+    async def get_bearing_sectors(
+        hours: int = Query(24, ge=1, le=168),
+    ):
+        if not analytics:
+            return {"sectors": [], "dominant": None}
+        return await analytics.get_bearing_sectors(hours=hours)
+
+    @app.get("/api/analytics/historical")
+    async def get_historical_comparison():
+        if not analytics:
+            return {"today": [], "yesterday": [], "week_avg": []}
+        return await analytics.get_historical_comparison()
+
+    @app.get("/api/analytics/sporadic-e")
+    async def get_sporadic_e():
+        if not analytics:
+            return {"es_level": "none", "es_score": 0, "candidates": []}
+        return await analytics.detect_sporadic_e()
+
+    @app.get("/api/analytics/observed-range")
+    async def get_observed_range(
+        hours: int = Query(24, ge=1, le=168),
+    ):
+        if not analytics:
+            return {"sectors": [], "max_range_km": 0}
+        return await analytics.get_observed_range(hours=hours)
+
+    @app.get("/api/analytics/path-quality/{callsign}")
+    async def get_path_quality(callsign: str):
+        history = await db.get_path_history(callsign.upper())
+        return {"callsign": callsign.upper(), "history": history, "count": len(history)}
+
+    @app.get("/api/first-heard")
+    async def get_first_heard(
+        hours: int = Query(24, ge=1, le=168),
+    ):
+        log = await db.get_first_heard_log(hours=hours)
+        return {"log": log, "count": len(log)}
+
+    @app.get("/api/ducting")
+    async def get_ducting():
+        if not weather_manager:
+            return {"enabled": False}
+        try:
+            ducting = await weather_manager.get_ducting()
+            return ducting or {"enabled": True, "available": False}
+        except Exception as e:
+            logger.error(f"Ducting fetch error: {e}")
+            return {"enabled": True, "error": str(e)}
+
+    @app.get("/api/export/stations")
+    async def export_stations(
+        fmt: str = Query("json", regex="^(json|csv)$"),
+    ):
+        from server.export import stations_to_csv
+        rows = await db.export_stations()
+        if fmt == "csv":
+            from fastapi.responses import Response
+            return Response(
+                content=stations_to_csv(rows),
+                media_type="text/csv",
+                headers={"Content-Disposition": "attachment; filename=stations.csv"},
+            )
+        return {"stations": rows, "count": len(rows)}
+
+    @app.get("/api/export/packets")
+    async def export_packets(
+        fmt: str = Query("json", regex="^(json|csv)$"),
+        hours: int = Query(24, ge=1, le=168),
+    ):
+        from server.export import packets_to_csv
+        rows = await db.export_packets(hours=hours)
+        if fmt == "csv":
+            from fastapi.responses import Response
+            return Response(
+                content=packets_to_csv(rows),
+                media_type="text/csv",
+                headers={"Content-Disposition": "attachment; filename=packets.csv"},
+            )
+        return {"packets": rows, "count": len(rows)}
+
+    @app.get("/api/export/propagation")
+    async def export_propagation(
+        fmt: str = Query("json", regex="^(json|csv)$"),
+        hours: int = Query(24, ge=1, le=168),
+    ):
+        from server.export import propagation_to_csv
+        rows = await db.export_propagation(hours=hours)
+        if fmt == "csv":
+            from fastapi.responses import Response
+            return Response(
+                content=propagation_to_csv(rows),
+                media_type="text/csv",
+                headers={"Content-Disposition": "attachment; filename=propagation.csv"},
+            )
+        return {"propagation": rows, "count": len(rows)}
 
     # ── Alerts API ──────────────────────────────────────────────
 
@@ -507,6 +666,8 @@ def create_app(
                 "longitude": config.station.longitude,
                 "symbol_table": config.station.symbol_table,
                 "symbol_code": config.station.symbol_code,
+                "phg": config.station.phg,
+                "equipment": config.station.equipment,
                 "comment": config.station.comment,
                 "beacon_interval": config.station.beacon_interval,
                 "beacon_path": config.station.beacon_path,
@@ -555,8 +716,10 @@ def create_app(
             },
             "alerts": {
                 "enabled": config.alerts.enabled,
-                "min_stations": config.alerts.min_stations,
-                "min_distance_km": config.alerts.min_distance_km,
+                "my_min_stations": config.alerts.my_min_stations,
+                "my_min_distance_km": config.alerts.my_min_distance_km,
+                "regional_min_stations": config.alerts.regional_min_stations,
+                "regional_min_distance_km": config.alerts.regional_min_distance_km,
                 "cooldown_seconds": config.alerts.cooldown_seconds,
                 "quiet_start": config.alerts.quiet_start,
                 "quiet_end": config.alerts.quiet_end,
@@ -580,6 +743,20 @@ def create_app(
                 "location_code": config.weather.location_code,
                 "alert_range_miles": config.weather.alert_range_miles,
                 "refresh_minutes": config.weather.refresh_minutes,
+            },
+            "propagation": {
+                "my_station_full_count": config.propagation.my_station_full_count,
+                "my_station_full_dist_km": config.propagation.my_station_full_dist_km,
+                "regional_full_count": config.propagation.regional_full_count,
+                "regional_full_dist_km": config.propagation.regional_full_dist_km,
+            },
+            "mqtt": {
+                "enabled": config.mqtt.enabled,
+                "broker": config.mqtt.broker,
+                "port": config.mqtt.port,
+                "topic_prefix": config.mqtt.topic_prefix,
+                "username": config.mqtt.username,
+                "password": _mask_passcode(config.mqtt.password),
             },
         }
 
@@ -618,6 +795,8 @@ def create_app(
                 config.station.longitude = float(s.get("longitude", config.station.longitude))
                 config.station.symbol_table = s.get("symbol_table", config.station.symbol_table)
                 config.station.symbol_code = s.get("symbol_code", config.station.symbol_code)
+                config.station.phg = (s.get("phg", config.station.phg) or "").strip().upper()
+                config.station.equipment = (s.get("equipment", config.station.equipment) or "").strip()
                 config.station.comment = s.get("comment", config.station.comment)
                 config.station.beacon_interval = int(s.get("beacon_interval", config.station.beacon_interval))
                 config.station.beacon_path = s.get("beacon_path", config.station.beacon_path)
@@ -711,8 +890,10 @@ def create_app(
             if "alerts" in body:
                 al = body["alerts"]
                 config.alerts.enabled = bool(al.get("enabled", config.alerts.enabled))
-                config.alerts.min_stations = int(al.get("min_stations", config.alerts.min_stations))
-                config.alerts.min_distance_km = float(al.get("min_distance_km", config.alerts.min_distance_km))
+                config.alerts.my_min_stations = max(1, int(al.get("my_min_stations", config.alerts.my_min_stations)))
+                config.alerts.my_min_distance_km = max(1.0, float(al.get("my_min_distance_km", config.alerts.my_min_distance_km)))
+                config.alerts.regional_min_stations = max(1, int(al.get("regional_min_stations", config.alerts.regional_min_stations)))
+                config.alerts.regional_min_distance_km = max(1.0, float(al.get("regional_min_distance_km", config.alerts.regional_min_distance_km)))
                 config.alerts.cooldown_seconds = int(al.get("cooldown_seconds", config.alerts.cooldown_seconds))
                 config.alerts.quiet_start = al.get("quiet_start", config.alerts.quiet_start) or ""
                 config.alerts.quiet_end = al.get("quiet_end", config.alerts.quiet_end) or ""
@@ -738,8 +919,10 @@ def create_app(
                     from server.alerts import AlertConfig
                     alert_manager.config = AlertConfig(
                         enabled=config.alerts.enabled,
-                        min_stations=config.alerts.min_stations,
-                        min_distance_km=config.alerts.min_distance_km,
+                        my_min_stations=config.alerts.my_min_stations,
+                        my_min_distance_km=config.alerts.my_min_distance_km,
+                        regional_min_stations=config.alerts.regional_min_stations,
+                        regional_min_distance_km=config.alerts.regional_min_distance_km,
                         cooldown_seconds=config.alerts.cooldown_seconds,
                         quiet_start=config.alerts.quiet_start,
                         quiet_end=config.alerts.quiet_end,
@@ -768,6 +951,28 @@ def create_app(
                 config.weather.alert_range_miles = int(wc.get("alert_range_miles", config.weather.alert_range_miles))
                 config.weather.refresh_minutes = max(5, int(wc.get("refresh_minutes", config.weather.refresh_minutes)))
                 live_applied.append("weather")
+
+            # Update propagation config
+            if "propagation" in body:
+                pc = body["propagation"]
+                config.propagation.my_station_full_count = max(1, int(pc.get("my_station_full_count", config.propagation.my_station_full_count)))
+                config.propagation.my_station_full_dist_km = max(1.0, float(pc.get("my_station_full_dist_km", config.propagation.my_station_full_dist_km)))
+                config.propagation.regional_full_count = max(1, int(pc.get("regional_full_count", config.propagation.regional_full_count)))
+                config.propagation.regional_full_dist_km = max(1.0, float(pc.get("regional_full_dist_km", config.propagation.regional_full_dist_km)))
+                live_applied.append("propagation meters")
+
+            # Update MQTT config
+            if "mqtt" in body:
+                mc = body["mqtt"]
+                config.mqtt.enabled = bool(mc.get("enabled", config.mqtt.enabled))
+                config.mqtt.broker = mc.get("broker", config.mqtt.broker)
+                config.mqtt.port = int(mc.get("port", config.mqtt.port))
+                config.mqtt.topic_prefix = mc.get("topic_prefix", config.mqtt.topic_prefix)
+                config.mqtt.username = mc.get("username", config.mqtt.username)
+                new_mqtt_pw = mc.get("password", "")
+                if new_mqtt_pw and "*" not in new_mqtt_pw:
+                    config.mqtt.password = new_mqtt_pw
+                live_applied.append("mqtt")
 
             # Save to file
             config_path = Path("config.toml")

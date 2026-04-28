@@ -8,6 +8,11 @@
     // ── State ──────────────────────────────────────────────────
     let serverConfig = null;
     let uptimeStart = 0;
+    const SETTINGS_COLLAPSE_KEY = 'pvSettingsCollapsed';
+    const UI_STATE_KEY = 'pvDesktopUIState';
+    let lastStatus = null;
+    let manualBeaconPending = false;
+    let liveSyncPending = false;
 
     // ── Distance unit helpers (mi / km) ────────────────────────
     // Default to miles; persisted in localStorage
@@ -75,6 +80,10 @@
 
         // Init tab switching
         initTabs();
+        document.querySelector('.tab-btn.active')?.dispatchEvent(new Event('click'));
+
+        // Organize settings UI before control bindings are attached
+        initSettingsOrganizer();
 
         // Init station manager
         window.pvStations.init();
@@ -99,6 +108,7 @@
 
         // Sidebar toggle
         initSidebarToggle();
+        initManualBeaconButton();
 
         // Force callsign field to uppercase on input
         document.getElementById('cfg-callsign')?.addEventListener('input', (e) => {
@@ -114,10 +124,10 @@
         // Start uptime timer
         setInterval(updateUptime, 1000);
 
-        // Periodically refresh station lists
+        // Refresh relative station timestamps without rebuilding whole lists
         setInterval(() => {
-            window.pvStations._renderStationList('rf');
-            window.pvStations._renderStationList('aprs_is');
+            window.pvStations.refreshRelativeTimes();
+            window.pvStations.render();
         }, 15000);
 
         // Periodically ghost stale markers (every 30s)
@@ -125,22 +135,56 @@
         window._expireMinutes = 0; // default, overwritten by loadSettings
         setInterval(() => {
             window.pvMap?.ghostStaleMarkers(window._ghostMinutes);
-        }, 30000);
+            window.pvMap?.updateObservedRange();
+        }, 15000);
 
         // Periodically expire stale stations (every 60s)
         setInterval(() => {
             if (window._expireMinutes > 0) {
                 window.pvMap?.expireStaleStations(window._expireMinutes);
             }
-        }, 60000);
+        }, 30000);
+
+        setInterval(() => {
+            refreshLiveData();
+        }, 30000);
     });
 
     // ── Tab switching ──────────────────────────────────────────
 
+    function _activateDesktopTab(tabId, persist = true) {
+        const btn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
+        if (!btn) return;
+
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(tabId)?.classList.add('active');
+
+        if (persist) {
+            const uiState = _loadUIState();
+            uiState.activeTab = tabId;
+            _saveUIState(uiState);
+        }
+
+        const panel = document.getElementById('side-panel');
+        if (panel?.classList.contains('collapsed')) {
+            panel.classList.remove('collapsed');
+            const toggle = document.getElementById('sidebar-toggle');
+            if (toggle) toggle.textContent = '>';
+            if (toggle) toggle.textContent = 'â–¶';
+            if (toggle) toggle.textContent = '>';
+            setTimeout(() => window.pvMap?.map?.invalidateSize(), 300);
+        }
+    }
+
     function initTabs() {
+        window.pvActivateTab = _activateDesktopTab;
+
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.addEventListener('click', () => {
-                const tabId = btn.dataset.tab;
+                _activateDesktopTab(btn.dataset.tab);
+                return;
                 // Deactivate all
                 document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
                 document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
@@ -158,6 +202,11 @@
                 }
             });
         });
+
+        const savedTab = _loadUIState().activeTab;
+        if (savedTab && document.getElementById(savedTab)) {
+            _activateDesktopTab(savedTab, false);
+        }
     }
 
     // ── Sidebar toggle ─────────────────────────────────────────
@@ -187,6 +236,215 @@
         });
     }
 
+    function initSettingsOrganizer() {
+        const panel = document.querySelector('.settings-panel');
+        if (!panel) return;
+
+        const collapsed = new Set(_loadCollapsedSettings());
+        const sections = Array.from(panel.querySelectorAll('.settings-section'));
+        if (!sections.length) return;
+
+        const toolbar = document.createElement('div');
+        toolbar.className = 'settings-toolbar';
+        toolbar.innerHTML = `
+            <div class="settings-toolbar-search">
+                <input type="search" class="settings-search-input" placeholder="Find a setting or section">
+            </div>
+            <div class="settings-toolbar-actions">
+                <button type="button" class="settings-toolbar-btn" data-settings-action="expand">Expand all</button>
+                <button type="button" class="settings-toolbar-btn" data-settings-action="collapse">Collapse all</button>
+                <button type="button" class="settings-toolbar-btn" data-settings-action="reset">Show all</button>
+            </div>
+        `;
+
+        const searchInput = toolbar.querySelector('.settings-search-input');
+        const quickNav = document.createElement('div');
+        quickNav.className = 'settings-quicknav';
+        const sectionRefs = [];
+        const noResults = document.createElement('div');
+        noResults.className = 'settings-no-results';
+        noResults.textContent = 'No settings matched that search.';
+
+        function updateStickyOffsets() {
+            const toolbarHeight = toolbar.offsetHeight || 0;
+            quickNav.style.top = `${toolbarHeight}px`;
+            panel.style.setProperty('--settings-sticky-offset', `${toolbarHeight + (quickNav.offsetHeight || 0) + 10}px`);
+        }
+
+        function scrollSectionIntoView(section) {
+            const toolbarHeight = toolbar.offsetHeight || 0;
+            const quickNavHeight = quickNav.offsetHeight || 0;
+            const extraGap = 8;
+            const targetTop =
+                panel.scrollTop +
+                section.getBoundingClientRect().top -
+                panel.getBoundingClientRect().top -
+                toolbarHeight -
+                quickNavHeight -
+                extraGap;
+
+            panel.scrollTo({
+                top: Math.max(0, targetTop),
+                behavior: 'smooth',
+            });
+        }
+
+        sections.forEach((section, index) => {
+            const heading = section.querySelector('h3');
+            if (!heading) return;
+
+            const key = section.dataset.settingsKey || `section-${index}`;
+            section.dataset.settingsKey = key;
+            const title = heading.textContent.trim();
+            const summary = (section.dataset.summary || '').trim();
+            section.dataset.searchText = `${title} ${summary} ${section.textContent}`.toLowerCase();
+
+            const header = document.createElement('div');
+            header.className = 'settings-section-header';
+
+            const titleWrap = document.createElement('div');
+            const titleEl = document.createElement('h3');
+            titleEl.textContent = title;
+            titleWrap.appendChild(titleEl);
+
+            const toggle = document.createElement('button');
+            toggle.type = 'button';
+            toggle.className = 'settings-section-toggle';
+            toggle.addEventListener('click', () => {
+                section.classList.toggle('collapsed');
+                _syncSettingsSectionState(section, toggle, collapsed);
+                _saveCollapsedSettings(collapsed);
+            });
+
+            header.appendChild(titleWrap);
+            header.appendChild(toggle);
+
+            const body = document.createElement('div');
+            body.className = 'settings-section-body';
+            Array.from(section.childNodes).forEach((node) => {
+                if (node !== heading) body.appendChild(node);
+            });
+
+            section.innerHTML = '';
+            section.appendChild(header);
+            section.appendChild(body);
+
+            if (collapsed.has(key)) section.classList.add('collapsed');
+            _syncSettingsSectionState(section, toggle, collapsed, false);
+
+            const navBtn = document.createElement('button');
+            navBtn.type = 'button';
+            navBtn.className = 'settings-quicknav-btn';
+            navBtn.innerHTML = `<span class="settings-quicknav-title">${_escapeHTML(title)}</span>`;
+            navBtn.addEventListener('click', () => {
+                if (section.classList.contains('collapsed')) {
+                    section.classList.remove('collapsed');
+                    _syncSettingsSectionState(section, toggle, collapsed);
+                    _saveCollapsedSettings(collapsed);
+                }
+                updateStickyOffsets();
+                scrollSectionIntoView(section);
+            });
+            quickNav.appendChild(navBtn);
+            sectionRefs.push({ section, navBtn, toggle });
+        });
+
+        toolbar.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-settings-action]');
+            if (!btn) return;
+
+            const visibleRefs = sectionRefs.filter(({ section }) => !section.classList.contains('settings-hidden'));
+            if (btn.dataset.settingsAction === 'expand') {
+                visibleRefs.forEach(({ section, toggle }) => {
+                    section.classList.remove('collapsed');
+                    _syncSettingsSectionState(section, toggle, collapsed, false);
+                });
+                _saveCollapsedSettings(collapsed);
+                return;
+            }
+
+            if (btn.dataset.settingsAction === 'collapse') {
+                visibleRefs.forEach(({ section, toggle }) => {
+                    section.classList.add('collapsed');
+                    _syncSettingsSectionState(section, toggle, collapsed, false);
+                });
+                _saveCollapsedSettings(collapsed);
+                return;
+            }
+
+            if (searchInput) searchInput.value = '';
+            sectionRefs.forEach(({ section, navBtn }) => {
+                section.classList.remove('settings-hidden');
+                navBtn.classList.remove('settings-hidden');
+            });
+            noResults.classList.remove('visible');
+        });
+
+        searchInput?.addEventListener('input', () => {
+            const query = searchInput.value.trim().toLowerCase();
+            let visibleCount = 0;
+
+            sectionRefs.forEach(({ section, navBtn }) => {
+                const matches = !query || (section.dataset.searchText || '').includes(query);
+                section.classList.toggle('settings-hidden', !matches);
+                navBtn.classList.toggle('settings-hidden', !matches);
+                if (matches) visibleCount += 1;
+            });
+
+            noResults.classList.toggle('visible', visibleCount === 0);
+        });
+
+        const anchor = panel.querySelector('.settings-section');
+        panel.insertBefore(toolbar, anchor);
+        panel.insertBefore(quickNav, anchor);
+        panel.insertBefore(noResults, anchor);
+        updateStickyOffsets();
+        window.addEventListener('resize', updateStickyOffsets);
+    }
+
+    function _syncSettingsSectionState(section, toggle, collapsedSet, updateStorage = true) {
+        const key = section.dataset.settingsKey;
+        const isCollapsed = section.classList.contains('collapsed');
+        toggle.textContent = isCollapsed ? 'Expand' : 'Collapse';
+        toggle.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+        if (isCollapsed) collapsedSet.add(key);
+        else collapsedSet.delete(key);
+        if (updateStorage) _saveCollapsedSettings(collapsedSet);
+    }
+
+    function _loadCollapsedSettings() {
+        try {
+            const raw = localStorage.getItem(SETTINGS_COLLAPSE_KEY);
+            const parsed = raw ? JSON.parse(raw) : [];
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function _saveCollapsedSettings(collapsedSet) {
+        localStorage.setItem(SETTINGS_COLLAPSE_KEY, JSON.stringify(Array.from(collapsedSet)));
+    }
+
+    function _loadUIState() {
+        try {
+            const raw = localStorage.getItem(UI_STATE_KEY);
+            return raw ? JSON.parse(raw) : {};
+        } catch (e) {
+            return {};
+        }
+    }
+
+    function _saveUIState(state) {
+        localStorage.setItem(UI_STATE_KEY, JSON.stringify(state || {}));
+    }
+
+    function _escapeHTML(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
     // ── WebSocket event wiring ─────────────────────────────────
 
     function wireWebSocket() {
@@ -194,6 +452,17 @@
 
         ws.on('status', (msg) => {
             handleStatus(msg.data);
+        });
+
+        ws.on('stats', (msg) => {
+            if (msg.data) {
+                setTextById('stat-rf-rx', msg.data.rf_rx || 0);
+                setTextById('stat-rf-tx', msg.data.rf_tx || 0);
+                setTextById('stat-is-rx', msg.data.is_rx || 0);
+                setTextById('stat-is-tx', msg.data.is_tx || 0);
+                setTextById('stat-digi', msg.data.digipeated || 0);
+                setTextById('stat-gated', (msg.data.gated_rf_to_is || 0) + (msg.data.gated_is_to_rf || 0));
+            }
         });
 
         ws.on('initial_stations', (msg) => {
@@ -215,13 +484,38 @@
         ws.on('propagation', (msg) => {
             if (msg.data) {
                 updatePropagation(msg.data);
+                if (window.pvMap) window.pvMap.updateObservedRange(msg.data.timestamp);
             }
         });
 
         ws.on('alert', (msg) => {
             if (msg.data) {
-                showAlertNotification(msg.data);
+                if (msg.data.type === 'my_station_opening' || msg.data.type === 'regional_watch') {
+                    showBandAlertNotification(msg.data);
+                } else if (msg.data.message) {
+                    showSystemNotification(msg.data.message, 'info');
+                }
                 window.pvAnalytics.loadAlerts();
+            }
+        });
+
+        ws.on('first_heard', (msg) => {
+            if (msg.data) {
+                showSystemNotification(`New station heard: ${msg.data.callsign}`, 'info');
+            }
+        });
+
+        ws.on('anomaly', (msg) => {
+            // Auto-refresh anomaly section if visible
+            const anomalySection = document.getElementById('sec-anomaly');
+            if (anomalySection && anomalySection.classList.contains('active')) {
+                window.pvAnalytics.loadAnomaly();
+            }
+        });
+
+        ws.on('sporadic_e', (msg) => {
+            if (msg.data && msg.data.es_level !== 'none') {
+                showSystemNotification(`Possible Sporadic-E — ${msg.data.es_level}`, 'info');
             }
         });
 
@@ -245,7 +539,7 @@
 
         ws.on('station_removed', (msg) => {
             if (msg.data && msg.data.callsign) {
-                window.pvMap?.removeStation(msg.data.callsign);
+                window.pvMap?.removeStation(msg.data.callsign, msg.data.source);
                 window.pvStations?.removeStation(msg.data.callsign, msg.data.source);
             }
         });
@@ -253,14 +547,142 @@
         ws.on('connected', () => {
             // Fetch propagation history for charts
             fetchPropagationHistory();
+            refreshLiveData();
+            window.pvStations?.render();
+            window.pvMessages?.render();
+            updateAprsIsIndicator(lastStatus);
+        });
+
+        ws.on('disconnected', () => {
+            window.pvStations?.render();
+            window.pvMessages?.render();
+            updateAprsIsIndicator(lastStatus);
         });
     }
 
     // ── Status handling ────────────────────────────────────────
 
+    function updateAprsIsIndicator(status) {
+        const chip = document.getElementById('aprs-is-chip');
+        const chipText = document.getElementById('aprs-is-chip-text');
+        if (!chip || !chipText) return;
+
+        const wsConnected = !!window.pvWebSocket?.isConnected;
+        const isConnected = !!status?.aprs_is_connected;
+        const isVerified = !!status?.aprs_is_verified;
+
+        let state = 'offline';
+        let label = 'Offline';
+
+        if (!wsConnected) {
+            state = 'reconnecting';
+            label = 'UI reconnecting';
+        } else if (isConnected && isVerified) {
+            state = 'online';
+            label = 'Connected';
+        } else if (isConnected) {
+            state = 'read-only';
+            label = 'Read-only';
+        } else {
+            state = 'offline';
+            label = 'Disconnected';
+        }
+
+        chip.classList.remove('online', 'read-only', 'reconnecting', 'offline');
+        chip.classList.add(state);
+        chipText.textContent = label;
+    }
+
+    function getManualBeaconLabel(beacon) {
+        if (!beacon) return 'Waiting for status...';
+        if (beacon.can_transmit) {
+            if (beacon.rf_available && beacon.aprs_is_available) return 'RF + APRS-IS ready';
+            if (beacon.rf_available) return 'RF ready';
+            if (beacon.aprs_is_available) return 'APRS-IS ready';
+        }
+        if (!beacon.has_position) return 'Set station position first';
+        if (beacon.aprs_is_connected && !beacon.aprs_is_verified) return 'APRS-IS read-only, RF unavailable';
+        return 'No transmit path available';
+    }
+
+    function updateManualBeaconControls(status) {
+        const btn = document.getElementById('btn-manual-beacon');
+        const statusEl = document.getElementById('manual-beacon-status');
+        const modeEl = document.getElementById('manual-beacon-mode');
+        if (!btn || !statusEl || !modeEl) return;
+
+        const beacon = status?.beacon || null;
+        const mode = modeEl.value || 'both';
+        const canTransmit =
+            !!beacon?.has_position &&
+            (
+                (mode === 'both' && (beacon.rf_available || beacon.aprs_is_available)) ||
+                (mode === 'rf' && beacon.rf_available) ||
+                (mode === 'aprs_is' && beacon.aprs_is_available)
+            );
+        let label = getManualBeaconLabel(beacon);
+        if (beacon?.has_position) {
+            if (mode === 'rf') label = beacon.rf_available ? 'RF ready' : 'RF unavailable';
+            if (mode === 'aprs_is') label = beacon.aprs_is_available ? 'APRS-IS ready' : 'APRS-IS unavailable';
+        }
+
+        btn.disabled = manualBeaconPending || !canTransmit;
+        btn.textContent = manualBeaconPending ? 'Sending Beacon...' : 'Transmit Beacon';
+        modeEl.disabled = manualBeaconPending;
+        statusEl.textContent = label;
+        statusEl.title = beacon?.message || label;
+        statusEl.classList.toggle('ready', canTransmit);
+        statusEl.classList.toggle('blocked', !!beacon && !canTransmit);
+    }
+
+    async function refreshSystemStatus() {
+        try {
+            const resp = await fetch('/api/status');
+            if (!resp.ok) return;
+            handleStatus(await resp.json());
+        } catch (e) {
+            console.error('Failed to refresh system status:', e);
+        }
+    }
+
+    function initManualBeaconButton() {
+        const btn = document.getElementById('btn-manual-beacon');
+        const modeEl = document.getElementById('manual-beacon-mode');
+        if (!btn || !modeEl) return;
+
+        updateManualBeaconControls(lastStatus);
+        modeEl.addEventListener('change', () => updateManualBeaconControls(lastStatus));
+        btn.addEventListener('click', async () => {
+            if (manualBeaconPending) return;
+
+            manualBeaconPending = true;
+            updateManualBeaconControls(lastStatus);
+
+            try {
+                const resp = await fetch('/api/beacon/transmit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode: modeEl.value || 'both' }),
+                });
+                const result = await resp.json();
+                if (!resp.ok || !result.success) {
+                    throw new Error(result.message || 'Beacon transmit failed.');
+                }
+                showSystemNotification(result.message || 'Beacon transmitted.', 'success');
+                await refreshSystemStatus();
+            } catch (e) {
+                showSystemNotification(e.message || 'Beacon transmit failed.', 'error');
+            } finally {
+                manualBeaconPending = false;
+                updateManualBeaconControls(lastStatus);
+            }
+        });
+    }
+
     function handleStatus(status) {
         if (!status) return;
 
+        lastStatus = status;
         serverConfig = status;
         uptimeStart = Date.now() / 1000 - (status.uptime_seconds || 0);
 
@@ -279,6 +701,8 @@
             isEl.classList.toggle('connected', status.aprs_is_connected);
             isEl.classList.toggle('disconnected', !status.aprs_is_connected);
         }
+        updateAprsIsIndicator(status);
+        updateManualBeaconControls(status);
 
         // Update stats
         if (status.stats) {
@@ -302,18 +726,27 @@
     function updatePropagation(data) {
         if (!data) return;
 
+        // ── My Station meter (direct-heard only) ───────────
+        const myScore = data.my_score || 0;
+        const myLevel = data.my_level || 'none';
+        const myBar = document.getElementById('prop-bar-my');
+        if (myBar) {
+            myBar.style.width = `${Math.min(myScore, 100)}%`;
+            myBar.className = `prop-bar ${myLevel}`;
+        }
+        setTextById('prop-level-my', myLevel.toUpperCase());
+        setTextById('prop-score-my', `Score: ${myScore.toFixed(0)}`);
+
+        // ── Regional meter (all RF) ────────────────────────
         const score = data.score || 0;
         const level = data.level || 'none';
-
-        // Update header gauge
-        const bar = document.getElementById('prop-bar');
-        if (bar) {
-            bar.style.width = `${Math.min(score, 100)}%`;
-            bar.className = `prop-bar ${level}`;
+        const regBar = document.getElementById('prop-bar-reg');
+        if (regBar) {
+            regBar.style.width = `${Math.min(score, 100)}%`;
+            regBar.className = `prop-bar ${level}`;
         }
-
-        setTextById('prop-level', level.toUpperCase());
-        setTextById('prop-score', `Score: ${score.toFixed(0)}`);
+        setTextById('prop-level-reg', level.toUpperCase());
+        setTextById('prop-score-reg', `Score: ${score.toFixed(0)}`);
 
         // Header stats
         setTextById('rf-count-1h', data.rf_stations_1h || 0);
@@ -322,9 +755,11 @@
 
         // Propagation tab cards
         setTextById('prop-rf-1h', data.rf_stations_1h || 0);
+        setTextById('prop-direct-1h', data.my_stations_1h || 0);
         setTextById('prop-rf-6h', data.rf_stations_6h || 0);
         setTextById('prop-rf-24h', data.rf_stations_24h || 0);
         setTextById('prop-max-dist', window.formatDist(data.max_distance_km || 0, 0));
+        setTextById('prop-max-dist-direct', window.formatDist(data.my_max_distance_km || 0, 0));
         setTextById('prop-avg-dist', window.formatDist(data.avg_distance_km || 0, 0));
         setTextById('prop-is-1h', data.is_stations_1h || 0);
 
@@ -547,17 +982,48 @@
         if (el) el.textContent = text;
     }
 
-    function showAlertNotification(alert) {
+    function showSystemNotification(message, type = 'info') {
+        const div = document.createElement('div');
+        div.className = `alert-notification system-notification ${type}`;
+        const icon = type === 'error' ? '⚠️' : '📡';
+        div.innerHTML = `<span class="alert-notif-icon">${icon}</span> ${_escapeHTML(message || '')}`;
+        document.body.appendChild(div);
+        setTimeout(() => { div.classList.add('fade-out'); }, 3200);
+        setTimeout(() => { div.remove(); }, 3800);
+    }
+
+    function showBandAlertNotification(alert) {
         // Create a floating notification banner
         const div = document.createElement('div');
         div.className = 'alert-notification';
-        div.innerHTML = `<span class="alert-notif-icon">🚨</span> <b>Band Opening!</b> ` +
-            `RF: ${alert.rf_stations} stations · Max: ${window.formatDist(alert.max_distance_km, 0)} · ` +
-            `${(alert.level || '').toUpperCase()}`;
+        const title = alert.type === 'my_station_opening' ? 'My Station Band Opening!' : 'Regional Band Watch';
+        div.innerHTML = `<span class="alert-notif-icon">🚨</span> <b>${_escapeHTML(title)}</b> ` +
+            `RF: ${alert.rf_stations ?? 0} stations · Max: ${window.formatDist(alert.max_distance_km || 0, 0)} · ` +
+            `${_escapeHTML((alert.level || 'unknown').toUpperCase())}`;
         document.body.appendChild(div);
         // Auto-dismiss after 15 seconds
         setTimeout(() => { div.classList.add('fade-out'); }, 12000);
         setTimeout(() => { div.remove(); }, 15000);
+    }
+
+    async function refreshLiveData() {
+        if (liveSyncPending) return;
+        liveSyncPending = true;
+        try {
+            const [statusResp, stationsResp] = await Promise.all([
+                fetch('/api/status'),
+                fetch('/api/stations/all?hours=0'),
+            ]);
+            if (statusResp.ok) handleStatus(await statusResp.json());
+            if (stationsResp.ok) {
+                const data = await stationsResp.json();
+                window.pvStations?.syncStations(data.rf || [], data.aprs_is || []);
+            }
+        } catch (e) {
+            console.error('Failed to refresh live data:', e);
+        } finally {
+            liveSyncPending = false;
+        }
     }
 
     // ── About info ──────────────────────────────────────────────
@@ -609,6 +1075,8 @@
             setVal('cfg-longitude', cfg.station?.longitude);
             setVal('cfg-symbol-table', cfg.station?.symbol_table);
             setVal('cfg-symbol-code', cfg.station?.symbol_code);
+            setVal('cfg-phg', cfg.station?.phg || '');
+            setVal('cfg-equipment', cfg.station?.equipment || '');
             setVal('cfg-comment', cfg.station?.comment);
             setVal('cfg-beacon-interval', Math.round((cfg.station?.beacon_interval || 0) / 60));
             setVal('cfg-beacon-path', cfg.station?.beacon_path || 'WIDE1-1');
@@ -658,11 +1126,19 @@
 
             // Alerts
             setChk('cfg-alerts-enabled', cfg.alerts?.enabled);
-            setVal('cfg-alerts-min-stations', cfg.alerts?.min_stations);
-            setVal('cfg-alerts-min-dist', Math.round(window.distToDisplay(cfg.alerts?.min_distance_km || 0)));
+            setVal('cfg-alerts-my-min-stations', cfg.alerts?.my_min_stations);
+            setVal('cfg-alerts-my-min-dist', Math.round(window.distToDisplay(cfg.alerts?.my_min_distance_km || 0)));
+            setVal('cfg-alerts-reg-min-stations', cfg.alerts?.regional_min_stations);
+            setVal('cfg-alerts-reg-min-dist', Math.round(window.distToDisplay(cfg.alerts?.regional_min_distance_km || 0)));
             setVal('cfg-alerts-cooldown', Math.round((cfg.alerts?.cooldown_seconds || 0) / 60));
             setVal('cfg-alerts-quiet-start', cfg.alerts?.quiet_start || '');
             setVal('cfg-alerts-quiet-end', cfg.alerts?.quiet_end || '');
+
+            // Propagation meters
+            setVal('cfg-prop-my-count', cfg.propagation?.my_station_full_count ?? 10);
+            setVal('cfg-prop-my-dist', Math.round(window.distToDisplay(cfg.propagation?.my_station_full_dist_km || 200)));
+            setVal('cfg-prop-reg-count', cfg.propagation?.regional_full_count ?? 10);
+            setVal('cfg-prop-reg-dist', Math.round(window.distToDisplay(cfg.propagation?.regional_full_dist_km || 200)));
             setChk('cfg-alerts-msg-discord', cfg.alerts?.msg_discord_enabled);
             setChk('cfg-alerts-msg-email', cfg.alerts?.msg_email_enabled);
             setChk('cfg-alerts-msg-sms', cfg.alerts?.msg_sms_enabled);
@@ -682,6 +1158,14 @@
             setVal('cfg-wx-location', cfg.weather?.location_code);
             setVal('cfg-wx-range', cfg.weather?.alert_range_miles);
             setVal('cfg-wx-refresh', cfg.weather?.refresh_minutes);
+
+            // MQTT
+            setChk('cfg-mqtt-enabled', cfg.mqtt?.enabled);
+            setVal('cfg-mqtt-broker', cfg.mqtt?.broker);
+            setVal('cfg-mqtt-port', cfg.mqtt?.port);
+            setVal('cfg-mqtt-topic', cfg.mqtt?.topic_prefix);
+            setVal('cfg-mqtt-user', cfg.mqtt?.username);
+            setVal('cfg-mqtt-pass', cfg.mqtt?.password);
 
         } catch (e) {
             console.error('Failed to load settings:', e);
@@ -704,6 +1188,8 @@
                 longitude: getVal('cfg-longitude'),
                 symbol_table: getVal('cfg-symbol-table'),
                 symbol_code: getVal('cfg-symbol-code'),
+                phg: (getVal('cfg-phg') || '').toUpperCase(),
+                equipment: getVal('cfg-equipment'),
                 comment: getVal('cfg-comment'),
                 beacon_interval: (parseInt(getVal('cfg-beacon-interval')) || 0) * 60,
                 beacon_path: getVal('cfg-beacon-path'),
@@ -749,8 +1235,10 @@
             },
             alerts: {
                 enabled: getChk('cfg-alerts-enabled'),
-                min_stations: getVal('cfg-alerts-min-stations'),
-                min_distance_km: Math.round(window.displayToDist(parseFloat(getVal('cfg-alerts-min-dist')) || 0)),
+                my_min_stations: getVal('cfg-alerts-my-min-stations'),
+                my_min_distance_km: Math.round(window.displayToDist(parseFloat(getVal('cfg-alerts-my-min-dist')) || 0)),
+                regional_min_stations: getVal('cfg-alerts-reg-min-stations'),
+                regional_min_distance_km: Math.round(window.displayToDist(parseFloat(getVal('cfg-alerts-reg-min-dist')) || 0)),
                 cooldown_seconds: (parseInt(getVal('cfg-alerts-cooldown')) || 0) * 60,
                 quiet_start: getVal('cfg-alerts-quiet-start') || '',
                 quiet_end: getVal('cfg-alerts-quiet-end') || '',
@@ -774,6 +1262,20 @@
                 location_code: getVal('cfg-wx-location'),
                 alert_range_miles: getVal('cfg-wx-range'),
                 refresh_minutes: getVal('cfg-wx-refresh'),
+            },
+            propagation: {
+                my_station_full_count: parseInt(getVal('cfg-prop-my-count')) || 10,
+                my_station_full_dist_km: Math.round(window.displayToDist(parseFloat(getVal('cfg-prop-my-dist')) || 200)),
+                regional_full_count: parseInt(getVal('cfg-prop-reg-count')) || 10,
+                regional_full_dist_km: Math.round(window.displayToDist(parseFloat(getVal('cfg-prop-reg-dist')) || 200)),
+            },
+            mqtt: {
+                enabled: getChk('cfg-mqtt-enabled'),
+                broker: getVal('cfg-mqtt-broker'),
+                port: parseInt(getVal('cfg-mqtt-port')) || 1883,
+                topic_prefix: getVal('cfg-mqtt-topic'),
+                username: getVal('cfg-mqtt-user'),
+                password: getVal('cfg-mqtt-pass'),
             },
         };
 

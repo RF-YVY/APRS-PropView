@@ -14,6 +14,11 @@ logger = logging.getLogger("propview.aprs_is")
 _BLOCKED_CALLSIGNS = {'N0CALL', 'NOCALL', 'MYCALL', 'TEST'}
 
 
+def _decode_aprs_line(raw_line: bytes) -> str:
+    """Decode APRS bytes losslessly after trimming only CR/LF terminators."""
+    return raw_line.rstrip(b"\r\n").decode("latin-1")
+
+
 class APRSISClient:
     """Asynchronous APRS-IS client with auto-reconnect."""
 
@@ -27,6 +32,24 @@ class APRSISClient:
         self._reconnect_delay = 5
         self.server_banner = ""
         self._last_rx = 0.0
+
+    async def _reset_connection(self):
+        """Clear connection state and close the current socket."""
+        writer = self.writer
+        self.reader = None
+        self.writer = None
+        self.connected = False
+        self.verified = False
+
+        if writer:
+            try:
+                writer.close()
+            except Exception:
+                pass
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
 
     @property
     def name(self) -> str:
@@ -63,7 +86,7 @@ class APRSISClient:
 
                 # Read server banner
                 banner = await asyncio.wait_for(self.reader.readline(), timeout=10)
-                self.server_banner = banner.decode("ascii", errors="replace").strip()
+                self.server_banner = _decode_aprs_line(banner)
                 logger.info(f"APRS-IS banner: {self.server_banner}")
 
                 # Send login
@@ -74,7 +97,7 @@ class APRSISClient:
 
                 # Read login response
                 response = await asyncio.wait_for(self.reader.readline(), timeout=10)
-                resp_str = response.decode("ascii", errors="replace").strip()
+                resp_str = _decode_aprs_line(response)
                 logger.info(f"APRS-IS response: {resp_str}")
 
                 if "logresp" in resp_str.lower() and "verified" in resp_str.lower():
@@ -100,7 +123,7 @@ class APRSISClient:
                 break
             except Exception as e:
                 logger.error(f"APRS-IS connection error: {e}")
-                self.connected = False
+                await self._reset_connection()
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 60)
 
@@ -112,7 +135,7 @@ class APRSISClient:
                 if not line:
                     break
 
-                text = line.decode("ascii", errors="replace").strip()
+                text = _decode_aprs_line(line)
                 self._last_rx = time.time()
 
                 # Skip server comments
@@ -132,7 +155,7 @@ class APRSISClient:
         except Exception as e:
             logger.error(f"APRS-IS read error: {e}")
         finally:
-            self.connected = False
+            await self._reset_connection()
             logger.info("APRS-IS disconnected")
 
     async def send(self, packet: str):
@@ -147,22 +170,22 @@ class APRSISClient:
             return False
 
         try:
-            self.writer.write((packet + "\r\n").encode("ascii"))
+            self.writer.write(packet.encode("latin-1") + b"\r\n")
             await self.writer.drain()
             logger.debug(f"APRS-IS TX: {packet}")
             return True
         except Exception as e:
             logger.error(f"APRS-IS send error: {e}")
-            self.connected = False
+            await self._reset_connection()
             return False
 
     async def send_position(self):
         """Send our station's position beacon to APRS-IS."""
-        from server.aprs_parser import make_position_packet
+        from server.aprs_parser import make_position_packet, build_station_beacon_comment
 
         cfg = self.config.station
         if cfg.latitude == 0.0 and cfg.longitude == 0.0:
-            return
+            return False
 
         info = make_position_packet(
             cfg.full_callsign,
@@ -170,18 +193,17 @@ class APRSISClient:
             cfg.longitude,
             cfg.symbol_table,
             cfg.symbol_code,
-            cfg.comment,
+            build_station_beacon_comment(
+                comment=cfg.comment,
+                phg=cfg.phg,
+                equipment=cfg.equipment,
+            ),
         )
         packet = f"{cfg.full_callsign}>APRSPV,TCPIP*:{info}"
-        await self.send(packet)
+        return await self.send(packet)
 
     async def close(self):
-        if self.writer:
-            try:
-                self.writer.close()
-            except Exception:
-                pass
-        self.connected = False
+        await self._reset_connection()
 
     async def reconnect(self):
         """Close the current connection and reconnect with (possibly updated) config.
@@ -192,12 +214,7 @@ class APRSISClient:
         then loop back to the top of connect() and re-read config.
         """
         logger.info("APRS-IS reconnect requested (settings changed)")
-        if self.writer:
-            try:
-                self.writer.close()
-            except Exception:
-                pass
-        self.connected = False
+        await self._reset_connection()
         # The connect() coroutine is already running in a task and will
         # automatically reconnect after _read_loop exits.
 
@@ -211,5 +228,6 @@ class APRSISClient:
                     await self.writer.drain()
             except asyncio.CancelledError:
                 break
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"APRS-IS keepalive failed: {e}")
+                await self._reset_connection()

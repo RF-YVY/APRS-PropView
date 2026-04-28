@@ -7,6 +7,8 @@ window.pvMessages = (function () {
 
     let messages = [];
     let myCallsign = '';
+    let hasLoadedInitialMessages = false;
+    let replyContext = null;
 
     function init() {
         // Send button
@@ -26,6 +28,9 @@ window.pvMessages = (function () {
             const end = e.target.selectionEnd;
             e.target.value = e.target.value.toUpperCase();
             e.target.setSelectionRange(start, end);
+            if (replyContext && e.target.value.trim().toUpperCase() !== replyContext.to) {
+                replyContext = null;
+            }
         });
 
         // Filter change
@@ -39,6 +44,7 @@ window.pvMessages = (function () {
                 console.error('Failed to clear messages on server:', e);
             }
             messages = [];
+            hasLoadedInitialMessages = true;
             renderMessages();
         });
 
@@ -61,12 +67,16 @@ window.pvMessages = (function () {
         document.getElementById('msg-list')?.addEventListener('click', (e) => {
             const item = e.target.closest('.msg-item');
             if (!item) return;
-            const fromCall = item.dataset.from;
+            const fromCall = item.dataset.replyCall;
             if (!fromCall) return;
             const toEl = document.getElementById('msg-to-call');
             const textEl = document.getElementById('msg-text');
             if (toEl) {
                 toEl.value = fromCall.toUpperCase();
+                replyContext = {
+                    to: fromCall.toUpperCase(),
+                    source: item.dataset.replySource || '',
+                };
                 if (textEl) textEl.focus();
             }
         });
@@ -79,10 +89,13 @@ window.pvMessages = (function () {
     }
 
     function switchToMessagesTab() {
-        // Deactivate all
+        if (typeof window.pvActivateTab === 'function') {
+            window.pvActivateTab('tab-messages');
+            return;
+        }
+
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-        // Activate messages tab
         const btn = document.querySelector('.tab-btn[data-tab="tab-messages"]');
         if (btn) btn.classList.add('active');
         document.getElementById('tab-messages')?.classList.add('active');
@@ -94,10 +107,13 @@ window.pvMessages = (function () {
             const data = await resp.json();
             if (data.messages) {
                 messages = data.messages;
+                hasLoadedInitialMessages = true;
                 renderMessages();
             }
         } catch (e) {
             console.error('Failed to load messages:', e);
+            hasLoadedInitialMessages = true;
+            renderMessages();
         }
     }
 
@@ -109,6 +125,7 @@ window.pvMessages = (function () {
         if (callEl) myCallsign = callEl.textContent.toUpperCase();
 
         messages.unshift(msg);
+        hasLoadedInitialMessages = true;
 
         // Show alert banner for messages addressed to us
         if (
@@ -160,6 +177,7 @@ window.pvMessages = (function () {
 
         const to = toEl.value.trim().toUpperCase();
         const text = textEl.value.trim();
+        const replySource = replyContext && replyContext.to === to ? replyContext.source : '';
 
         if (!to) { toEl.focus(); return; }
         if (!text) { textEl.focus(); return; }
@@ -170,12 +188,13 @@ window.pvMessages = (function () {
             const resp = await fetch('/api/messages/send', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ to, text }),
+                body: JSON.stringify({ to, text, reply_source: replySource || undefined }),
             });
             const result = await resp.json();
 
             if (result.success) {
                 textEl.value = '';
+                replyContext = null;
                 textEl.focus();
             } else {
                 alert(result.message || 'Failed to send message.');
@@ -214,7 +233,15 @@ window.pvMessages = (function () {
         if (countEl) countEl.textContent = `${filtered.length} messages`;
 
         if (filtered.length === 0) {
-            list.innerHTML = '<div class="msg-empty">No messages yet. Send a message or wait for incoming messages.</div>';
+            if (!hasLoadedInitialMessages) {
+                list.innerHTML = '<div class="empty-state loading"><div class="empty-state-title">Loading messages</div><div class="empty-state-copy">Checking recent APRS message history and waiting for live traffic.</div></div>';
+                return;
+            }
+            const connected = !!window.pvWebSocket?.isConnected;
+            const copy = connected
+                ? 'Send a message or wait for incoming APRS traffic.'
+                : 'The live connection is offline. Your message history will refresh when the app reconnects.';
+            list.innerHTML = `<div class="empty-state"><div class="empty-state-title">No messages yet</div><div class="empty-state-copy">${copy}</div></div>`;
             return;
         }
 
@@ -227,7 +254,10 @@ window.pvMessages = (function () {
 
             const dirClass = isMine ? 'msg-tx' : (isToMe ? 'msg-rx-mine' : 'msg-rx');
             const dirIcon = isMine ? '📤' : '📥';
-            const sourceTag = msg.source === 'rf' ? 'RF' : (msg.source === 'aprs_is' ? 'IS' : 'TX');
+            const sourceTag = msg.source === 'rf' ? 'RF' : (msg.source === 'aprs_is' ? 'IS' : (msg.source === 'both' ? 'RF+IS' : 'TX'));
+            const sourceClass = msg.source === 'rf' ? 'rf' : (msg.source === 'aprs_is' ? 'is' : 'tx');
+            const replyCall = !isMine ? (msg.from || '') : '';
+            const replySource = !isMine ? (msg.source || '') : '';
 
             let statusIcon = '';
             if (isMine) {
@@ -237,14 +267,14 @@ window.pvMessages = (function () {
             }
 
             return `
-                <div class="msg-item ${dirClass}" data-from="${escHtml(msg.from || '')}" title="Click to reply">
+                <div class="msg-item ${dirClass}" data-reply-call="${escHtml(replyCall)}" data-reply-source="${escHtml(replySource)}" title="Click to reply">
                     <div class="msg-header">
                         <span class="msg-dir">${dirIcon}</span>
                         <span class="msg-from">${escHtml(msg.from || '?')}</span>
                         <span class="msg-arrow">→</span>
                         <span class="msg-to">${escHtml(msg.to || '?')}</span>
                         ${statusIcon}
-                        <span class="msg-source-tag ${sourceTag.toLowerCase()}">${sourceTag}</span>
+                        <span class="msg-source-tag ${sourceClass}">${sourceTag}</span>
                         <span class="msg-time" title="${dateStr} ${timeStr}">${timeStr}</span>
                     </div>
                     <div class="msg-body">${escHtml(msg.text || '')}</div>
@@ -293,5 +323,6 @@ window.pvMessages = (function () {
         handleAck,
         handleRej,
         switchToMessagesTab,
+        render: renderMessages,
     };
 })();

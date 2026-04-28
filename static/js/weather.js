@@ -87,6 +87,22 @@ window.pvWeather = (function () {
         setText('wx-pressure', wx.pressure_mb != null ? Math.round(wx.pressure_mb) : '--');
         setText('wx-location', wx.location_name || wx.location_code || '--');
 
+        // Ducting index
+        const ductingEl = document.getElementById('wx-ducting');
+        const ductingVal = document.getElementById('wx-ducting-value');
+        if (ductingEl && data.ducting && data.ducting.ducting_index != null) {
+            const idx = data.ducting.ducting_index;
+            const level = data.ducting.level || 'low';
+            ductingEl.style.display = 'inline';
+            ductingVal.textContent = `${Math.round(idx)}/100 (${level})`;
+            // Color code
+            const colors = { low: '#484f58', moderate: '#d29922', high: '#f85149', extreme: '#da3633' };
+            ductingVal.style.color = colors[level] || '#8b949e';
+            ductingEl.title = `Tropospheric Ducting Index: ${Math.round(idx)}/100 — ${level}`;
+        } else if (ductingEl) {
+            ductingEl.style.display = 'none';
+        }
+
         // Thunderstorm indicator
         if (wx.is_thunderstorm) {
             const iconEl = document.getElementById('wx-icon');

@@ -103,7 +103,7 @@ class AX25Frame:
     @property
     def info_str(self) -> str:
         try:
-            return self.info.decode("ascii", errors="replace")
+            return self.info.decode("latin-1")
         except Exception:
             return ""
 
@@ -181,7 +181,7 @@ class AX25Frame:
             frame.source = AX25Address.from_string(source_str)
             frame.destination = AX25Address.from_string(dest_str)
             frame.digipeaters = [AX25Address.from_string(p) for p in path_strs]
-            frame.info = info.encode("ascii", errors="replace")
+            frame.info = info.encode("latin-1")
             return frame
 
         except Exception as e:
