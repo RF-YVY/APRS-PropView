@@ -4,6 +4,8 @@
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
 
+<img width="1915" height="944" alt="Image" src="https://github.com/user-attachments/assets/707a80fd-cfde-486b-808c-12eae8fab351" />
+
 ## Features
 
 ### Core
