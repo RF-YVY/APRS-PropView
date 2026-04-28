@@ -556,6 +556,7 @@ class AnalyticsEngine:
                     "timestamp": row["timestamp"],
                     "hour": datetime.fromtimestamp(row["timestamp"]).hour,
                     "minute": datetime.fromtimestamp(row["timestamp"]).minute,
+                    "station_count": row["rf_station_count"] or 0,
                     "rf_station_count": row["rf_station_count"] or 0,
                     "max_distance_km": row["max_distance_km"] or 0,
                     "avg_distance_km": row["avg_distance_km"] or 0,
@@ -568,6 +569,7 @@ class AnalyticsEngine:
             b = week_buckets[h]
             avg_7d.append({
                 "hour": h,
+                "station_count": round(sum(b["counts"]) / len(b["counts"]), 1) if b["counts"] else 0,
                 "rf_station_count": round(sum(b["counts"]) / len(b["counts"]), 1) if b["counts"] else 0,
                 "max_distance_km": round(sum(b["max_dists"]) / len(b["max_dists"]), 1) if b["max_dists"] else 0,
                 "avg_distance_km": round(sum(b["avg_dists"]) / len(b["avg_dists"]), 1) if b["avg_dists"] else 0,
@@ -576,6 +578,7 @@ class AnalyticsEngine:
         return {
             "today": _build_timeline(today_rows),
             "yesterday": _build_timeline(yesterday_rows),
+            "week_avg": avg_7d,
             "avg_7d": avg_7d,
             "hours": hours,
         }

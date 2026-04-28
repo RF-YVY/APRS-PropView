@@ -582,7 +582,7 @@
             const resp = await fetch('/api/analytics/historical');
             const data = await resp.json();
 
-            drawHistoricalChart('historical-count-chart', data, 'station_count', 'Stations');
+            drawHistoricalChart('historical-count-chart', data, 'rf_station_count', 'Stations');
             drawHistoricalChart('historical-dist-chart', data, 'max_distance_km', `Distance (${window.distLabel()})`);
         } catch (e) {
             console.error('Historical error:', e);
@@ -605,9 +605,9 @@
 
         // Gather all values to find max
         const allVals = [];
-        ['today', 'yesterday', 'week_avg'].forEach(key => {
+        ['today', 'yesterday', 'week_avg', 'avg_7d'].forEach(key => {
             (data[key] || []).forEach(h => {
-                const v = h[field] || 0;
+                const v = h[field] ?? (field === 'rf_station_count' ? (h.station_count || 0) : 0);
                 allVals.push(field.includes('distance') && window.convertDist ? window.convertDist(v) : v);
             });
         });
@@ -624,7 +624,7 @@
 
         // Line series config
         const series = [
-            { key: 'week_avg', color: '#484f58', width: 1, dash: [4, 4], label: '7d avg' },
+            { key: (data.week_avg ? 'week_avg' : 'avg_7d'), color: '#484f58', width: 1, dash: [4, 4], label: '7d avg' },
             { key: 'yesterday', color: '#d29922', width: 1.5, dash: [], label: 'Yesterday' },
             { key: 'today', color: '#58a6ff', width: 2, dash: [], label: 'Today' },
         ];
@@ -639,7 +639,7 @@
             ctx.setLineDash(s.dash);
 
             points.forEach((p, i) => {
-                let v = p[field] || 0;
+                let v = p[field] ?? (field === 'rf_station_count' ? (p.station_count || 0) : 0);
                 if (field.includes('distance') && window.convertDist) v = window.convertDist(v);
                 const x = padding.left + (i / 23) * chartW;
                 const y = h - padding.bottom - (v / maxVal) * chartH;

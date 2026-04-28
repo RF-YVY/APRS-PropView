@@ -505,7 +505,7 @@ def create_app(
     @app.get("/api/analytics/historical")
     async def get_historical_comparison():
         if not analytics:
-            return {"today": [], "yesterday": [], "week_avg": []}
+            return {"today": [], "yesterday": [], "week_avg": [], "avg_7d": []}
         return await analytics.get_historical_comparison()
 
     @app.get("/api/analytics/sporadic-e")
