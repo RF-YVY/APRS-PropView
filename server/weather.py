@@ -68,6 +68,31 @@ _ZIP_RE = re.compile(r"^\d{5}$")
 _ICAO_RE = re.compile(r"^[A-Z]{4}$")
 
 
+def _classify_alert_categories(event: str, alert_type: str) -> List[str]:
+    """Return coarse map overlay categories for a weather alert."""
+    categories: List[str] = []
+    event_lower = (event or "").lower()
+
+    if alert_type == "warning":
+        categories.append("warnings")
+    elif alert_type == "watch":
+        categories.append("watches")
+
+    if any(term in event_lower for term in ("flood", "flash flood", "coastal flood")):
+        categories.append("flood")
+    if any(term in event_lower for term in ("winter", "snow", "blizzard", "ice", "freeze", "freezing", "sleet")):
+        categories.append("winter")
+    if "marine" in event_lower:
+        categories.append("marine")
+    if any(term in event_lower for term in ("fire", "red flag", "heat")):
+        categories.append("fire_heat")
+
+    if not categories:
+        categories.append("other")
+
+    return list(dict.fromkeys(categories))
+
+
 def _sync_http_get(url: str, timeout: int = 10, retries: int = 1) -> Optional[Dict]:
     """Synchronous HTTP GET returning parsed JSON, or None on failure.
 
@@ -151,6 +176,25 @@ async def resolve_location(code: str) -> Optional[Dict[str, Any]]:
 
     lat, lon, name = result
     return {"latitude": lat, "longitude": lon, "name": name}
+
+
+async def resolve_alert_scope_from_point(lat: float, lon: float) -> Optional[Dict[str, Any]]:
+    """Resolve county and forecast zone identifiers for a point via the NWS points API."""
+    data = await _async_http_get(f"https://api.weather.gov/points/{lat:.4f},{lon:.4f}", timeout=15, retries=1)
+    if not data:
+        return None
+
+    props = data.get("properties", {})
+
+    def _last_segment(url: str) -> str:
+        return (url or "").rstrip("/").split("/")[-1]
+
+    return {
+        "county": _last_segment(props.get("county", "")),
+        "forecast_zone": _last_segment(props.get("forecastZone", "")),
+        "fire_zone": _last_segment(props.get("fireWeatherZone", "")),
+        "grid_id": props.get("gridId", ""),
+    }
 
 
 # ── Current weather from Open-Meteo ──────────────────────────────────
@@ -399,7 +443,11 @@ def _haversine_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> floa
 
 
 async def fetch_nws_alerts(
-    lat: float, lon: float, range_miles: int = 50
+    lat: float,
+    lon: float,
+    range_miles: int = 50,
+    scope_mode: str = "point",
+    scope_zone: str = "",
 ) -> List[Dict[str, Any]]:
     """Fetch active NWS weather alerts near a location.
 
@@ -408,7 +456,10 @@ async def fetch_nws_alerts(
       - 'watch'   (orange) — Watches, Advisories, Moderate/Minor
     """
     # NWS alerts by point — returns alerts whose zone/county covers the point
-    url = f"https://api.weather.gov/alerts/active?point={lat:.4f},{lon:.4f}"
+    if scope_mode == "county_zone" and scope_zone:
+        url = f"https://api.weather.gov/alerts/active?zone={scope_zone}"
+    else:
+        url = f"https://api.weather.gov/alerts/active?point={lat:.4f},{lon:.4f}"
     data = await _async_http_get(url, timeout=30, retries=2)
 
     alerts = []
@@ -443,27 +494,22 @@ async def fetch_nws_alerts(
             elif "watch" in event_lower or "advisory" in event_lower:
                 alert_type = "watch"
 
-            # Detect lightning-related alerts
-            has_lightning = any(term in event_lower for term in [
-                "thunderstorm", "lightning", "tornado",
-            ]) or any(term in description.lower() for term in [
-                "lightning", "cloud-to-ground", "frequent lightning",
-                "dangerous lightning",
-            ])
-
             alerts.append({
+                "id": feature.get("id") or props.get("id") or "",
                 "event": event,
                 "severity": severity,
                 "alert_type": alert_type,     # 'warning' or 'watch'
                 "certainty": certainty,
                 "urgency": urgency,
                 "headline": headline,
-                "description": description[:500],  # Truncate long descriptions
-                "instruction": instruction[:300] if instruction else "",
+                "description": description[:6000],
+                "instruction": instruction[:3000] if instruction else "",
                 "sender": sender_name,
                 "effective": effective,
                 "expires": expires,
-                "has_lightning": has_lightning,
+                "area_desc": props.get("areaDesc", ""),
+                "geometry": feature.get("geometry"),
+                "overlay_categories": _classify_alert_categories(event, alert_type),
             })
 
     # Sort: warnings first, then watches
@@ -487,6 +533,8 @@ class WeatherManager:
         self._last_alert_fetch: float = 0
         self._last_ducting_fetch: float = 0
         self._location_code_resolved: str = ""  # last code we resolved
+        self._alert_scope_info: Optional[Dict[str, Any]] = None
+        self._elevated_polling_until: float = 0
 
     @property
     def is_configured(self) -> bool:
@@ -504,9 +552,57 @@ class WeatherManager:
             # Reset caches to force fresh fetch
             self._last_fetch = 0
             self._last_alert_fetch = 0
+            self._alert_scope_info = None
             logger.info(f"Weather location resolved: {result['name']} "
                         f"({result['latitude']:.4f}, {result['longitude']:.4f})")
         return result
+
+    async def get_alert_scope_info(self, force: bool = False) -> Optional[Dict[str, Any]]:
+        """Resolve point-based NWS county/zone metadata for UI helpers."""
+        if not self.is_configured:
+            return None
+
+        if self.config.weather.location_code != self._location_code_resolved:
+            await self.resolve_and_set_location(self.config.weather.location_code)
+
+        if not self._location:
+            return None
+
+        if self._alert_scope_info and not force:
+            return self._alert_scope_info
+
+        self._alert_scope_info = await resolve_alert_scope_from_point(
+            self._location["latitude"],
+            self._location["longitude"],
+        )
+        return self._alert_scope_info
+
+    def _get_alert_poll_interval_seconds(self) -> int:
+        normal = 300
+        if (
+            self.config.weather.elevated_alert_polling_enabled
+            and self._elevated_polling_until > time.time()
+        ):
+            return max(30, int(self.config.weather.elevated_alert_polling_seconds))
+        return normal
+
+    def _alerts_trigger_elevated_mode(self, alerts: List[Dict[str, Any]]) -> bool:
+        if not self.config.weather.elevated_alert_polling_enabled:
+            return False
+
+        trigger_events = {
+            (event or "").strip().lower()
+            for event in self.config.weather.elevated_trigger_events
+            if (event or "").strip()
+        }
+        if not trigger_events:
+            return False
+
+        for alert in alerts or []:
+            event = (alert.get("event", "") or "").strip().lower()
+            if event in trigger_events:
+                return True
+        return False
 
     async def get_current_weather(self, force: bool = False) -> Optional[Dict[str, Any]]:
         """Get current weather, fetching from API if cache is stale."""
@@ -544,17 +640,21 @@ class WeatherManager:
         if not self.is_configured or not self._location:
             return []
 
-        # Refresh alerts every 5 minutes (NWS updates frequently)
-        if not force and self._alerts is not None and (time.time() - self._last_alert_fetch < 300):
+        cache_seconds = self._get_alert_poll_interval_seconds()
+        if not force and self._alerts is not None and (time.time() - self._last_alert_fetch < cache_seconds):
             return self._alerts
 
         alerts = await fetch_nws_alerts(
             self._location["latitude"],
             self._location["longitude"],
             self.config.weather.alert_range_miles,
+            self.config.weather.alert_scope_mode,
+            (self.config.weather.alert_scope_zone or "").strip().upper(),
         )
         self._alerts = alerts
         self._last_alert_fetch = time.time()
+        if self._alerts_trigger_elevated_mode(alerts):
+            self._elevated_polling_until = time.time() + max(1, int(self.config.weather.elevated_alert_cooldown_minutes)) * 60
         return self._alerts
 
     async def get_ducting(self, force: bool = False) -> Optional[Dict[str, Any]]:
@@ -585,6 +685,7 @@ class WeatherManager:
         return {
             "enabled": self.config.weather.enabled,
             "configured": self.is_configured,
+            "refresh_minutes": self.config.weather.refresh_minutes,
             "location": self._location,
             "current": current,
             "alerts": alerts,
@@ -592,5 +693,19 @@ class WeatherManager:
             "alert_count": len(alerts),
             "warning_count": sum(1 for a in alerts if a["alert_type"] == "warning"),
             "watch_count": sum(1 for a in alerts if a["alert_type"] == "watch"),
-            "has_lightning": any(a.get("has_lightning") for a in alerts),
+            "alert_polling": {
+                "current_interval_seconds": self._get_alert_poll_interval_seconds(),
+                "elevated_active": self._elevated_polling_until > time.time(),
+                "elevated_until": self._elevated_polling_until or None,
+                "scope_mode": self.config.weather.alert_scope_mode,
+                "scope_zone": self.config.weather.alert_scope_zone,
+            },
+            "map_overlays": {
+                "radar_enabled": self.config.weather.radar_enabled,
+                "radar_provider": self.config.weather.radar_provider,
+                "radar_opacity": self.config.weather.radar_opacity,
+                "radar_animate": self.config.weather.radar_animate,
+                "alert_overlay_enabled": self.config.weather.alert_overlay_enabled,
+                "alert_overlay_groups": self.config.weather.alert_overlay_groups,
+            },
         }

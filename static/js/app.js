@@ -10,9 +10,11 @@
     let uptimeStart = 0;
     const SETTINGS_COLLAPSE_KEY = 'pvSettingsCollapsed';
     const UI_STATE_KEY = 'pvDesktopUIState';
+    const UPDATE_BANNER_DISMISS_KEY = 'pvUpdateBannerDismissed';
     let lastStatus = null;
     let manualBeaconPending = false;
     let liveSyncPending = false;
+    let updateCheckPending = false;
 
     // ── Distance unit helpers (mi / km) ────────────────────────
     // Default to miles; persisted in localStorage
@@ -102,6 +104,8 @@
 
         // Init weather module
         window.pvWeather.init();
+        initWeatherSettingsUi();
+        initUpdateCheckerUi();
 
         // Wire up WebSocket events
         wireWebSocket();
@@ -1038,6 +1042,161 @@
             if (el1) el1.textContent = 'v' + v;
             if (el2) el2.textContent = v;
         } catch (e) { /* keep static defaults */ }
+
+        await loadUpdateStatus();
+    }
+
+    function initUpdateCheckerUi() {
+        const btn = document.getElementById('btn-check-updates');
+        if (btn) {
+            btn.addEventListener('click', () => {
+                loadUpdateStatus(true);
+            });
+        }
+
+        document.getElementById('update-alert-close')?.addEventListener('click', () => {
+            dismissUpdateBanner();
+        });
+    }
+
+    function dismissUpdateBanner() {
+        const banner = document.getElementById('update-alert-banner');
+        const latestVersion = banner?.dataset.latestVersion;
+        if (latestVersion) {
+            localStorage.setItem(`${UPDATE_BANNER_DISMISS_KEY}:${latestVersion}`, '1');
+        }
+        if (banner) {
+            banner.style.display = 'none';
+        }
+    }
+
+    function syncUpdateBanner(data) {
+        const banner = document.getElementById('update-alert-banner');
+        const textEl = document.getElementById('update-alert-text');
+        const linkEl = document.getElementById('update-alert-link');
+        if (!banner || !textEl || !linkEl) return;
+
+        if (!data?.update_available) {
+            banner.style.display = 'none';
+            banner.dataset.latestVersion = '';
+            return;
+        }
+
+        const latestVersion = data.latest_version || '';
+        if (latestVersion && localStorage.getItem(`${UPDATE_BANNER_DISMISS_KEY}:${latestVersion}`) === '1') {
+            banner.style.display = 'none';
+            banner.dataset.latestVersion = latestVersion;
+            return;
+        }
+
+        banner.dataset.latestVersion = latestVersion;
+        textEl.textContent = `A newer APRS PropView release is available: v${latestVersion}.`;
+        linkEl.href = data.release_url || 'https://github.com/RF-YVY/APRS-PropView/releases';
+        banner.style.display = 'flex';
+    }
+
+    async function loadUpdateStatus(force) {
+        if (updateCheckPending) return;
+        updateCheckPending = true;
+
+        const messageEl = document.getElementById('about-update-message');
+        const detailEl = document.getElementById('about-update-detail');
+        const linkEl = document.getElementById('about-update-link');
+        const footerEl = document.getElementById('footer-update');
+        const buttonEl = document.getElementById('btn-check-updates');
+
+        if (buttonEl) buttonEl.disabled = true;
+        if (messageEl && force) messageEl.textContent = 'Checking GitHub releases...';
+        if (detailEl && force) detailEl.textContent = '';
+
+        try {
+            const url = force ? '/api/update-status?force=true' : '/api/update-status';
+            const resp = await fetch(url);
+            const data = await resp.json();
+            renderUpdateStatus(data, { messageEl, detailEl, linkEl, footerEl });
+        } catch (e) {
+            console.error('Failed to check for updates:', e);
+            if (messageEl) messageEl.textContent = 'Could not check for updates right now.';
+            if (detailEl) detailEl.textContent = 'Open the GitHub releases page to verify manually.';
+            if (footerEl) footerEl.style.display = 'none';
+            syncUpdateBanner(null);
+        } finally {
+            if (buttonEl) buttonEl.disabled = false;
+            updateCheckPending = false;
+        }
+    }
+
+    function renderUpdateStatus(data, els) {
+        const { messageEl, detailEl, linkEl, footerEl } = els;
+        const currentVersion = data?.current_version || '1.3.0';
+        const latestVersion = data?.latest_version || currentVersion;
+        const releaseUrl = data?.release_url || 'https://github.com/RF-YVY/APRS-PropView/releases';
+        const publishedAt = data?.published_at ? formatReleaseDate(data.published_at) : '';
+
+        if (linkEl) linkEl.href = releaseUrl;
+        syncUpdateBanner(data);
+
+        if (data?.update_available) {
+            if (messageEl) messageEl.textContent = `Update available: v${latestVersion}`;
+            if (detailEl) {
+                detailEl.textContent = publishedAt
+                    ? `You are running v${currentVersion}. GitHub shows v${latestVersion}, published ${publishedAt}.`
+                    : `You are running v${currentVersion}. GitHub shows v${latestVersion}.`;
+            }
+            if (footerEl) {
+                footerEl.style.display = 'inline-flex';
+                footerEl.textContent = `Update available: v${latestVersion}`;
+                footerEl.classList.add('is-available');
+            }
+            return;
+        }
+
+        if (data?.current_is_newer_than_release) {
+            if (messageEl) messageEl.textContent = `This build is newer than the latest GitHub release (v${latestVersion}).`;
+            if (detailEl) {
+                detailEl.textContent = publishedAt
+                    ? `You are running v${currentVersion}. The newest published release is v${latestVersion}, from ${publishedAt}.`
+                    : `You are running v${currentVersion}. The newest published release is v${latestVersion}.`;
+            }
+            if (footerEl) {
+                footerEl.style.display = 'none';
+                footerEl.textContent = '';
+                footerEl.classList.remove('is-available');
+            }
+            return;
+        }
+
+        if (messageEl) {
+            messageEl.textContent = data?.error
+                ? 'Could not check for updates right now.'
+                : `You are up to date on v${currentVersion}.`;
+        }
+        if (detailEl) {
+            if (data?.error) {
+                detailEl.textContent = data.message || 'Open the GitHub releases page to verify manually.';
+            } else if (publishedAt) {
+                detailEl.textContent = `Latest release checked: v${latestVersion}, published ${publishedAt}.`;
+            } else {
+                detailEl.textContent = `Latest release checked: v${latestVersion}.`;
+            }
+        }
+        if (footerEl) {
+            footerEl.style.display = 'none';
+            footerEl.textContent = '';
+            footerEl.classList.remove('is-available');
+        }
+    }
+
+    function formatReleaseDate(value) {
+        try {
+            return new Date(value).toLocaleDateString([], {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+            });
+        } catch {
+            return value;
+        }
     }
 
     // ── Font management ──────────────────────────────────────────
@@ -1118,6 +1277,8 @@
             window.pvMap?.ghostStaleMarkers(window._ghostMinutes);
             setVal('cfg-web-expire', cfg.web?.expire_after_minutes ?? 0);
             setVal('cfg-web-pin', cfg.web?.mobile_pin || '');
+            setChk('cfg-web-update-check-enabled', cfg.web?.update_check_enabled ?? true);
+            setVal('cfg-web-update-check-hours', cfg.web?.update_check_interval_hours ?? 24);
             window._expireMinutes = cfg.web?.expire_after_minutes ?? 0;
 
             // Tracking
@@ -1158,6 +1319,21 @@
             setVal('cfg-wx-location', cfg.weather?.location_code);
             setVal('cfg-wx-range', cfg.weather?.alert_range_miles);
             setVal('cfg-wx-refresh', cfg.weather?.refresh_minutes);
+            setChk('cfg-wx-radar-enabled', cfg.weather?.radar_enabled);
+            setVal('cfg-wx-radar-provider', cfg.weather?.radar_provider || 'rainviewer');
+            setVal('cfg-wx-radar-opacity', cfg.weather?.radar_opacity ?? 0.55);
+            setChk('cfg-wx-radar-animate', cfg.weather?.radar_animate ?? true);
+            setChk('cfg-wx-alert-overlay-enabled', cfg.weather?.alert_overlay_enabled);
+            setCheckboxGroupValues('cfg-wx-alert-group', cfg.weather?.alert_overlay_groups);
+            setVal('cfg-wx-alert-scope-mode', cfg.weather?.alert_scope_mode || 'point');
+            setVal('cfg-wx-alert-scope-zone', cfg.weather?.alert_scope_zone || '');
+            setChk('cfg-wx-elevated-enabled', cfg.weather?.elevated_alert_polling_enabled);
+            setVal('cfg-wx-elevated-seconds', cfg.weather?.elevated_alert_polling_seconds ?? 60);
+            setVal('cfg-wx-elevated-cooldown', cfg.weather?.elevated_alert_cooldown_minutes ?? 15);
+            setVal('cfg-wx-elevated-events', (cfg.weather?.elevated_trigger_events || []).join(', '));
+            updateWeatherOverlayOpacityLabel();
+            updateWeatherAlertGroupSummary();
+            updateWeatherAlertScopePreview();
 
             // MQTT
             setChk('cfg-mqtt-enabled', cfg.mqtt?.enabled);
@@ -1228,6 +1404,8 @@
                 ghost_after_minutes: parseInt(getVal('cfg-web-ghost')) || 0,
                 expire_after_minutes: parseInt(getVal('cfg-web-expire')) || 0,
                 mobile_pin: getVal('cfg-web-pin') || '',
+                update_check_enabled: getChk('cfg-web-update-check-enabled'),
+                update_check_interval_hours: parseInt(getVal('cfg-web-update-check-hours')) || 24,
             },
             tracking: {
                 max_station_age: (parseInt(getVal('cfg-track-age')) || 0) * 60,
@@ -1262,6 +1440,18 @@
                 location_code: getVal('cfg-wx-location'),
                 alert_range_miles: getVal('cfg-wx-range'),
                 refresh_minutes: getVal('cfg-wx-refresh'),
+                radar_enabled: getChk('cfg-wx-radar-enabled'),
+                radar_provider: getVal('cfg-wx-radar-provider') || 'rainviewer',
+                radar_opacity: parseFloat(getVal('cfg-wx-radar-opacity')) || 0.55,
+                radar_animate: getChk('cfg-wx-radar-animate'),
+                alert_overlay_enabled: getChk('cfg-wx-alert-overlay-enabled'),
+                alert_overlay_groups: getCheckboxGroupValues('cfg-wx-alert-group'),
+                alert_scope_mode: getVal('cfg-wx-alert-scope-mode') || 'point',
+                alert_scope_zone: getVal('cfg-wx-alert-scope-zone'),
+                elevated_alert_polling_enabled: getChk('cfg-wx-elevated-enabled'),
+                elevated_alert_polling_seconds: parseInt(getVal('cfg-wx-elevated-seconds')) || 60,
+                elevated_alert_cooldown_minutes: parseInt(getVal('cfg-wx-elevated-cooldown')) || 15,
+                elevated_trigger_events: parseCsvList(getVal('cfg-wx-elevated-events')),
             },
             propagation: {
                 my_station_full_count: parseInt(getVal('cfg-prop-my-count')) || 10,
@@ -1297,6 +1487,10 @@
                 const delay = result.needRestart ? 10000 : 5000;
                 setTimeout(() => { statusEl.style.display = 'none'; }, delay);
             }
+            if (result.success) {
+                window.pvWeather?.fetchWeather(true);
+                loadUpdateStatus(false);
+            }
         } catch (e) {
             console.error('Failed to save settings:', e);
             if (statusEl) {
@@ -1328,6 +1522,106 @@
     function getChk(id) {
         const el = document.getElementById(id);
         return el ? el.checked : false;
+    }
+
+    function setCheckboxGroupValues(name, values) {
+        const useAll = values == null;
+        const wanted = new Set((values || []).map(String));
+        document.querySelectorAll(`input[name="${name}"]`).forEach((el) => {
+            el.checked = useAll ? true : wanted.has(el.value);
+        });
+    }
+
+    function getCheckboxGroupValues(name) {
+        return Array.from(document.querySelectorAll(`input[name="${name}"]:checked`))
+            .map((el) => el.value);
+    }
+
+    function initWeatherSettingsUi() {
+        document.getElementById('cfg-wx-radar-opacity')?.addEventListener('input', updateWeatherOverlayOpacityLabel);
+        document.querySelectorAll('input[name="cfg-wx-alert-group"]').forEach((el) => {
+            el.addEventListener('change', updateWeatherAlertGroupSummary);
+        });
+        document.getElementById('cfg-wx-alert-scope-mode')?.addEventListener('change', updateWeatherAlertScopePreview);
+        document.getElementById('cfg-wx-alert-scope-zone')?.addEventListener('input', updateWeatherAlertScopePreview);
+        document.getElementById('btn-wx-resolve-scope')?.addEventListener('click', resolveWeatherAlertScope);
+        updateWeatherOverlayOpacityLabel();
+        updateWeatherAlertGroupSummary();
+        updateWeatherAlertScopePreview();
+    }
+
+    function updateWeatherOverlayOpacityLabel() {
+        const input = document.getElementById('cfg-wx-radar-opacity');
+        const label = document.getElementById('cfg-wx-radar-opacity-value');
+        if (!input || !label) return;
+        label.textContent = `${Math.round((parseFloat(input.value) || 0) * 100)}%`;
+    }
+
+    function updateWeatherAlertGroupSummary() {
+        const label = document.getElementById('cfg-wx-alert-groups-summary');
+        const boxes = Array.from(document.querySelectorAll('input[name="cfg-wx-alert-group"]'));
+        if (!label || !boxes.length) return;
+        const checked = boxes.filter((el) => el.checked);
+        if (checked.length === boxes.length) {
+            label.textContent = 'All alert types';
+        } else if (!checked.length) {
+            label.textContent = 'No alert types';
+        } else {
+            label.textContent = `${checked.length} selected`;
+        }
+    }
+
+    function updateWeatherAlertScopePreview(resolved) {
+        const mode = getVal('cfg-wx-alert-scope-mode') || 'point';
+        const zone = (getVal('cfg-wx-alert-scope-zone') || '').trim().toUpperCase();
+        const label = document.getElementById('cfg-wx-alert-scope-resolved');
+        if (!label) return;
+        if (resolved) {
+            const parts = [resolved.county, resolved.forecast_zone].filter(Boolean);
+            label.textContent = parts.length ? parts.join(' • ') : 'Resolved';
+            return;
+        }
+        label.textContent = mode === 'county_zone'
+            ? (zone ? `Using ${zone}` : 'Enter or auto-fill a county/zone UGC')
+            : 'Point-based alerts';
+    }
+
+    async function resolveWeatherAlertScope() {
+        const code = (getVal('cfg-wx-location') || '').trim();
+        const status = document.getElementById('cfg-wx-alert-scope-resolved');
+        if (!code) {
+            if (status) status.textContent = 'Enter a weather location first';
+            return;
+        }
+        if (status) status.textContent = 'Resolving county/zone...';
+        try {
+            const resp = await fetch('/api/weather/resolve-alert-scope', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code }),
+            });
+            const data = await resp.json();
+            if (data.success && data.scope) {
+                const zone = data.scope.county || data.scope.forecast_zone || '';
+                setVal('cfg-wx-alert-scope-zone', zone);
+                if (getVal('cfg-wx-alert-scope-mode') !== 'county_zone') {
+                    setVal('cfg-wx-alert-scope-mode', 'county_zone');
+                }
+                updateWeatherAlertScopePreview(data.scope);
+            } else if (status) {
+                status.textContent = data.message || 'Could not resolve county/zone';
+            }
+        } catch (e) {
+            console.error('Failed to resolve weather alert scope:', e);
+            if (status) status.textContent = 'Network error';
+        }
+    }
+
+    function parseCsvList(value) {
+        return String(value || '')
+            .split(',')
+            .map((item) => item.trim())
+            .filter(Boolean);
     }
 
     // ── APRS-IS filter helpers ──────────────────────────────────

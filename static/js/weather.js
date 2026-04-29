@@ -56,9 +56,8 @@ window.pvWeather = (function () {
     function scheduleRefresh(data) {
         if (refreshTimer) clearTimeout(refreshTimer);
         // Default 15 min, or configured interval
-        const interval = (data?.current?.refresh_minutes || 15) * 60 * 1000;
-        // Re-refresh weather periodically; alerts refresh more often (5 min)
-        const alertInterval = 5 * 60 * 1000;
+        const interval = (data?.refresh_minutes || 15) * 60 * 1000;
+        const alertInterval = Math.max(30, data?.alert_polling?.current_interval_seconds || 300) * 1000;
         const nextRefresh = Math.min(interval, alertInterval);
         refreshTimer = setTimeout(() => fetchWeather(), nextRefresh);
     }
@@ -66,6 +65,7 @@ window.pvWeather = (function () {
     function renderWeather(data) {
         const banner = document.getElementById('wx-banner');
         const alertsContainer = document.getElementById('wx-alerts-container');
+        syncMapOverlays(data);
 
         if (!data || !data.enabled || !data.configured || !data.current) {
             if (banner) banner.style.display = 'none';
@@ -103,14 +103,22 @@ window.pvWeather = (function () {
             ductingEl.style.display = 'none';
         }
 
-        // Thunderstorm indicator
-        if (wx.is_thunderstorm) {
-            const iconEl = document.getElementById('wx-icon');
-            if (iconEl) iconEl.title = '⚡ Thunderstorm activity detected — lightning possible';
-        }
-
         // Render severe weather alerts
-        renderAlerts(data.alerts || [], data.has_lightning);
+        renderAlerts(data.alerts || []);
+    }
+
+    function syncMapOverlays(data) {
+        const map = window.pvMap;
+        if (!map) return;
+        const overlayConfig = {
+            ...(data?.map_overlays || {}),
+        };
+        if (!data?.enabled || !data?.configured) {
+            overlayConfig.radar_enabled = false;
+            overlayConfig.alert_overlay_enabled = false;
+        }
+        map.setWeatherOverlayConfig(overlayConfig);
+        map.updateWeatherAlerts(data?.alerts || []);
     }
 
     function formatWind(wx) {
@@ -123,7 +131,7 @@ window.pvWeather = (function () {
         return wind;
     }
 
-    function renderAlerts(alerts, hasLightning) {
+    function renderAlerts(alerts) {
         const container = document.getElementById('wx-alerts-container');
         if (!container) return;
 
@@ -140,33 +148,110 @@ window.pvWeather = (function () {
         container.innerHTML = alerts.map((alert, i) => {
             const isWarning = alert.alert_type === 'warning';
             const cls = isWarning ? 'wx-alert-warning' : 'wx-alert-watch';
-            const icon = isWarning ? '🔴' : '🟠';
-            const lightningIcon = alert.has_lightning ? ' ⚡' : '';
+            const icon = isWarning ? '&#128308;' : '&#128992;';
             const flashCls = isNew && i === 0 ? ' wx-alert-flash' : '';
+            const alertId = `wx-alert-${i}`;
+            const detailId = `${alertId}-detail`;
 
             return `
-                <div class="wx-alert ${cls}${flashCls}" title="${escHtml(alert.headline)}">
-                    <span class="wx-alert-icon">${icon}${lightningIcon}</span>
-                    <span class="wx-alert-event">${escHtml(alert.event)}</span>
-                    <span class="wx-alert-severity">${escHtml(alert.severity)}</span>
-                    <button class="wx-alert-expand" onclick="pvWeather.toggleAlertDetail(this)" title="Show details">▼</button>
-                    <div class="wx-alert-detail" style="display:none;">
-                        <p>${escHtml(alert.headline)}</p>
-                        ${alert.description ? `<p class="wx-alert-desc">${escHtml(alert.description)}</p>` : ''}
-                        ${alert.instruction ? `<p class="wx-alert-instruction"><b>Action:</b> ${escHtml(alert.instruction)}</p>` : ''}
-                        ${alert.expires ? `<p class="wx-alert-expires">Expires: ${formatExpires(alert.expires)}</p>` : ''}
+                <div class="wx-alert ${cls}${flashCls}" title="${escHtml(alert.headline || alert.event)}" id="${alertId}">
+                    <button
+                        type="button"
+                        class="wx-alert-summary"
+                        onclick="pvWeather.toggleAlertDetail(${i})"
+                        aria-expanded="false"
+                        aria-controls="${detailId}"
+                        title="Show alert details"
+                    >
+                        <span class="wx-alert-icon">${icon}</span>
+                        <span class="wx-alert-event">${escHtml(alert.event)}</span>
+                        <span class="wx-alert-severity">${escHtml(alert.severity)}</span>
+                        <span class="wx-alert-expand">Show details</span>
+                    </button>
+                    <div class="wx-alert-detail" id="${detailId}" hidden>
+                        ${renderAlertMeta(alert)}
+                        ${renderAlertDetail(alert)}
                     </div>
                 </div>
             `;
         }).join('');
     }
 
-    function toggleAlertDetail(btn) {
-        const detail = btn.parentElement.querySelector('.wx-alert-detail');
-        if (!detail) return;
-        const showing = detail.style.display !== 'none';
-        detail.style.display = showing ? 'none' : 'block';
-        btn.textContent = showing ? '▼' : '▲';
+    function renderAlertMeta(alert) {
+        const items = [];
+        if (alert.headline) items.push(`<span class="wx-alert-meta-pill">${escHtml(alert.headline)}</span>`);
+        if (alert.area_desc) items.push(`<span class="wx-alert-meta-pill">${escHtml(alert.area_desc)}</span>`);
+        if (alert.expires) items.push(`<span class="wx-alert-meta-pill">Expires ${escHtml(formatExpires(alert.expires))}</span>`);
+        if (alert.sender) items.push(`<span class="wx-alert-meta-pill">${escHtml(alert.sender)}</span>`);
+        if (alert.certainty && alert.certainty !== 'Unknown') items.push(`<span class="wx-alert-meta-pill">Certainty ${escHtml(alert.certainty)}</span>`);
+        if (alert.urgency && alert.urgency !== 'Unknown') items.push(`<span class="wx-alert-meta-pill">Urgency ${escHtml(alert.urgency)}</span>`);
+        return items.length ? `<div class="wx-alert-meta">${items.join('')}</div>` : '';
+    }
+
+    function renderAlertDetail(alert) {
+        const sections = [];
+        if (alert.description) {
+            sections.push(renderAlertSection('Summary', alert.description, 'wx-alert-desc'));
+        }
+        if (alert.instruction) {
+            sections.push(renderAlertSection('Recommended Action', alert.instruction, 'wx-alert-instruction'));
+        }
+        if (!sections.length && alert.headline) {
+            sections.push(renderAlertSection('Alert', alert.headline, 'wx-alert-desc'));
+        }
+        return sections.join('');
+    }
+
+    function renderAlertSection(label, text, bodyClass) {
+        return `
+            <section class="wx-alert-section">
+                <div class="wx-alert-section-label">${escHtml(label)}</div>
+                <div class="${bodyClass}">${formatAlertText(text)}</div>
+            </section>
+        `;
+    }
+
+    function formatAlertText(text) {
+        const normalized = String(text || '')
+            .replace(/\r\n/g, '\n')
+            .replace(/\r/g, '\n')
+            .trim();
+        if (!normalized) return '';
+
+        return normalized
+            .split(/\n{2,}/)
+            .map((block) => {
+                const lines = block.split('\n').map((line) => line.trim()).filter(Boolean);
+                if (!lines.length) return '';
+                if (lines.length > 1 && lines.every((line) => /^[-*]/.test(line))) {
+                    return `<ul class="wx-alert-list">${lines.map((line) => `<li>${escHtml(line.replace(/^[-*]\s*/, ''))}</li>`).join('')}</ul>`;
+                }
+                return `<p>${lines.map((line) => escHtml(line)).join('<br>')}</p>`;
+            })
+            .filter(Boolean)
+            .join('');
+    }
+
+    function toggleAlertDetail(index) {
+        const card = document.getElementById(`wx-alert-${index}`);
+        if (!card) return;
+        const detail = card.querySelector('.wx-alert-detail');
+        const summary = card.querySelector('.wx-alert-summary');
+        const expand = card.querySelector('.wx-alert-expand');
+        if (!detail || !summary || !expand) return;
+
+        const showing = !detail.hasAttribute('hidden');
+        if (showing) {
+            detail.setAttribute('hidden', '');
+            summary.setAttribute('aria-expanded', 'false');
+            card.classList.remove('is-expanded');
+            expand.textContent = 'Show details';
+        } else {
+            detail.removeAttribute('hidden');
+            summary.setAttribute('aria-expanded', 'true');
+            card.classList.add('is-expanded');
+            expand.textContent = 'Hide details';
+        }
     }
 
     function formatExpires(isoStr) {

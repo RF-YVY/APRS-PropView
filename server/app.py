@@ -24,6 +24,7 @@ from server.analytics import AnalyticsEngine
 from server.alerts import AlertManager
 from server.aprs_is import APRSISClient
 from server.weather import WeatherManager
+from server.update_checker import UpdateChecker
 
 logger = logging.getLogger("propview.app")
 
@@ -64,8 +65,6 @@ def _validate_config(body: Dict[str, Any]) -> Optional[str]:
         if call:
             if not _CALLSIGN_RE.match(call):
                 return "Invalid callsign format. Must be a valid amateur radio callsign (e.g. W1ABC, KA9XYZ)."
-            if call in _BLOCKED_CALLSIGNS:
-                return f"'{call}' is a placeholder callsign. Enter your real amateur radio callsign."
         ssid = s.get("ssid", 0)
         try:
             ssid = int(ssid)
@@ -179,6 +178,36 @@ def _validate_config(body: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _validate_operational_config(body: Dict[str, Any]) -> Optional[str]:
+    """Validate settings required for on-air or APRS-IS operation.
+
+    This is intentionally narrower than _validate_config so users can save
+    dashboard-only changes like weather/map settings before entering a real
+    callsign.
+    """
+    return None
+
+
+def _validate_save_request(body: Dict[str, Any]) -> Optional[str]:
+    """Validate settings while allowing dashboard-only saves on default config."""
+    validation_error = _validate_config(body)
+    if not validation_error:
+        return _validate_operational_config(body)
+
+    station = body.get("station", {}) if isinstance(body.get("station"), dict) else {}
+    call = (station.get("callsign", "") or "").strip().upper()
+    non_blocking_policy_errors = (
+        "Invalid callsign format. Must be a valid amateur radio callsign (e.g. W1ABC, KA9XYZ).",
+        "IGate requires a valid amateur radio callsign. Change your callsign from the default.",
+        "RFâ†’APRS-IS gating requires a valid APRS-IS passcode. Read-only (passcode -1) cannot inject packets.",
+    )
+    if validation_error in non_blocking_policy_errors and call in _BLOCKED_CALLSIGNS:
+        logger.info("Ignoring non-blocking save validation warning: %s", validation_error)
+        return _validate_operational_config(body)
+
+    return validation_error
+
+
 def create_app(
     config: Config,
     db: Database,
@@ -189,11 +218,29 @@ def create_app(
     alert_manager: AlertManager = None,
     aprs_is: APRSISClient = None,
     weather_manager: WeatherManager = None,
+    update_checker: UpdateChecker = None,
     app_version: str = "1.0.0",
 ) -> FastAPI:
     """Create and configure the FastAPI application."""
 
     app = FastAPI(title="APRS PropView", version=app_version)
+
+    @app.on_event("startup")
+    async def startup_update_check():
+        if not update_checker:
+            return
+        try:
+            update_checker.start_periodic_task()
+            if update_checker.enabled:
+                await update_checker.get_status(force=False)
+        except Exception as exc:
+            logger.warning("Initial update check failed: %s", exc)
+
+    @app.on_event("shutdown")
+    async def shutdown_update_check():
+        if not update_checker:
+            return
+        await update_checker.stop_periodic_task()
 
     # ── CORS — restrict to same-origin only ──────────────────────────
     web_origin = f"http://{config.web.host}:{config.web.port}"
@@ -288,6 +335,25 @@ def create_app(
     @app.get("/api/version")
     async def get_version():
         return {"version": app_version}
+
+    @app.get("/api/update-status")
+    async def get_update_status(force: bool = Query(False)):
+        if not update_checker:
+            return {
+                "checked": False,
+                "current_version": app_version,
+                "update_available": False,
+                "current_is_newer_than_release": False,
+                "latest_version": app_version,
+                "release_name": "",
+                "release_url": "https://github.com/RF-YVY/APRS-PropView/releases",
+                "published_at": "",
+                "prerelease": False,
+                "checked_at": None,
+                "message": "Update checker is not configured.",
+                "error": "unavailable",
+            }
+        return await update_checker.get_status(force=force)
 
     @app.get("/api/status")
     async def get_status():
@@ -614,7 +680,17 @@ def create_app(
         if not weather_manager:
             return {"enabled": False, "configured": False}
         try:
-            return await weather_manager.get_all()
+            data = await weather_manager.get_all()
+            logger.info(
+                "Weather request: enabled=%s configured=%s location=%s radar=%s polygons=%s alerts=%d",
+                data.get("enabled"),
+                data.get("configured"),
+                config.weather.location_code or "<unset>",
+                config.weather.radar_enabled,
+                config.weather.alert_overlay_enabled,
+                len(data.get("alerts") or []),
+            )
+            return data
         except Exception as e:
             logger.error(f"Weather fetch error: {e}")
             return {"enabled": config.weather.enabled, "configured": False, "error": str(e)}
@@ -625,7 +701,17 @@ def create_app(
         if not weather_manager:
             return {"enabled": False, "configured": False}
         try:
-            return await weather_manager.get_all(force=True)
+            data = await weather_manager.get_all(force=True)
+            logger.info(
+                "Weather refresh: enabled=%s configured=%s location=%s radar=%s polygons=%s alerts=%d",
+                data.get("enabled"),
+                data.get("configured"),
+                config.weather.location_code or "<unset>",
+                config.weather.radar_enabled,
+                config.weather.alert_overlay_enabled,
+                len(data.get("alerts") or []),
+            )
+            return data
         except Exception as e:
             logger.error(f"Weather refresh error: {e}")
             return {"enabled": config.weather.enabled, "configured": False, "error": str(e)}
@@ -654,6 +740,38 @@ def create_app(
             return JSONResponse(
                 status_code=500,
                 content={"success": False, "message": "Error resolving location."},
+            )
+
+    @app.post("/api/weather/resolve-alert-scope")
+    async def resolve_weather_alert_scope(request: Request):
+        """Resolve county/zone UGC identifiers for a weather location."""
+        try:
+            body = await request.json()
+            code = (body.get("code", "") or "").strip()
+            if not code:
+                return JSONResponse(
+                    status_code=400,
+                    content={"success": False, "message": "Location code is required."},
+                )
+            from server.weather import resolve_location, resolve_alert_scope_from_point
+            location = await resolve_location(code)
+            if not location:
+                return JSONResponse(
+                    status_code=404,
+                    content={"success": False, "message": f"Could not resolve '{code}'."},
+                )
+            scope = await resolve_alert_scope_from_point(location["latitude"], location["longitude"])
+            if not scope:
+                return JSONResponse(
+                    status_code=404,
+                    content={"success": False, "message": "Could not resolve county/zone identifiers for that location."},
+                )
+            return {"success": True, "location": location, "scope": scope}
+        except Exception as e:
+            logger.error(f"Alert scope resolve error: {e}")
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "message": "Error resolving alert scope."},
             )
 
     @app.get("/api/config")
@@ -706,6 +824,8 @@ def create_app(
                 "ghost_after_minutes": config.web.ghost_after_minutes,
                 "expire_after_minutes": config.web.expire_after_minutes,
                 "mobile_pin": config.web.mobile_pin,
+                "update_check_enabled": config.web.update_check_enabled,
+                "update_check_interval_hours": config.web.update_check_interval_hours,
             },
             "database": {
                 "path": config.database.path,
@@ -743,6 +863,18 @@ def create_app(
                 "location_code": config.weather.location_code,
                 "alert_range_miles": config.weather.alert_range_miles,
                 "refresh_minutes": config.weather.refresh_minutes,
+                "radar_enabled": config.weather.radar_enabled,
+                "radar_provider": config.weather.radar_provider,
+                "radar_opacity": config.weather.radar_opacity,
+                "radar_animate": config.weather.radar_animate,
+                "alert_overlay_enabled": config.weather.alert_overlay_enabled,
+                "alert_overlay_groups": config.weather.alert_overlay_groups,
+                "alert_scope_mode": config.weather.alert_scope_mode,
+                "alert_scope_zone": config.weather.alert_scope_zone,
+                "elevated_alert_polling_enabled": config.weather.elevated_alert_polling_enabled,
+                "elevated_alert_polling_seconds": config.weather.elevated_alert_polling_seconds,
+                "elevated_alert_cooldown_minutes": config.weather.elevated_alert_cooldown_minutes,
+                "elevated_trigger_events": config.weather.elevated_trigger_events,
             },
             "propagation": {
                 "my_station_full_count": config.propagation.my_station_full_count,
@@ -766,9 +898,12 @@ def create_app(
         try:
             body: Dict[str, Any] = await request.json()
 
-            # Validate before applying
-            validation_error = _validate_config(body)
+            # Validate before applying. Full structural validation stays in
+            # place, but operational checks are limited so users can save
+            # dashboard/weather settings before configuring a real callsign.
+            validation_error = _validate_save_request(body)
             if validation_error:
+                logger.warning("Config save rejected: %s", validation_error)
                 return JSONResponse(
                     status_code=400,
                     content={"success": False, "message": validation_error},
@@ -871,6 +1006,15 @@ def create_app(
                 config.web.ghost_after_minutes = int(w.get("ghost_after_minutes", config.web.ghost_after_minutes))
                 config.web.expire_after_minutes = int(w.get("expire_after_minutes", config.web.expire_after_minutes))
                 config.web.mobile_pin = (w.get("mobile_pin", config.web.mobile_pin) or "").strip()
+                config.web.update_check_enabled = bool(w.get("update_check_enabled", config.web.update_check_enabled))
+                config.web.update_check_interval_hours = max(1, int(w.get("update_check_interval_hours", config.web.update_check_interval_hours)))
+                if update_checker:
+                    update_checker.configure(
+                        config.web.update_check_enabled,
+                        config.web.update_check_interval_hours * 3600,
+                    )
+                    await update_checker.stop_periodic_task()
+                    update_checker.start_periodic_task()
                 need_restart.append("web host/port")
 
             # Update database config
@@ -950,6 +1094,29 @@ def create_app(
                 config.weather.location_code = (wc.get("location_code", config.weather.location_code) or "").strip()
                 config.weather.alert_range_miles = int(wc.get("alert_range_miles", config.weather.alert_range_miles))
                 config.weather.refresh_minutes = max(5, int(wc.get("refresh_minutes", config.weather.refresh_minutes)))
+                config.weather.radar_enabled = bool(wc.get("radar_enabled", config.weather.radar_enabled))
+                provider = (wc.get("radar_provider", config.weather.radar_provider) or "rainviewer").strip().lower()
+                config.weather.radar_provider = provider if provider in {"rainviewer"} else "rainviewer"
+                config.weather.radar_opacity = min(1.0, max(0.1, float(wc.get("radar_opacity", config.weather.radar_opacity))))
+                config.weather.radar_animate = bool(wc.get("radar_animate", config.weather.radar_animate))
+                config.weather.alert_overlay_enabled = bool(wc.get("alert_overlay_enabled", config.weather.alert_overlay_enabled))
+                groups = wc.get("alert_overlay_groups", config.weather.alert_overlay_groups)
+                if not isinstance(groups, list):
+                    groups = config.weather.alert_overlay_groups
+                valid_groups = {"warnings", "watches", "flood", "winter", "marine", "fire_heat", "other"}
+                config.weather.alert_overlay_groups = [g for g in groups if g in valid_groups]
+                scope_mode = (wc.get("alert_scope_mode", config.weather.alert_scope_mode) or "point").strip().lower()
+                config.weather.alert_scope_mode = scope_mode if scope_mode in {"point", "county_zone"} else "point"
+                config.weather.alert_scope_zone = (wc.get("alert_scope_zone", config.weather.alert_scope_zone) or "").strip().upper()
+                config.weather.elevated_alert_polling_enabled = bool(wc.get("elevated_alert_polling_enabled", config.weather.elevated_alert_polling_enabled))
+                config.weather.elevated_alert_polling_seconds = max(30, int(wc.get("elevated_alert_polling_seconds", config.weather.elevated_alert_polling_seconds)))
+                config.weather.elevated_alert_cooldown_minutes = max(1, int(wc.get("elevated_alert_cooldown_minutes", config.weather.elevated_alert_cooldown_minutes)))
+                trigger_events = wc.get("elevated_trigger_events", config.weather.elevated_trigger_events)
+                if not isinstance(trigger_events, list):
+                    trigger_events = config.weather.elevated_trigger_events
+                config.weather.elevated_trigger_events = [
+                    str(event).strip() for event in trigger_events if str(event).strip()
+                ]
                 live_applied.append("weather")
 
             # Update propagation config
@@ -977,6 +1144,15 @@ def create_app(
             # Save to file
             config_path = Path("config.toml")
             config.save(config_path)
+            logger.info(
+                "Config saved: weather enabled=%s location=%s radar=%s polygons=%s scope=%s/%s",
+                config.weather.enabled,
+                config.weather.location_code or "<unset>",
+                config.weather.radar_enabled,
+                config.weather.alert_overlay_enabled,
+                config.weather.alert_scope_mode,
+                config.weather.alert_scope_zone or "<unset>",
+            )
 
             # Build response message
             parts = []

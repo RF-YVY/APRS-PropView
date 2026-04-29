@@ -36,6 +36,23 @@ class PropViewMap {
         this._autoFitPending = false; // debounce flag
         this._observedRangeFetchedAt = 0;
         this._observedRangeRequest = null;
+        this.weatherOverlayConfig = {
+            radar_enabled: false,
+            radar_provider: 'rainviewer',
+            radar_opacity: 0.55,
+            radar_animate: true,
+            alert_overlay_enabled: false,
+            alert_overlay_groups: ['warnings', 'watches', 'flood', 'winter', 'marine', 'fire_heat', 'other'],
+        };
+        this.weatherAlerts = [];
+        this.weatherAlertLayer = null;
+        this.radarFrames = [];
+        this.radarTileLayers = [];
+        this.radarFrameIndex = 0;
+        this.radarAnimationTimer = null;
+        this.radarMetadata = null;
+        this.radarMetadataFetchedAt = 0;
+        this.radarMetadataRequest = null;
     }
 
     init(lat, lng) {
@@ -64,6 +81,11 @@ class PropViewMap {
         this.lineLayer = L.layerGroup().addTo(this.map);
         this.rfLayer = L.layerGroup().addTo(this.map);
         this.isLayer = L.layerGroup().addTo(this.map);
+        this.map.createPane('weatherRadarPane');
+        this.map.getPane('weatherRadarPane').style.zIndex = 320;
+        this.map.getPane('weatherRadarPane').style.pointerEvents = 'none';
+        this.map.createPane('weatherAlertPane');
+        this.map.getPane('weatherAlertPane').style.zIndex = 430;
 
         // Add legend
         this._addLegend();
@@ -1230,6 +1252,213 @@ class PropViewMap {
 
     refreshLegend() {
         this._updateLegendContent();
+    }
+
+    setWeatherOverlayConfig(config) {
+        this.weatherOverlayConfig = {
+            ...this.weatherOverlayConfig,
+            ...(config || {}),
+        };
+        this._applyWeatherOverlayConfig();
+    }
+
+    updateWeatherAlerts(alerts) {
+        this.weatherAlerts = Array.isArray(alerts) ? alerts : [];
+        this._renderWeatherAlertLayer();
+    }
+
+    _applyWeatherOverlayConfig() {
+        this._renderWeatherAlertLayer();
+        this._updateRadarOverlay();
+    }
+
+    _renderWeatherAlertLayer() {
+        if (this.weatherAlertLayer) {
+            this.weatherAlertLayer.remove();
+            this.weatherAlertLayer = null;
+        }
+
+        const cfg = this.weatherOverlayConfig || {};
+        if (!cfg.alert_overlay_enabled) return;
+
+        const enabledGroups = new Set(cfg.alert_overlay_groups || []);
+        const features = (this.weatherAlerts || [])
+            .filter((alert) => alert?.geometry && this._alertMatchesOverlayGroups(alert, enabledGroups))
+            .map((alert) => ({
+                type: 'Feature',
+                geometry: alert.geometry,
+                properties: alert,
+            }));
+
+        if (!features.length) return;
+
+        this.weatherAlertLayer = L.geoJSON(features, {
+            pane: 'weatherAlertPane',
+            style: (feature) => this._weatherAlertStyle(feature.properties),
+            onEachFeature: (feature, layer) => {
+                const alert = feature.properties || {};
+                const expires = alert.expires ? new Date(alert.expires).toLocaleString() : 'Unknown';
+                layer.bindPopup(`
+                    <div class="popup-header">
+                        <span class="popup-call popup-rf">${this._escapeHtml(alert.event || 'Weather Alert')}</span>
+                    </div>
+                    <table class="popup-table">
+                        <tr><td class="popup-lbl">Type</td><td>${this._escapeHtml(alert.alert_type || '--')}</td></tr>
+                        <tr><td class="popup-lbl">Severity</td><td>${this._escapeHtml(alert.severity || '--')}</td></tr>
+                        <tr><td class="popup-lbl">Expires</td><td>${this._escapeHtml(expires)}</td></tr>
+                    </table>
+                    ${alert.headline ? `<div class="popup-detail">${this._escapeHtml(alert.headline)}</div>` : ''}
+                `);
+            },
+        }).addTo(this.map);
+    }
+
+    _alertMatchesOverlayGroups(alert, enabledGroups) {
+        const categories = Array.isArray(alert?.overlay_categories) ? alert.overlay_categories : [];
+        if (!enabledGroups.size) return false;
+        return categories.some((category) => enabledGroups.has(category));
+    }
+
+    _weatherAlertStyle(alert) {
+        const warning = alert?.alert_type === 'warning';
+        return {
+            color: warning ? '#ff5a5f' : '#ffb347',
+            weight: warning ? 2.5 : 2,
+            opacity: 0.9,
+            dashArray: warning ? null : '8 6',
+            fillColor: warning ? '#ff5a5f' : '#ffb347',
+            fillOpacity: warning ? 0.14 : 0.1,
+        };
+    }
+
+    async _updateRadarOverlay() {
+        const cfg = this.weatherOverlayConfig || {};
+        if (!cfg.radar_enabled) {
+            this._clearRadarOverlay();
+            return;
+        }
+        if ((cfg.radar_provider || 'rainviewer') !== 'rainviewer') {
+            this._clearRadarOverlay();
+            return;
+        }
+
+        const frames = await this._getRadarFrames();
+        if (!frames.length) {
+            this._clearRadarOverlay();
+            return;
+        }
+
+        const urls = frames.map((frame) => `${frame.host}${frame.path}/512/{z}/{x}/{y}/6/1_1.png`);
+        const needsRebuild =
+            this.radarFrames.length !== urls.length ||
+            this.radarFrames.some((url, idx) => url !== urls[idx]);
+
+        this.radarFrames = urls;
+        if (needsRebuild) this._rebuildRadarLayers();
+        this._applyRadarOpacity();
+        this._startRadarAnimationIfNeeded();
+    }
+
+    async _getRadarFrames(force = false) {
+        const cacheMs = 5 * 60 * 1000;
+        if (!force && this.radarMetadata && (Date.now() - this.radarMetadataFetchedAt) < cacheMs) {
+            return this.radarMetadata;
+        }
+        if (this.radarMetadataRequest) return this.radarMetadataRequest;
+
+        this.radarMetadataRequest = fetch('https://api.rainviewer.com/public/weather-maps.json')
+            .then((resp) => resp.json())
+            .then((data) => {
+                const host = data?.host;
+                const frames = (data?.radar?.past || []).slice(-6).map((frame) => ({
+                    host,
+                    path: frame.path,
+                    time: frame.time,
+                }));
+                this.radarMetadata = frames;
+                this.radarMetadataFetchedAt = Date.now();
+                return frames;
+            })
+            .catch((error) => {
+                console.error('Radar metadata fetch failed:', error);
+                this.radarMetadata = [];
+                return [];
+            })
+            .finally(() => {
+                this.radarMetadataRequest = null;
+            });
+
+        return this.radarMetadataRequest;
+    }
+
+    _rebuildRadarLayers() {
+        const frameUrls = [...this.radarFrames];
+        this._clearRadarOverlay(true);
+        if (!frameUrls.length) return;
+
+        this.radarFrames = frameUrls;
+        this.radarTileLayers = frameUrls.map((url, idx) => {
+            const layer = L.tileLayer(url, {
+                pane: 'weatherRadarPane',
+                opacity: 0,
+                maxZoom: 19,
+                maxNativeZoom: 7,
+                updateWhenIdle: false,
+                updateWhenZooming: false,
+                className: 'weather-radar-tile-layer',
+            }).addTo(this.map);
+            layer.setOpacity(idx === this.radarFrames.length - 1 ? (this.weatherOverlayConfig.radar_opacity || 0.55) : 0);
+            return layer;
+        });
+        this.radarFrameIndex = Math.max(0, this.radarTileLayers.length - 1);
+    }
+
+    _applyRadarOpacity() {
+        const opacity = this.weatherOverlayConfig?.radar_opacity || 0.55;
+        this.radarTileLayers.forEach((layer, idx) => {
+            layer.setOpacity(idx === this.radarFrameIndex ? opacity : 0);
+        });
+    }
+
+    _startRadarAnimationIfNeeded() {
+        this._stopRadarAnimation();
+        if (!this.radarTileLayers.length) return;
+
+        this._applyRadarOpacity();
+
+        if (!this.weatherOverlayConfig?.radar_animate || this.radarTileLayers.length < 2) return;
+
+        this.radarAnimationTimer = setInterval(() => {
+            const current = this.radarFrameIndex;
+            const next = (current + 1) % this.radarTileLayers.length;
+            const opacity = this.weatherOverlayConfig?.radar_opacity || 0.55;
+            this.radarTileLayers[current]?.setOpacity(0);
+            this.radarTileLayers[next]?.setOpacity(opacity);
+            this.radarFrameIndex = next;
+        }, 450);
+    }
+
+    _stopRadarAnimation() {
+        if (this.radarAnimationTimer) {
+            clearInterval(this.radarAnimationTimer);
+            this.radarAnimationTimer = null;
+        }
+    }
+
+    _clearRadarOverlay(preserveFrames = false) {
+        this._stopRadarAnimation();
+        this.radarTileLayers.forEach((layer) => layer.remove());
+        this.radarTileLayers = [];
+        if (!preserveFrames) {
+            this.radarFrames = [];
+        }
+        this.radarFrameIndex = 0;
+    }
+
+    _escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text || '';
+        return div.innerHTML;
     }
 
     /**

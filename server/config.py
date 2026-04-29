@@ -64,6 +64,8 @@ font_family = ""
 ghost_after_minutes = 60
 expire_after_minutes = 0
 mobile_pin = ""
+update_check_enabled = true
+update_check_interval_hours = 24
 
 [database]
 path = "propview.db"
@@ -107,6 +109,18 @@ enabled = false
 location_code = ""
 alert_range_miles = 50
 refresh_minutes = 15
+radar_enabled = false
+radar_provider = "rainviewer"
+radar_opacity = 0.55
+radar_animate = true
+alert_overlay_enabled = false
+alert_overlay_groups = ["warnings", "watches", "flood", "winter", "marine", "fire_heat", "other"]
+alert_scope_mode = "point"
+alert_scope_zone = ""
+elevated_alert_polling_enabled = false
+elevated_alert_polling_seconds = 60
+elevated_alert_cooldown_minutes = 15
+elevated_trigger_events = ["Tornado Watch", "Severe Thunderstorm Watch"]
 
 [mqtt]
 enabled = false
@@ -184,6 +198,8 @@ class WebConfig:
     ghost_after_minutes: int = 60
     expire_after_minutes: int = 0
     mobile_pin: str = ""
+    update_check_enabled: bool = True
+    update_check_interval_hours: int = 24
 
 
 @dataclass
@@ -237,6 +253,22 @@ class WeatherConfig:
     location_code: str = ""       # US zip code or ICAO code
     alert_range_miles: int = 50    # Range for severe weather alerts
     refresh_minutes: int = 15      # How often to refresh weather data
+    radar_enabled: bool = False
+    radar_provider: str = "rainviewer"
+    radar_opacity: float = 0.55
+    radar_animate: bool = True
+    alert_overlay_enabled: bool = False
+    alert_overlay_groups: List[str] = field(default_factory=lambda: [
+        "warnings", "watches", "flood", "winter", "marine", "fire_heat", "other",
+    ])
+    alert_scope_mode: str = "point"
+    alert_scope_zone: str = ""
+    elevated_alert_polling_enabled: bool = False
+    elevated_alert_polling_seconds: int = 60
+    elevated_alert_cooldown_minutes: int = 15
+    elevated_trigger_events: List[str] = field(default_factory=lambda: [
+        "Tornado Watch", "Severe Thunderstorm Watch",
+    ])
 
 
 @dataclass
@@ -362,6 +394,8 @@ class Config:
             f"ghost_after_minutes = {int(self.web.ghost_after_minutes)}",
             f"expire_after_minutes = {int(self.web.expire_after_minutes)}",
             f'mobile_pin = "{esc(self.web.mobile_pin)}"',
+            f"update_check_enabled = {'true' if self.web.update_check_enabled else 'false'}",
+            f"update_check_interval_hours = {int(self.web.update_check_interval_hours)}",
             "",
             "[database]",
             f'path = "{esc(self.database.path)}"',
@@ -405,6 +439,18 @@ class Config:
             f'location_code = "{esc(self.weather.location_code)}"',
             f"alert_range_miles = {int(self.weather.alert_range_miles)}",
             f"refresh_minutes = {int(self.weather.refresh_minutes)}",
+            f"radar_enabled = {'true' if self.weather.radar_enabled else 'false'}",
+            f'radar_provider = "{esc(self.weather.radar_provider)}"',
+            f"radar_opacity = {float(self.weather.radar_opacity)}",
+            f"radar_animate = {'true' if self.weather.radar_animate else 'false'}",
+            f"alert_overlay_enabled = {'true' if self.weather.alert_overlay_enabled else 'false'}",
+            'alert_overlay_groups = [' + ', '.join('"' + self._toml_escape(v) + '"' for v in self.weather.alert_overlay_groups) + ']',
+            f'alert_scope_mode = "{esc(self.weather.alert_scope_mode)}"',
+            f'alert_scope_zone = "{esc(self.weather.alert_scope_zone)}"',
+            f"elevated_alert_polling_enabled = {'true' if self.weather.elevated_alert_polling_enabled else 'false'}",
+            f"elevated_alert_polling_seconds = {int(self.weather.elevated_alert_polling_seconds)}",
+            f"elevated_alert_cooldown_minutes = {int(self.weather.elevated_alert_cooldown_minutes)}",
+            'elevated_trigger_events = [' + ', '.join('"' + self._toml_escape(v) + '"' for v in self.weather.elevated_trigger_events) + ']',
             "",
             "[mqtt]",
             f"enabled = {'true' if self.mqtt.enabled else 'false'}",

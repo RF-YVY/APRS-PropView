@@ -83,6 +83,12 @@
         <span class="msg-alert-text">New message from <b id="msg-alert-call">???</b>: <span id="msg-alert-preview"></span></span>
         <button id="msg-alert-close" class="msg-alert-close" title="Dismiss">&times;</button>
     </div>
+    <div id="update-alert-banner" class="update-alert-banner" style="display:none;">
+        <span class="update-alert-icon">⬆️</span>
+        <span id="update-alert-text" class="update-alert-text">A newer APRS PropView release is available.</span>
+        <a id="update-alert-link" href="https://github.com/RF-YVY/APRS-PropView/releases" target="_blank" rel="noreferrer" class="update-alert-link">View Release</a>
+        <button id="update-alert-close" class="update-alert-close" title="Dismiss update notice">&times;</button>
+    </div>
 
     <!-- ── Main Content ───────────────────────────────────────── -->
     <div id="main-content">
@@ -724,6 +730,14 @@
                             <label for="cfg-web-pin">Mobile PIN</label>
                             <input type="text" id="cfg-web-pin" maxlength="8" placeholder="Leave blank = no PIN" autocomplete="off">
                         </div>
+                        <div class="settings-row">
+                            <label for="cfg-web-update-check-enabled">Update Checks Enabled</label>
+                            <input type="checkbox" id="cfg-web-update-check-enabled">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-web-update-check-hours">Update Check Interval (hours)</label>
+                            <input type="number" id="cfg-web-update-check-hours" min="1" max="720" step="1" value="24">
+                        </div>
                     </div>
 
                     <!-- Tracking -->
@@ -740,7 +754,7 @@
                     </div>
 
                     <!-- Weather -->
-                    <div class="settings-section" data-settings-key="weather" data-summary="Weather banner, alert range, and refresh interval.">
+                    <div class="settings-section" data-settings-key="weather" data-summary="Weather banner, radar overlay, alert polygons, and refresh interval.">
                         <h3>🌤️ Weather</h3>
                         <div class="settings-row">
                             <label for="cfg-wx-enabled">Weather Enabled</label>
@@ -764,6 +778,88 @@
                         <div class="settings-row">
                             <label for="cfg-wx-refresh">Refresh Interval (min)</label>
                             <input type="number" id="cfg-wx-refresh" min="5" max="120" value="15">
+                        </div>
+                        <div class="weather-overlay-card">
+                            <div class="weather-overlay-title">Alert Polling</div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-alert-scope-mode">Alert Scope</label>
+                                <select id="cfg-wx-alert-scope-mode">
+                                    <option value="point">Station point</option>
+                                    <option value="county_zone">County/Zone UGC</option>
+                                </select>
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-alert-scope-zone">County/Zone UGC</label>
+                                <div class="wx-location-input">
+                                    <input type="text" id="cfg-wx-alert-scope-zone" placeholder="TXC201 or NCZ053" maxlength="8">
+                                    <button id="btn-wx-resolve-scope" class="btn-small" title="Resolve county/zone from location">Auto-Fill</button>
+                                </div>
+                            </div>
+                            <div class="settings-row">
+                                <label>Resolved county/zone</label>
+                                <span id="cfg-wx-alert-scope-resolved" class="filter-preview">Point-based alerts</span>
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-elevated-enabled">Elevated 1-Minute Polling</label>
+                                <input type="checkbox" id="cfg-wx-elevated-enabled">
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-elevated-seconds">Elevated Interval (sec)</label>
+                                <input type="number" id="cfg-wx-elevated-seconds" min="30" max="300" step="15" value="60">
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-elevated-cooldown">Cooldown After Trigger (min)</label>
+                                <input type="number" id="cfg-wx-elevated-cooldown" min="1" max="120" step="1" value="15">
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-elevated-events">Trigger Events</label>
+                                <input type="text" id="cfg-wx-elevated-events" placeholder="Tornado Watch, Severe Thunderstorm Watch">
+                            </div>
+                            <p class="weather-overlay-note">When any configured trigger event is active in the selected alert scope, alert polling automatically increases to the elevated interval so new warnings are picked up faster.</p>
+                        </div>
+                        <div class="weather-overlay-card">
+                            <div class="weather-overlay-title">Map Overlays</div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-radar-enabled">Show Radar On Map</label>
+                                <input type="checkbox" id="cfg-wx-radar-enabled">
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-radar-provider">Radar Source</label>
+                                <select id="cfg-wx-radar-provider">
+                                    <option value="rainviewer">RainViewer tiles</option>
+                                </select>
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-radar-opacity">Radar Opacity</label>
+                                <div class="weather-range-wrap">
+                                    <input type="range" id="cfg-wx-radar-opacity" min="0.1" max="1" step="0.05" value="0.55">
+                                    <span id="cfg-wx-radar-opacity-value" class="filter-preview">55%</span>
+                                </div>
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-radar-animate">Animate Radar</label>
+                                <input type="checkbox" id="cfg-wx-radar-animate">
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-alert-overlay-enabled">Show NWS Alert Polygons</label>
+                                <input type="checkbox" id="cfg-wx-alert-overlay-enabled">
+                            </div>
+                            <details class="weather-alert-groups">
+                                <summary>
+                                    <span>Alert Types</span>
+                                    <span id="cfg-wx-alert-groups-summary" class="filter-preview">All alert types</span>
+                                </summary>
+                                <div class="weather-alert-groups-grid">
+                                    <label><input type="checkbox" name="cfg-wx-alert-group" value="warnings"> Warnings</label>
+                                    <label><input type="checkbox" name="cfg-wx-alert-group" value="watches"> Watches</label>
+                                    <label><input type="checkbox" name="cfg-wx-alert-group" value="flood"> Flood</label>
+                                    <label><input type="checkbox" name="cfg-wx-alert-group" value="winter"> Winter</label>
+                                    <label><input type="checkbox" name="cfg-wx-alert-group" value="marine"> Marine</label>
+                                    <label><input type="checkbox" name="cfg-wx-alert-group" value="fire_heat"> Fire / Heat</label>
+                                    <label><input type="checkbox" name="cfg-wx-alert-group" value="other"> Other</label>
+                                </div>
+                            </details>
+                            <p class="weather-overlay-note">Radar animation is provider-based. NWS polygons display when geometry is available for the alert.</p>
                         </div>
                     </div>
 
@@ -933,10 +1029,10 @@
                 <div class="about-panel">
                     <div class="about-header">
                         <h2>APRS PropView</h2>
-                        <span id="about-version" class="about-version">v1.1.0</span>
+                        <span id="about-version" class="about-version">v1.3.0</span>
                     </div>
                     <div class="about-section">
-                        <p>A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions.</p>
+                        <p>A real-time APRS digipeater and IGate focused on VHF propagation, live mapping, APRS messaging, analytics, and weather-aware situational awareness.</p>
                     </div>
                     <div class="about-section">
                         <h3>Created By</h3>
@@ -949,8 +1045,18 @@
                     </div>
                     <div class="about-section">
                         <h3>Build Info</h3>
-                        <p>Version: <span id="about-version-detail">1.1.0</span></p>
-                        <p>Release Date: <span id="about-date">April 14, 2026</span></p>
+                        <p>Version: <span id="about-version-detail">1.3.0</span></p>
+                        <p>Release Date: <span id="about-date">April 29, 2026</span></p>
+                        <p>Highlights: radar overlays, NWS polygon filters, adaptive severe weather polling, county/zone alert targeting, and GitHub release update checks.</p>
+                    </div>
+                    <div class="about-section">
+                        <h3>Updates</h3>
+                        <p id="about-update-message">Checking GitHub releases for updates...</p>
+                        <p id="about-update-detail" class="about-update-detail"></p>
+                        <div class="about-update-actions">
+                            <button id="btn-check-updates" class="btn-primary about-update-btn">Check Now</button>
+                            <a id="about-update-link" href="https://github.com/RF-YVY/APRS-PropView/releases" target="_blank" class="about-link" rel="noreferrer">Open Releases</a>
+                        </div>
                     </div>
                     <div class="about-section">
                         <h3>License</h3>
@@ -989,7 +1095,10 @@
             Digipeated: <b id="stat-digi">0</b> |
             Gated: <b id="stat-gated">0</b>
         </span>
-        <span id="footer-uptime">Uptime: 0:00:00</span>
+        <span class="footer-right">
+            <span id="footer-update" class="footer-update" style="display:none;"></span>
+            <span id="footer-uptime">Uptime: 0:00:00</span>
+        </span>
     </footer>
 
     <!-- ── APRS Icon Picker Modal ──────────────────────────────── -->
@@ -1024,12 +1133,12 @@
 
                 <section class="help-section">
                     <h3>Overview</h3>
-                    <p>APRS PropView is a real-time APRS digipeater and Internet Gateway (IGate) application focused on visualizing VHF propagation conditions. It decodes APRS packets from RF (via a TNC) and from the APRS-IS network, plots stations on a live map, draws signal paths, and scores current propagation quality.</p>
+                    <p>APRS PropView is a real-time APRS digipeater and Internet Gateway (IGate) application focused on visualizing VHF propagation conditions. It decodes APRS packets from RF (via a TNC) and APRS-IS, plots stations on a live map, draws signal paths, scores propagation quality, and adds weather radar plus configurable NWS alert overlays for faster storm awareness.</p>
                 </section>
 
                 <section class="help-section">
                     <h3>🗺️ Map</h3>
-                    <p>The central map shows your station (blue dot), RF stations (red border), and APRS-IS stations (blue border). Propagation lines animate from each RF station toward your position, color-coded by distance:</p>
+                    <p>The central map shows your station (blue dot), RF stations (red border), APRS-IS stations (blue border), and optional weather overlays. Propagation lines animate from each RF station toward your position, color-coded by distance:</p>
                     <ul>
                         <li><b style="color:#f85149;">Red</b> — &lt; 31 mi (50 km)</li>
                         <li><b style="color:#d29922;">Orange</b> — 31–62 mi (50–100 km)</li>
@@ -1052,7 +1161,8 @@
                         <tr><td>⏱️</td><td><b>Line Time Filter</b> — Only show path lines from stations heard within the selected window (1h, 6h, 12h, 24h, or all time).</td></tr>
                         <tr><td>🏷️ Types ▾</td><td><b>Type Filter</b> — Check/uncheck station categories (Digipeater, Weather, House, Car, etc.) to control which types appear on the map.</td></tr>
                     </table>
-                    <p>All map toggle states, zoom level, position, and filter selections are saved automatically and persist across restarts.</p>
+                    <p>Weather radar and NWS polygons are managed from Settings - Weather. All map toggle states, zoom level, position, and filter selections are saved automatically and persist across restarts.</p>
+                    <p>Application update checks are managed from Settings - Web Interface. You can disable release checks entirely or choose how often the app rechecks GitHub while it stays running.</p>
                 </section>
 
                 <section class="help-section">
@@ -1090,7 +1200,7 @@
 
                 <section class="help-section">
                     <h3>⚙️ Settings</h3>
-                    <p>All settings are saved to <code>config.toml</code> next to the executable. Some changes (callsign, TNC, APRS-IS) require a restart; the app will notify you.</p>
+                    <p>All settings are saved to <code>config.toml</code> next to the executable. Most UI, weather, alert, and analytics changes apply live; transport-layer changes such as TNC connection settings may still require a restart.</p>
                     <h4>Station</h4>
                     <p>Your callsign, SSID, latitude/longitude (or use the 📌 map picker), APRS symbol, status comment, beacon interval (minutes), and beacon path (e.g. <code>WIDE1-1</code>).</p>
                     <h4>Digipeater</h4>
@@ -1106,6 +1216,7 @@
                     <p><b>Font</b> — Choose a display font for the entire UI.</p>
                     <p><b>Ghost After (min)</b> — Stations not heard within this time will fade (pulsing dashed border, reduced opacity). Set to 0 to disable ghosting.</p>
                     <p><b>Expire After (min)</b> — Stations not heard within this time are completely removed from the map. Set to 0 to never auto-expire. Ghost time should be shorter than expiry time so stations fade before disappearing.</p>
+                    <p><b>Update Checks</b> - Enable or disable automatic GitHub release checks and set how often the app should poll for a newer published version during long-running uptime.</p>
                     <h4>Tracking</h4>
                     <p><b>Max Station Age</b> — How long (minutes) to keep a station in the database before cleanup removes it. <b>Cleanup Interval</b> — How often (minutes) to run the cleanup process.</p>
                     <h4>Alerts — Band Opening Channels</h4>
@@ -1113,7 +1224,10 @@
                     <h4>Alerts — Message Notification Channels</h4>
                     <p>Separate channel toggles for forwarding incoming APRS messages to Discord, Email, or SMS — independent from band-opening channels.</p>
                     <h4>Weather</h4>
-                    <p>Enable weather display with an NWS location code (e.g. a US grid point or zone). Severe weather alerts within the configured range will appear as banners above the map. Refresh interval controls how often conditions are fetched.</p>
+                    <p>Enable weather with a US zip code or ICAO airport code. APRS PropView shows a current-conditions banner, optional animated radar overlay, and optional NWS alert polygons on the map.</p>
+                    <p><b>Map Overlays</b> - Turn radar and NWS polygons on or off, adjust radar opacity, enable radar animation, and choose which alert categories should be drawn on the map.</p>
+                    <p><b>Alert Polling</b> - Choose point-based alerts or monitor a county/forecast-zone UGC. Use Auto-Fill to resolve the local county or zone from the configured weather location.</p>
+                    <p><b>Adaptive Severe Weather Polling</b> - When one of your configured trigger events, such as <code>Tornado Watch</code> or <code>Severe Thunderstorm Watch</code>, becomes active, alert polling automatically speeds up to the elevated interval so newly issued warnings are detected more quickly. After the trigger clears, polling stays elevated through the configured cooldown before returning to normal.</p>
                 </section>
 
                 <section class="help-section">
@@ -1129,6 +1243,7 @@
                         <li>Ghost + Expire work together: set Ghost to 60 min and Expire to 180 min, for example, so stations fade at 1 hour and vanish at 3 hours.</li>
                         <li>Auto-Fit zoom (🔎) will keep all visible stations in view and zoom back in as stations expire. It pauses when you manually pan or zoom — click the button again to re-enable.</li>
                         <li>The propagation score is calculated from RF station count, maximum distance, and average distance within the last hour.</li>
+                        <li>If you want faster warning pickup for a surrounding county, switch alert scope from <b>Station point</b> to <b>County/Zone UGC</b> and enable elevated polling triggers in Settings â†’ Weather.</li>
                     </ul>
                 </section>
 
