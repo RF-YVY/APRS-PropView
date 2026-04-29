@@ -1,18 +1,8 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.2.0** | April 14, 2026
+**Version 1.3.0** | April 29, 2026
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
-
-## >>Desktop View
-<img width="1915" height="944" alt="Image" src="https://github.com/user-attachments/assets/707a80fd-cfde-486b-808c-12eae8fab351" />
-
-
-## >>Mobile Phone View
-Mobile companion designed to allow quick access to sending and recieving messages with brief overview of your stations conditions<br>
-Where ever you and your phone may be. (use of TailScale or similar VPN needed for setup)
-<img width="330" height="717" alt="Image" src="https://github.com/user-attachments/assets/91327ab2-6687-4eed-b91e-5618036595ea" />
-</p>
 
 ## Features
 
@@ -53,12 +43,16 @@ Where ever you and your phone may be. (use of TailScale or similar VPN needed fo
 
 ### Weather
 
-- **Current Conditions Banner** — Live weather banner on the map view (temperature, wind, humidity, pressure, feels-like) powered by Open-Meteo
-- **US Zip Code & ICAO Location** — Set your weather location by entering a US zip code or ICAO airport code
-- **Severe Weather Alerts** — NWS active alerts displayed as color-coded banners (red for warnings, orange for watches/advisories)
-- **Configurable Alert Range** — Select how far from your location to monitor severe weather (default 50 miles)
-- **Lightning Detection** — Thunderstorm indicators via WMO weather codes and NWS alert keyword scanning
-- **Auto-Refresh** — Configurable refresh interval (default 15 min) with 5-minute alert polling
+- **Current Conditions Banner** - Live weather banner on the map view (temperature, wind, humidity, pressure, feels-like) powered by Open-Meteo
+- **US Zip Code & ICAO Location** - Set your weather location by entering a US zip code or ICAO airport code
+- **Severe Weather Alerts** - NWS active alerts displayed as color-coded banners (red for warnings, orange for watches/advisories)
+- **Configurable Alert Range** - Select how far from your location to monitor severe weather (default 50 miles)
+- **NWS Alert Awareness** - Current conditions, animated radar overlays, and NWS alert banners/polygons for weather situational awareness
+- **Weather Radar Overlay** - Optional animated radar tiles layered directly on the map with adjustable opacity for fast visual storm tracking
+- **NWS Alert Polygons** - Optional map overlay for severe weather polygons, with per-category filters for warnings, watches, flood, winter, marine, fire/heat, and other alerts
+- **Adaptive Alert Polling** - Automatically increases alert checks to a 1-minute cadence when selected trigger events, such as Tornado Watch or Severe Thunderstorm Watch, become active
+- **Point or County/Zone Scope** - Monitor alerts for your exact station point or switch to a county/forecast-zone UGC target for broader warning coverage
+- **Adaptive Refresh Strategy** - Weather condition refresh stays user-configurable while alert polling cadence can increase automatically during elevated severe-weather scenarios
 
 ### APRS Messaging
 
@@ -82,6 +76,7 @@ Where ever you and your phone may be. (use of TailScale or similar VPN needed fo
 - **Font Selector** — Choose from multiple fonts in Settings for crisp, readable text
 - **About Tab** — Application version, build info, and attribution
 - **Help & User Guide** — In-app help modal covering every feature, control, and setting
+- **Update Checker** - Automatically checks the latest GitHub release, supports disabling checks entirely, and lets you control the periodic recheck interval for long-running installs
 - **Persistent UI State** — Map toggles, zoom, position, theme, line time filter, station type filters, callsign labels, and auto-fit are saved to the browser and restored on next launch
 - **Station Cleanup** — Automatic pruning of stale stations from memory with real-time UI removal
 
@@ -150,7 +145,7 @@ All settings are in `config.toml` and can be edited from the web UI **Settings**
 | `[database]` | SQLite database path |
 | `[propagation]` | Scoring thresholds for My Station and Regional propagation meters |
 | `[alerts]` | Band opening thresholds, Discord/email/SMS notification settings |
-| `[weather]` | Weather enabled, location code (zip/ICAO), alert range miles, refresh interval |
+| `[weather]` | Weather enabled, location code (zip/ICAO), alert range, radar overlay, alert polygons, alert scope, and adaptive polling |
 
 ## Architecture
 

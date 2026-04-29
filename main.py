@@ -4,7 +4,7 @@
 Launch this to start the application. The web interface opens automatically.
 """
 
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 
 import asyncio
 import sys
@@ -39,6 +39,7 @@ from server.websocket_manager import WebSocketManager
 from server.analytics import AnalyticsEngine
 from server.alerts import AlertManager, AlertConfig
 from server.weather import WeatherManager
+from server.update_checker import UpdateChecker
 
 # Configure logging
 logging.basicConfig(
@@ -205,6 +206,12 @@ async def main():
     else:
         logger.info("Weather: disabled or no location set")
 
+    update_checker = UpdateChecker(APP_VERSION)
+    update_checker.configure(
+        config.web.update_check_enabled,
+        max(1, int(config.web.update_check_interval_hours)) * 3600,
+    )
+
     # ── MQTT Publisher (optional) ──────────────────────────────────
 
     mqtt_publisher = None
@@ -226,7 +233,19 @@ async def main():
 
     # ── Create web application ──────────────────────────────────────
 
-    app = create_app(config, db, tracker, ws_manager, handler, analytics, alert_manager, aprs_is, weather_manager, app_version=APP_VERSION)
+    app = create_app(
+        config,
+        db,
+        tracker,
+        ws_manager,
+        handler,
+        analytics,
+        alert_manager,
+        aprs_is,
+        weather_manager,
+        update_checker=update_checker,
+        app_version=APP_VERSION,
+    )
 
     # ── Start background tasks ──────────────────────────────────────
 
