@@ -3,9 +3,10 @@
 
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.3.2** | May 1, 2026
+**Version 1.3.2** | May 1, 2026 
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
+- !-- If updating from Releases with new .exe, simply replace the .exe (overwrite), leave the config files to keep your settings from previous version. --!
 
 ## Features
 
@@ -27,6 +28,11 @@ A real-time APRS digipeater and IGate application focused on visualizing VHF pro
 - **Filters** — Filter stations by last-heard time, distance, and packet type
 - **Solar Data Widget** — Live HF propagation summary image (solar flux, K-index, band conditions) from hamqsl.com in the Propagation tab
 - **Real-time Updates** — WebSocket-driven live dashboard
+
+## Mobile View:
+- Setup alerts of incoming messages to be sent to your phone by email or SMS, recieve and reply to message via you phone
+ 
+<img width="330" height="717" alt="IMG_0506" src="https://github.com/user-attachments/assets/c25c0644-5530-4f55-a1a3-9691931fba07" />
 
 ### Analytics
 
