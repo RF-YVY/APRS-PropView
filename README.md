@@ -1,3 +1,6 @@
+<img width="1536" height="1024" alt="APRS PropView promo img" src="https://github.com/user-attachments/assets/6f6b79ac-9a4f-4e24-8f4c-9ec9019b8d4d" />
+
+
 # APRS PropView — VHF Propagation Monitor
 
 **Version 1.3.2** | May 1, 2026
