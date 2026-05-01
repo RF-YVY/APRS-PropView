@@ -3,7 +3,7 @@
 
 # APRS PropView — VHF Propagation Monitor
 <sub><sub>("APRS" is a trademark of TUCSON AMATEUR PACKET RADIO CORPORATION</sub></sub><br>
-<sub><sub>APRS PropView is not endorsed, associated, or affliated with any orginaztion.)</sub></sub><BR><BR>
+<sub><sub>APRS PropView is not endorsed, associated, or affliated with any organization.)</sub></sub><BR><BR>
 **Version 1.3.2** | May 1, 2026 
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
