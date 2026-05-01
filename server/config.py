@@ -51,6 +51,10 @@ filter = ""
 enabled = false
 port = "COM3"
 baudrate = 9600
+mode = "kiss"
+flow_control = "none"
+init_profile = "none"
+init_commands = ""
 
 [kiss_tcp]
 enabled = false
@@ -181,6 +185,10 @@ class KISSSerialConfig:
     enabled: bool = False
     port: str = "COM3"
     baudrate: int = 9600
+    mode: str = "kiss"
+    flow_control: str = "none"
+    init_profile: str = "none"
+    init_commands: str = ""
 
 
 @dataclass
@@ -381,6 +389,10 @@ class Config:
             f"enabled = {'true' if self.kiss_serial.enabled else 'false'}",
             f'port = "{esc(self.kiss_serial.port)}"',
             f"baudrate = {int(self.kiss_serial.baudrate)}",
+            f'mode = "{esc(self.kiss_serial.mode)}"',
+            f'flow_control = "{esc(self.kiss_serial.flow_control)}"',
+            f'init_profile = "{esc(self.kiss_serial.init_profile)}"',
+            f'init_commands = "{esc(self.kiss_serial.init_commands)}"',
             "",
             "[kiss_tcp]",
             f"enabled = {'true' if self.kiss_tcp.enabled else 'false'}",

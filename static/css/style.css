@@ -1733,7 +1733,9 @@ canvas {
 }
 
 .settings-row input[type="text"],
-.settings-row input[type="number"] {
+.settings-row input[type="number"],
+.settings-row select,
+.settings-row textarea {
     flex: 1;
     background: var(--bg-secondary);
     color: var(--text-primary);
@@ -1746,9 +1748,26 @@ canvas {
 }
 
 .settings-row input[type="text"]:focus,
-.settings-row input[type="number"]:focus {
+.settings-row input[type="number"]:focus,
+.settings-row select:focus,
+.settings-row textarea:focus {
     border-color: var(--accent-blue);
     outline: none;
+}
+
+.settings-row-stacked {
+    align-items: stretch;
+    flex-direction: column;
+}
+
+.settings-row-stacked label {
+    min-width: 0;
+}
+
+.settings-row textarea {
+    min-height: 80px;
+    max-width: none;
+    resize: vertical;
 }
 
 .settings-row input[type="checkbox"] {

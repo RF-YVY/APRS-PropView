@@ -4,7 +4,7 @@
 Launch this to start the application. The web interface opens automatically.
 """
 
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.3.2"
 
 import asyncio
 import sys
@@ -30,7 +30,7 @@ from server.config import Config
 from server.app import create_app
 from server.database import Database
 from server.aprs_is import APRSISClient
-from server.kiss import KISSSerialClient, KISSTCPClient
+from server.kiss import KISSSerialClient, KISSTCPClient, TNC2MonitorSerialClient
 from server.digipeater import Digipeater
 from server.igate import IGate
 from server.station_tracker import StationTracker
@@ -173,13 +173,27 @@ async def main():
     # ── Connect RF interfaces ───────────────────────────────────────
 
     if config.kiss_serial.enabled:
-        serial_client = KISSSerialClient(
+        serial_mode = (config.kiss_serial.mode or "kiss").strip().lower()
+        serial_cls = TNC2MonitorSerialClient if serial_mode == "tnc2_monitor" else KISSSerialClient
+        frame_handler = handler.handle_rf_aprs_packet if serial_mode == "tnc2_monitor" else handler.handle_rf_packet
+        serial_client = serial_cls(
             config.kiss_serial.port,
             config.kiss_serial.baudrate,
-            handler.handle_rf_packet,
+            frame_handler,
+            flow_control=config.kiss_serial.flow_control,
+            init_profile=config.kiss_serial.init_profile,
+            init_commands=config.kiss_serial.init_commands,
+            callsign=config.station.full_callsign,
         )
         handler.add_rf_interface(serial_client)
-        logger.info(f"KISS Serial: {config.kiss_serial.port} @ {config.kiss_serial.baudrate}")
+        logger.info(
+            "Serial RF: %s @ %s mode=%s flow=%s profile=%s",
+            config.kiss_serial.port,
+            config.kiss_serial.baudrate,
+            serial_mode,
+            config.kiss_serial.flow_control,
+            config.kiss_serial.init_profile,
+        )
 
     if config.kiss_tcp.enabled:
         tcp_client = KISSTCPClient(

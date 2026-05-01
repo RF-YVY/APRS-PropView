@@ -85,7 +85,11 @@ class PacketHandler:
     def _can_send_via(self, source: str) -> bool:
         """Check whether the requested transport is currently available."""
         if source == "rf":
-            return bool(self.rf_interfaces)
+            return any(
+                getattr(iface, "connected", False)
+                and getattr(iface, "can_transmit", True)
+                for iface in self.rf_interfaces
+            )
         if source == "aprs_is":
             return bool(self.aprs_is and self.aprs_is.connected)
         return False
@@ -173,6 +177,35 @@ class PacketHandler:
                 self.stats["is_tx"] += 1
 
         # Push live stats to web clients
+        await self._broadcast_stats()
+
+    async def handle_rf_aprs_packet(self, raw_str: str, interface=None):
+        """Handle a text APRS packet received from a legacy TNC monitor stream."""
+        self.stats["rf_rx"] += 1
+        raw_str = (raw_str or "").strip()
+        if not raw_str:
+            return
+
+        logger.debug(f"RF RX text: {raw_str}")
+        packet = parse_packet(raw_str, source="rf")
+        await self.tracker.track_packet(packet)
+
+        if self.igate:
+            self.igate.note_rf_station(packet.from_call)
+
+        await self._check_incoming_message(packet, source="rf")
+
+        if self.igate and self.aprs_is:
+            gated = self.igate.should_gate_rf_to_is(
+                raw_str,
+                packet.from_call,
+                can_tx_rf=self._rf_can_transmit(),
+            )
+            if gated:
+                await self.aprs_is.send(gated)
+                self.stats["gated_rf_to_is"] += 1
+                self.stats["is_tx"] += 1
+
         await self._broadcast_stats()
 
     async def handle_is_packet(self, raw_str: str):
@@ -400,12 +433,22 @@ class PacketHandler:
         """Transmit an AX.25 frame on all RF interfaces."""
         encoded = frame.encode()
         for iface in self.rf_interfaces:
+            if not getattr(iface, "can_transmit", True):
+                logger.debug(f"Skipping RF TX on receive-only interface {iface.name}")
+                continue
             try:
                 await iface.send(encoded)
                 self.stats["rf_tx"] += 1
                 logger.debug(f"RF TX via {iface.name}: {frame.to_aprs_string()}")
             except Exception as e:
                 logger.error(f"RF TX error on {iface.name}: {e}")
+
+    def _rf_can_transmit(self) -> bool:
+        return any(
+            getattr(iface, "connected", False)
+            and getattr(iface, "can_transmit", True)
+            for iface in self.rf_interfaces
+        )
 
     async def beacon_loop(self):
         """Periodically transmit our station beacon."""
@@ -450,20 +493,22 @@ class PacketHandler:
         cfg = self.config.station
         has_position = not (cfg.latitude == 0.0 and cfg.longitude == 0.0)
         rf_available = any(iface.connected for iface in self.rf_interfaces)
+        rf_tx_available = self._rf_can_transmit()
         is_connected = bool(self.aprs_is and self.aprs_is.connected)
         is_verified = bool(self.aprs_is and getattr(self.aprs_is, "verified", False))
         aprs_is_available = is_connected and is_verified
         send_rf = mode in {"rf", "both"}
         send_is = mode in {"aprs_is", "both"}
-        rf_selected_ready = send_rf and rf_available
         is_selected_ready = send_is and aprs_is_available
 
         message = "Ready to transmit beacon."
         if not has_position:
             message = "Set station latitude and longitude before transmitting a beacon."
         elif mode == "rf":
-            if rf_available:
+            if rf_tx_available:
                 message = "Beacon will transmit on RF only."
+            elif rf_available:
+                message = "RF interface is receive-only."
             else:
                 message = "No connected RF interface is available."
         elif mode == "aprs_is":
@@ -473,10 +518,10 @@ class PacketHandler:
                 message = "APRS-IS is connected in read-only mode."
             else:
                 message = "No APRS-IS transmit path is available."
-        elif rf_available or aprs_is_available:
-            if rf_available and aprs_is_available:
+        elif rf_tx_available or aprs_is_available:
+            if rf_tx_available and aprs_is_available:
                 message = "Beacon will transmit on RF and APRS-IS."
-            elif rf_available:
+            elif rf_tx_available:
                 message = "Beacon will transmit on RF only."
             else:
                 message = "Beacon will transmit on APRS-IS only."
@@ -486,9 +531,10 @@ class PacketHandler:
             message = "No RF interface or APRS-IS transmit path is available."
 
         return {
-            "can_transmit": has_position and (rf_selected_ready or is_selected_ready),
+            "can_transmit": has_position and ((send_rf and rf_tx_available) or is_selected_ready),
             "has_position": has_position,
             "rf_available": rf_available,
+            "rf_tx_available": rf_tx_available,
             "aprs_is_connected": is_connected,
             "aprs_is_verified": is_verified,
             "aprs_is_available": aprs_is_available,
@@ -586,7 +632,11 @@ class PacketHandler:
             "uptime_seconds": round(uptime),
             "rf_connected": rf_connected,
             "rf_interfaces": [
-                {"name": iface.name, "connected": iface.connected}
+                {
+                    "name": iface.name,
+                    "connected": iface.connected,
+                    "can_transmit": getattr(iface, "can_transmit", True),
+                }
                 for iface in self.rf_interfaces
             ],
             "aprs_is_connected": is_connected,

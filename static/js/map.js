@@ -34,6 +34,7 @@ class PropViewMap {
         this.autoFit = false;      // auto-zoom to fit all stations
         this._userInteracted = false; // true when user manually pans/zooms
         this._autoFitPending = false; // debounce flag
+        this._programmaticViewportChange = false;
         this._observedRangeFetchedAt = 0;
         this._observedRangeRequest = null;
         this.weatherOverlayConfig = {
@@ -93,11 +94,10 @@ class PropViewMap {
         // Bind map controls
         this._bindControls();
 
-        // Track user interaction to disable auto-fit
-        this.map.on('dragstart', () => { if (this.autoFit) this._userInteracted = true; });
+        // Manual pan/zoom should take ownership of the viewport.
+        this.map.on('dragstart', () => this._handleManualViewportChange());
         this.map.on('zoomstart', () => {
-            // Only flag user interaction for non-programmatic zooms
-            if (this.autoFit && !this._autoFitPending) this._userInteracted = true;
+            if (!this._autoFitPending) this._handleManualViewportChange();
         });
 
         // Save map position on moveend (debounced)
@@ -162,7 +162,10 @@ class PropViewMap {
 
     centerOnStation() {
         if (this.myPosition) {
-            this.map.setView([this.myPosition.lat, this.myPosition.lng], 10);
+            this._runProgrammaticViewportChange(() => {
+                this.map.panTo([this.myPosition.lat, this.myPosition.lng]);
+            });
+            this._saveUIState();
         }
     }
 
@@ -840,6 +843,33 @@ class PropViewMap {
         this.autoFit = enabled;
         this._userInteracted = false;
         if (enabled) this.autoFitNow();
+        this._syncAutoFitButton();
+    }
+
+    _syncAutoFitButton() {
+        const btn = document.getElementById('btn-toggle-autofit');
+        if (btn) btn.classList.toggle('active', this.autoFit);
+    }
+
+    _handleManualViewportChange() {
+        if (this._programmaticViewportChange || this._autoFitPending) return;
+        this._userInteracted = true;
+        if (this.autoFit) {
+            this.autoFit = false;
+            this._syncAutoFitButton();
+        }
+        this._saveUIState();
+    }
+
+    _runProgrammaticViewportChange(callback) {
+        this._programmaticViewportChange = true;
+        try {
+            callback();
+        } finally {
+            setTimeout(() => {
+                this._programmaticViewportChange = false;
+            }, 500);
+        }
     }
 
     /**
@@ -866,7 +896,9 @@ class PropViewMap {
 
         if (points.length > 1) {
             this._autoFitPending = true;
-            this.map.fitBounds(L.latLngBounds(points).pad(0.1));
+            this._runProgrammaticViewportChange(() => {
+                this.map.fitBounds(L.latLngBounds(points).pad(0.1));
+            });
             setTimeout(() => { this._autoFitPending = false; }, 500);
         }
     }
@@ -954,8 +986,7 @@ class PropViewMap {
         if (state.autoFit === true) {
             this.autoFit = true;
             this._userInteracted = false;
-            const btn = document.getElementById('btn-toggle-autofit');
-            if (btn) btn.classList.add('active');
+            this._syncAutoFitButton();
         }
 
         // Restore line time filter
@@ -981,7 +1012,9 @@ class PropViewMap {
 
         // Restore zoom and center (only if no auto-fit and no myPosition from server)
         if (state.zoom && state.center && !state.autoFit) {
-            this.map.setView(state.center, state.zoom);
+            this._runProgrammaticViewportChange(() => {
+                this.map.setView(state.center, state.zoom);
+            });
         }
     }
 

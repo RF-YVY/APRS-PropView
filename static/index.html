@@ -665,6 +665,23 @@
                             <input type="checkbox" id="cfg-ks-enabled">
                         </div>
                         <div class="settings-row">
+                            <label for="cfg-ks-mode">Mode</label>
+                            <select id="cfg-ks-mode">
+                                <option value="kiss">KISS frames</option>
+                                <option value="tnc2_monitor">TNC2 monitor text (receive-only)</option>
+                            </select>
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-ks-profile">Radio/TNC profile</label>
+                            <select id="cfg-ks-profile">
+                                <option value="none">Generic / already configured</option>
+                                <option value="kenwood_thd7">Kenwood TH-D7 / TH-D7E</option>
+                                <option value="kenwood_tmd700">Kenwood TM-D700</option>
+                                <option value="kenwood_thd72">Kenwood TH-D72</option>
+                                <option value="generic_tnc2_kiss">Generic TNC2 KISS startup</option>
+                            </select>
+                        </div>
+                        <div class="settings-row">
                             <label for="cfg-ks-port">Serial Port</label>
                             <input type="text" id="cfg-ks-port" placeholder="COM3">
                         </div>
@@ -672,6 +689,20 @@
                             <label for="cfg-ks-baud">Baudrate</label>
                             <input type="number" id="cfg-ks-baud" value="9600">
                         </div>
+                        <div class="settings-row">
+                            <label for="cfg-ks-flow">Flow control</label>
+                            <select id="cfg-ks-flow">
+                                <option value="none">None</option>
+                                <option value="xonxoff">Xon/Xoff</option>
+                                <option value="rtscts">RTS/CTS</option>
+                                <option value="dsrdtr">DSR/DTR</option>
+                            </select>
+                        </div>
+                        <div class="settings-row settings-row-stacked">
+                            <label for="cfg-ks-init">Extra init commands</label>
+                            <textarea id="cfg-ks-init" rows="4" placeholder="One command per line, e.g.&#10;MYCALL {callsign}&#10;HB 1200"></textarea>
+                        </div>
+                        <p class="settings-note">Legacy Kenwood radios such as the TH-D7E usually need PACKET mode on the radio, 9600 bps PC speed, and Xon/Xoff. TNC2 monitor text is receive-only but can be more reliable when KISS mode is unstable.</p>
                     </div>
 
                     <!-- KISS TCP -->
@@ -1029,7 +1060,7 @@
                 <div class="about-panel">
                     <div class="about-header">
                         <h2>APRS PropView</h2>
-                        <span id="about-version" class="about-version">v1.3.0</span>
+                        <span id="about-version" class="about-version">v1.3.2</span>
                     </div>
                     <div class="about-section">
                         <p>A real-time APRS digipeater and IGate focused on VHF propagation, live mapping, APRS messaging, analytics, and weather-aware situational awareness.</p>
@@ -1045,8 +1076,8 @@
                     </div>
                     <div class="about-section">
                         <h3>Build Info</h3>
-                        <p>Version: <span id="about-version-detail">1.3.0</span></p>
-                        <p>Release Date: <span id="about-date">April 29, 2026</span></p>
+                        <p>Version: <span id="about-version-detail">1.3.2</span></p>
+                        <p>Release Date: <span id="about-date">May 1, 2026</span></p>
                         <p>Highlights: radar overlays, NWS polygon filters, adaptive severe weather polling, county/zone alert targeting, and GitHub release update checks.</p>
                     </div>
                     <div class="about-section">
@@ -1157,7 +1188,7 @@
                         <tr><td>🔵</td><td><b>Toggle APRS-IS</b> — Show/hide Internet-heard stations.</td></tr>
                         <tr><td>🌙 / ☀️</td><td><b>Theme</b> — Toggle dark/light map tiles.</td></tr>
                         <tr><td>🏷️</td><td><b>Callsign Labels</b> — Show/hide callsign text above each station icon.</td></tr>
-                        <tr><td>🔎</td><td><b>Auto-Fit</b> — Automatically zoom to fit all visible stations. Disabled when you manually pan or zoom; click again to re-enable.</td></tr>
+                        <tr><td>🔎</td><td><b>Auto-Fit</b> — Automatically zoom to fit all visible stations. Turns off when you manually pan or zoom; click again to re-enable.</td></tr>
                         <tr><td>⏱️</td><td><b>Line Time Filter</b> — Only show path lines from stations heard within the selected window (1h, 6h, 12h, 24h, or all time).</td></tr>
                         <tr><td>🏷️ Types ▾</td><td><b>Type Filter</b> — Check/uncheck station categories (Digipeater, Weather, House, Car, etc.) to control which types appear on the map.</td></tr>
                     </table>
@@ -1210,7 +1241,7 @@
                     <h4>APRS-IS</h4>
                     <p>Server/port (default: <code>rotate.aprs2.net:14580</code>), your APRS-IS passcode, range filter in miles (auto-generates the <code>r/lat/lon/km</code> server filter), and any extra filter expressions (e.g. <code>b/CALL</code>).</p>
                     <h4>KISS Serial / KISS TCP</h4>
-                    <p>Connect to your TNC via serial port (COM port + baud rate) or TCP (host + port). Enable one or both.</p>
+                    <p>Connect to your TNC via serial port (COM port + baud rate) or TCP (host + port). Serial mode can use binary KISS frames or receive-only TNC2 monitor text for older radios. Kenwood TH-D7/TH-D7E users commonly need PACKET mode, 9600 bps PC speed, and Xon/Xoff flow control.</p>
                     <h4>Web Interface</h4>
                     <p><b>Host/Port</b> — Bind address and port for the web UI (default <code>127.0.0.1:14501</code>). Use <code>0.0.0.0</code> to allow network access.</p>
                     <p><b>Font</b> — Choose a display font for the entire UI.</p>
@@ -1241,7 +1272,7 @@
                         <li>Distance units (mi/km) can be toggled via the button in the map legend — the setting persists across sessions.</li>
                         <li>All map UI preferences (toggles, filters, zoom, position, theme) are saved automatically to your browser and restored on next launch.</li>
                         <li>Ghost + Expire work together: set Ghost to 60 min and Expire to 180 min, for example, so stations fade at 1 hour and vanish at 3 hours.</li>
-                        <li>Auto-Fit zoom (🔎) will keep all visible stations in view and zoom back in as stations expire. It pauses when you manually pan or zoom — click the button again to re-enable.</li>
+                        <li>Auto-Fit zoom (🔎) will keep all visible stations in view and zoom back in as stations expire. It turns off when you manually pan or zoom — click the button again to re-enable.</li>
                         <li>The propagation score is calculated from RF station count, maximum distance, and average distance within the last hour.</li>
                         <li>If you want faster warning pickup for a surrounding county, switch alert scope from <b>Station point</b> to <b>County/Zone UGC</b> and enable elevated polling triggers in Settings â†’ Weather.</li>
                     </ul>

@@ -37,6 +37,18 @@ filter = ""
 enabled = false
 port = "COM3"
 baudrate = 9600
+# mode: "kiss" for binary KISS TNCs, "tnc2_monitor" for receive-only
+# classic TNC2 monitor text streams such as older Kenwood packet modes.
+mode = "kiss"
+# flow_control: "none", "xonxoff", "rtscts", or "dsrdtr".
+# Kenwood TH-D7/TH-D7E packet operation commonly uses xonxoff.
+flow_control = "none"
+# init_profile: "none", "kenwood_thd7", "kenwood_tmd700",
+# "kenwood_thd72", or "generic_tnc2_kiss".
+init_profile = "none"
+# Optional extra command-mode lines sent after the selected profile.
+# Use {callsign} to insert the configured station callsign.
+init_commands = ""
 
 [kiss_tcp]
 enabled = false

@@ -105,6 +105,7 @@
         // Init weather module
         window.pvWeather.init();
         initWeatherSettingsUi();
+        initTncProfileSettings();
         initUpdateCheckerUi();
 
         // Wire up WebSocket events
@@ -721,7 +722,6 @@
         // Set map position
         if (status.latitude && status.longitude && status.latitude !== 0) {
             window.pvMap.setMyPosition(status.latitude, status.longitude, status.station);
-            window.pvMap.centerOnStation();
         }
     }
 
@@ -1112,6 +1112,9 @@
         try {
             const url = force ? '/api/update-status?force=true' : '/api/update-status';
             const resp = await fetch(url);
+            if (!resp.ok) {
+                throw new Error(`Update check failed with HTTP ${resp.status}`);
+            }
             const data = await resp.json();
             renderUpdateStatus(data, { messageEl, detailEl, linkEl, footerEl });
         } catch (e) {
@@ -1128,7 +1131,7 @@
 
     function renderUpdateStatus(data, els) {
         const { messageEl, detailEl, linkEl, footerEl } = els;
-        const currentVersion = data?.current_version || '1.3.0';
+        const currentVersion = data?.current_version || '1.3.2';
         const latestVersion = data?.latest_version || currentVersion;
         const releaseUrl = data?.release_url || 'https://github.com/RF-YVY/APRS-PropView/releases';
         const publishedAt = data?.published_at ? formatReleaseDate(data.published_at) : '';
@@ -1152,7 +1155,7 @@
         }
 
         if (data?.current_is_newer_than_release) {
-            if (messageEl) messageEl.textContent = `This build is newer than the latest GitHub release (v${latestVersion}).`;
+            if (messageEl) messageEl.textContent = 'You are on the newest version.';
             if (detailEl) {
                 detailEl.textContent = publishedAt
                     ? `You are running v${currentVersion}. The newest published release is v${latestVersion}, from ${publishedAt}.`
@@ -1169,7 +1172,7 @@
         if (messageEl) {
             messageEl.textContent = data?.error
                 ? 'Could not check for updates right now.'
-                : `You are up to date on v${currentVersion}.`;
+                : 'You are on the newest version.';
         }
         if (detailEl) {
             if (data?.error) {
@@ -1259,8 +1262,12 @@
 
             // KISS Serial
             setChk('cfg-ks-enabled', cfg.kiss_serial?.enabled);
+            setVal('cfg-ks-mode', cfg.kiss_serial?.mode || 'kiss');
+            setVal('cfg-ks-profile', cfg.kiss_serial?.init_profile || 'none');
             setVal('cfg-ks-port', cfg.kiss_serial?.port);
             setVal('cfg-ks-baud', cfg.kiss_serial?.baudrate);
+            setVal('cfg-ks-flow', cfg.kiss_serial?.flow_control || 'none');
+            setVal('cfg-ks-init', cfg.kiss_serial?.init_commands || '');
 
             // KISS TCP
             setChk('cfg-kt-enabled', cfg.kiss_tcp?.enabled);
@@ -1389,8 +1396,12 @@
             },
             kiss_serial: {
                 enabled: getChk('cfg-ks-enabled'),
+                mode: getVal('cfg-ks-mode') || 'kiss',
+                init_profile: getVal('cfg-ks-profile') || 'none',
                 port: getVal('cfg-ks-port'),
                 baudrate: getVal('cfg-ks-baud'),
+                flow_control: getVal('cfg-ks-flow') || 'none',
+                init_commands: getVal('cfg-ks-init') || '',
             },
             kiss_tcp: {
                 enabled: getChk('cfg-kt-enabled'),
@@ -1548,6 +1559,31 @@
         updateWeatherOverlayOpacityLabel();
         updateWeatherAlertGroupSummary();
         updateWeatherAlertScopePreview();
+    }
+
+    function initTncProfileSettings() {
+        const profile = document.getElementById('cfg-ks-profile');
+        const mode = document.getElementById('cfg-ks-mode');
+        const flow = document.getElementById('cfg-ks-flow');
+        const baud = document.getElementById('cfg-ks-baud');
+        if (!profile) return;
+
+        profile.addEventListener('change', () => {
+            if (profile.value === 'kenwood_thd7' || profile.value === 'kenwood_tmd700') {
+                if (flow) flow.value = 'xonxoff';
+                if (baud && !baud.value) baud.value = '9600';
+            } else if (profile.value === 'kenwood_thd72' || profile.value === 'generic_tnc2_kiss') {
+                if (flow && flow.value === 'xonxoff') flow.value = 'none';
+                if (baud && !baud.value) baud.value = '9600';
+            }
+        });
+
+        mode?.addEventListener('change', () => {
+            if (mode.value === 'tnc2_monitor' && profile.value === 'none') {
+                profile.value = 'kenwood_thd7';
+                if (flow) flow.value = 'xonxoff';
+            }
+        });
     }
 
     function updateWeatherOverlayOpacityLabel() {

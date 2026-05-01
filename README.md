@@ -1,20 +1,8 @@
-<img width="1536" height="1024" alt="Image" src="https://github.com/user-attachments/assets/3074d535-c04d-40e9-865f-829b55c1311e" />
-
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.3.0** | April 29, 2026
+**Version 1.3.2** | May 1, 2026
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
-
-Create Folder to place exe into on your computer, application will create config file upon launch.<br><br>
- !-To Keep your settings when updating to a new version-!<br> Download exe and place into your exsisting application folder and replace exe with new one.  All settings will remain.
-
-## Desktop View
-<img width="1908" height="942" alt="Image" src="https://github.com/user-attachments/assets/ae835a55-4634-4cba-aeec-6ce5d31fa067" />
-<img width="1920" height="942" alt="Image" src="https://github.com/user-attachments/assets/e6e01e7a-b972-4dbc-9c27-0ec2c117c3a4" />
-
-## Mobile Companion
-<img width="330" height="717" alt="Image" src="https://github.com/user-attachments/assets/a03939b8-7243-43e0-872e-b9a69e7100ab" />
 
 ## Features
 
@@ -150,7 +138,7 @@ All settings are in `config.toml` and can be edited from the web UI **Settings**
 | `[digipeater]` | Enable/disable, WIDEn-N aliases, dedupe window |
 | `[igate]` | Enable/disable, RF→IS and IS→RF gating |
 | `[aprs_is]` | Server, port, passcode, filter string |
-| `[kiss_serial]` | Serial KISS TNC port and baud rate |
+| `[kiss_serial]` | Serial RF TNC port, baud rate, KISS/TNC2 monitor mode, flow control, and optional startup profile |
 | `[kiss_tcp]` | TCP KISS TNC host and port |
 | `[web]` | Web interface bind address, port, font, ghost time, expire time |
 | `[tracking]` | Station age limits and cleanup intervals |
@@ -198,7 +186,7 @@ aprs-propview/
 │   ├── database.py         # SQLite via aiosqlite
 │   ├── digipeater.py       # WIDEn-N digipeater
 │   ├── igate.py            # RF ↔ APRS-IS gateway
-│   ├── kiss.py             # KISS protocol (serial + TCP)
+│   ├── kiss.py             # KISS protocol plus legacy TNC2 monitor serial support
 │   ├── packet_handler.py   # Central packet router
 │   ├── station_tracker.py  # Station tracking & propagation
 │   ├── analytics.py        # Analytics engine

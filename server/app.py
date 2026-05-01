@@ -155,6 +155,26 @@ def _validate_config(body: Dict[str, Any]) -> Optional[str]:
             except (ValueError, TypeError):
                 return "KISS TCP port must be a number."
 
+    if "kiss_serial" in body:
+        ks = body["kiss_serial"]
+        baudrate = ks.get("baudrate")
+        if baudrate is not None:
+            try:
+                baudrate = int(baudrate)
+                if baudrate < 300 or baudrate > 921600:
+                    return "KISS serial baudrate must be 300-921600."
+            except (ValueError, TypeError):
+                return "KISS serial baudrate must be a number."
+        mode = (ks.get("mode", "kiss") or "kiss").strip().lower()
+        if mode not in {"kiss", "tnc2_monitor"}:
+            return "KISS serial mode must be kiss or tnc2_monitor."
+        flow = (ks.get("flow_control", "none") or "none").strip().lower()
+        if flow not in {"none", "xonxoff", "rtscts", "dsrdtr"}:
+            return "KISS serial flow control must be none, xonxoff, rtscts, or dsrdtr."
+        profile = (ks.get("init_profile", "none") or "none").strip().lower()
+        if profile not in {"none", "kenwood_thd7", "kenwood_tmd700", "kenwood_thd72", "generic_tnc2_kiss"}:
+            return "Unknown KISS serial init profile."
+
     if "web" in body:
         w = body["web"]
         host = w.get("host", "")
@@ -811,6 +831,10 @@ def create_app(
                 "enabled": config.kiss_serial.enabled,
                 "port": config.kiss_serial.port,
                 "baudrate": config.kiss_serial.baudrate,
+                "mode": config.kiss_serial.mode,
+                "flow_control": config.kiss_serial.flow_control,
+                "init_profile": config.kiss_serial.init_profile,
+                "init_commands": config.kiss_serial.init_commands,
             },
             "kiss_tcp": {
                 "enabled": config.kiss_tcp.enabled,
@@ -987,6 +1011,10 @@ def create_app(
                 config.kiss_serial.enabled = bool(ks.get("enabled", config.kiss_serial.enabled))
                 config.kiss_serial.port = ks.get("port", config.kiss_serial.port)
                 config.kiss_serial.baudrate = int(ks.get("baudrate", config.kiss_serial.baudrate))
+                config.kiss_serial.mode = (ks.get("mode", config.kiss_serial.mode) or "kiss").strip().lower()
+                config.kiss_serial.flow_control = (ks.get("flow_control", config.kiss_serial.flow_control) or "none").strip().lower()
+                config.kiss_serial.init_profile = (ks.get("init_profile", config.kiss_serial.init_profile) or "none").strip().lower()
+                config.kiss_serial.init_commands = ks.get("init_commands", config.kiss_serial.init_commands) or ""
                 need_restart.append("KISS serial")
 
             # Update KISS TCP config

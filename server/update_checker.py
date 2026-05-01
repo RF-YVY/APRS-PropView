@@ -20,6 +20,7 @@ def _normalize_version(value: str) -> str:
     value = (value or "").strip()
     if value.lower().startswith("v"):
         value = value[1:]
+    value = value.lstrip(".-_ ")
     return value
 
 
@@ -159,9 +160,9 @@ class UpdateChecker:
                     f"Update available: v{latest_version}"
                     if update_available and latest_version
                     else (
-                        "This build is newer than the latest published GitHub release."
+                        "You are on the newest version."
                         if current_is_newer
-                        else "You are running the latest release."
+                        else "You are on the newest version."
                     )
                 ),
                 "error": "",
@@ -196,6 +197,20 @@ class UpdateChecker:
             logger.warning("Update check failed: %s", exc)
 
     def _fetch_latest_release_sync(self) -> Dict[str, Any]:
+        try:
+            return self._fetch_latest_release_api_sync()
+        except Exception as first_error:
+            logger.info("GitHub latest-release API failed, trying releases page fallback: %s", first_error)
+            try:
+                fallback = self._fetch_latest_release_page_sync()
+                fallback["api_error"] = str(first_error)
+                return fallback
+            except Exception as fallback_error:
+                raise RuntimeError(
+                    f"{first_error}; releases page fallback failed: {fallback_error}"
+                ) from fallback_error
+
+    def _fetch_latest_release_api_sync(self) -> Dict[str, Any]:
         req = urllib.request.Request(
             GITHUB_LATEST_API,
             headers={
@@ -211,3 +226,34 @@ class UpdateChecker:
             raise RuntimeError(f"GitHub returned HTTP {exc.code}: {body[:160]}") from exc
         except urllib.error.URLError as exc:
             raise RuntimeError(f"GitHub request failed: {exc.reason}") from exc
+
+    def _fetch_latest_release_page_sync(self) -> Dict[str, Any]:
+        req = urllib.request.Request(
+            GITHUB_RELEASES_URL,
+            headers={
+                "User-Agent": f"APRSPropView/{self.current_version}",
+                "Accept": "text/html,application/xhtml+xml",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                html = resp.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"GitHub releases page returned HTTP {exc.code}: {body[:160]}") from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"GitHub releases page request failed: {exc.reason}") from exc
+
+        tags = re.findall(rf"/{re.escape(GITHUB_REPO)}/releases/tag/([^\"?#]+)", html)
+        tags = sorted(set(tags), key=_version_key, reverse=True)
+        if not tags:
+            raise RuntimeError("Could not find a release tag on the GitHub releases page")
+
+        tag = tags[0]
+        return {
+            "tag_name": tag,
+            "name": tag,
+            "html_url": f"{GITHUB_RELEASES_URL}/tag/{tag}",
+            "published_at": "",
+            "prerelease": False,
+        }
