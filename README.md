@@ -33,9 +33,11 @@ A real-time APRS digipeater and IGate application focused on visualizing VHF pro
 ## Mobile View:
 - Setup alerts of incoming messages to be sent to your phone by email or SMS, recieve and reply to message via you phone
  
-<img width="330" height="717" alt="IMG_0506" src="https://github.com/user-attachments/assets/c25c0644-5530-4f55-a1a3-9691931fba07" />
+<img width="330" height="717" alt="IMG_0506" src="https://github.com/user-attachments/assets/c25c0644-5530-4f55-a1a3-9691931fba07" /><br>
 
 ### Analytics
+
+<img width="838" height="260" alt="trop" src="https://github.com/user-attachments/assets/cb088fde-b9fd-48ff-ad96-25ceb3759bd4" /><br>
 
 - **Longest Path Leaderboard** — Daily ranking of the longest RF paths heard
 - **Propagation Heatmap** — Hour-by-hour visualization of propagation activity over time
