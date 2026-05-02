@@ -22,9 +22,10 @@ def _decode_aprs_line(raw_line: bytes) -> str:
 class APRSISClient:
     """Asynchronous APRS-IS client with auto-reconnect."""
 
-    def __init__(self, config: Config, on_packet: Callable):
+    def __init__(self, config: Config, on_packet: Callable, app_version: str = "1.0.0"):
         self.config = config
         self.on_packet = on_packet
+        self.app_version = app_version
         self.reader: Optional[asyncio.StreamReader] = None
         self.writer: Optional[asyncio.StreamWriter] = None
         self.connected = False
@@ -59,7 +60,7 @@ class APRSISClient:
         """Build APRS-IS login string."""
         callsign = self.config.station.full_callsign
         passcode = self.config.aprs_is.passcode
-        login = f"user {callsign} pass {passcode} vers APRSPropView 1.0"
+        login = f"user {callsign} pass {passcode} vers APRSPropView {self.app_version}"
         if self.config.aprs_is.filter:
             login += f" filter {self.config.aprs_is.filter}"
         return login

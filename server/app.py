@@ -44,6 +44,9 @@ _SAFE_PATH_RE = re.compile(r'^[A-Za-z0-9._-]{1,100}$')
 _FILTER_TOKEN_RE = re.compile(r'^[a-z]/[\w.\-*/,]+$', re.IGNORECASE)
 # Disallowed callsigns (common placeholders)
 _BLOCKED_CALLSIGNS = {'N0CALL', 'NOCALL', 'MYCALL', 'TEST'}
+_INVALID_CALLSIGN_MESSAGE = "Invalid callsign format. Must be a valid amateur radio callsign (e.g. W1ABC, KA9XYZ)."
+_IGATE_CALLSIGN_MESSAGE = "IGate requires a valid amateur radio callsign. Change your callsign from the default."
+_IGATE_PASSCODE_MESSAGE = "RF\u2192APRS-IS gating requires a valid APRS-IS passcode. Read-only (passcode -1) cannot inject packets."
 
 
 def _mask_passcode(passcode: str) -> str:
@@ -64,7 +67,7 @@ def _validate_config(body: Dict[str, Any]) -> Optional[str]:
         call = (s.get("callsign", "") or "").strip().upper()
         if call:
             if not _CALLSIGN_RE.match(call):
-                return "Invalid callsign format. Must be a valid amateur radio callsign (e.g. W1ABC, KA9XYZ)."
+                return _INVALID_CALLSIGN_MESSAGE
         ssid = s.get("ssid", 0)
         try:
             ssid = int(ssid)
@@ -136,10 +139,10 @@ def _validate_config(body: Dict[str, Any]) -> Optional[str]:
         passcode = aprs_is_cfg.get("passcode", "")
         # Warn if IGate enabled but callsign is placeholder
         if ig.get("enabled") and call in _BLOCKED_CALLSIGNS:
-            return "IGate requires a valid amateur radio callsign. Change your callsign from the default."
+            return _IGATE_CALLSIGN_MESSAGE
         # Warn if IGate RF→IS enabled with read-only passcode
         if ig.get("rf_to_is") and passcode == "-1":
-            return "RF→APRS-IS gating requires a valid APRS-IS passcode. Read-only (passcode -1) cannot inject packets."
+            return _IGATE_PASSCODE_MESSAGE
 
     if "kiss_tcp" in body:
         kt = body["kiss_tcp"]
@@ -209,19 +212,17 @@ def _validate_operational_config(body: Dict[str, Any]) -> Optional[str]:
 
 
 def _validate_save_request(body: Dict[str, Any]) -> Optional[str]:
-    """Validate settings while allowing dashboard-only saves on default config."""
+    """Validate settings while allowing non-operational config to be saved."""
     validation_error = _validate_config(body)
     if not validation_error:
         return _validate_operational_config(body)
 
     station = body.get("station", {}) if isinstance(body.get("station"), dict) else {}
     call = (station.get("callsign", "") or "").strip().upper()
-    non_blocking_policy_errors = (
-        "Invalid callsign format. Must be a valid amateur radio callsign (e.g. W1ABC, KA9XYZ).",
-        "IGate requires a valid amateur radio callsign. Change your callsign from the default.",
-        "RFâ†’APRS-IS gating requires a valid APRS-IS passcode. Read-only (passcode -1) cannot inject packets.",
-    )
-    if validation_error in non_blocking_policy_errors and call in _BLOCKED_CALLSIGNS:
+    if validation_error == _INVALID_CALLSIGN_MESSAGE and call in _BLOCKED_CALLSIGNS:
+        logger.info("Ignoring non-blocking save validation warning: %s", validation_error)
+        return _validate_operational_config(body)
+    if validation_error in {_IGATE_CALLSIGN_MESSAGE, _IGATE_PASSCODE_MESSAGE}:
         logger.info("Ignoring non-blocking save validation warning: %s", validation_error)
         return _validate_operational_config(body)
 

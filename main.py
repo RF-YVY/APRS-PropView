@@ -4,7 +4,7 @@
 Launch this to start the application. The web interface opens automatically.
 """
 
-APP_VERSION = "1.3.2"
+APP_VERSION = "1.3.3"
 
 import asyncio
 import sys
@@ -208,7 +208,7 @@ async def main():
 
     aprs_is = None
     if config.aprs_is.enabled:
-        aprs_is = APRSISClient(config, handler.handle_is_packet)
+        aprs_is = APRSISClient(config, handler.handle_is_packet, app_version=APP_VERSION)
         handler.set_aprs_is(aprs_is)
         logger.info(f"APRS-IS: {config.aprs_is.server}:{config.aprs_is.port}")
 

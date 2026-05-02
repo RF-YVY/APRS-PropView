@@ -112,6 +112,13 @@ def parse_packet(raw: str, source: str = "rf") -> APRSPacket:
         if not info:
             return pkt
 
+        # Third-party traffic embeds another APRS packet after the } DTI.
+        # Parse the embedded packet for display, messaging, and position handling.
+        if info[0] == "}":
+            inner = parse_packet(info[1:], source=source)
+            inner.raw = raw
+            return inner
+
         # Determine packet type from data type identifier
         dti = info[0]
 
@@ -183,12 +190,33 @@ def _parse_lat_lon(data: str):
         return None
 
 
+def _is_uncompressed_position(data: str) -> bool:
+    """Return True when data begins with an uncompressed APRS position."""
+    return bool(re.match(r"^\d{4}\.\d{2}[NSns].\d{5}\.\d{2}[EWew]", data))
+
+
+def _is_base91_position_chars(value: str) -> bool:
+    return all(33 <= ord(ch) <= 123 for ch in value)
+
+
+def _looks_like_compressed_position(data: str) -> bool:
+    """Return True when data has the fixed compressed position shape."""
+    if len(data) < 13 or _is_uncompressed_position(data):
+        return False
+    if not (33 <= ord(data[0]) <= 126):
+        return False
+    return _is_base91_position_chars(data[1:9])
+
+
 def _parse_compressed_lat_lon(data: str):
     """Parse compressed position: /YYYYXXXX$cs... returns (lat, lon, rest, sym_table, sym_code)."""
-    if len(data) < 12:
+    if len(data) < 13:
         return None
 
     try:
+        if not _looks_like_compressed_position(data):
+            return None
+
         sym_table = data[0]
         y1 = ord(data[1]) - 33
         y2 = ord(data[2]) - 33
@@ -206,7 +234,7 @@ def _parse_compressed_lat_lon(data: str):
         lat = 90.0 - lat_val / 380926.0
         lon = -180.0 + lon_val / 190463.0
 
-        rest = data[12:] if len(data) > 12 else ""
+        rest = data[13:] if len(data) > 13 else ""
         return lat, lon, rest, sym_table, sym_code
     except (ValueError, IndexError):
         return None
@@ -217,19 +245,20 @@ def _parse_position(pkt: APRSPacket, info: str, with_messaging: bool = False):
     if not info:
         return
 
-    # Try compressed first (symbol table char followed by base-91)
-    if len(info) >= 13 and info[0] in ("/", "\\") and ord(info[1]) >= 33:
+    # Try compressed first (symbol table/overlay char followed by base-91)
+    if _looks_like_compressed_position(info):
         result = _parse_compressed_lat_lon(info)
         if result:
             pkt.latitude, pkt.longitude, rest, pkt.symbol_table, pkt.symbol_code = result
             pkt.comment = rest.strip()
+            _extract_altitude(pkt)
             return
 
     # Try uncompressed
     result = _parse_lat_lon(info)
     if result:
         pkt.latitude, pkt.longitude, rest, pkt.symbol_table, pkt.symbol_code = result
-        pkt.comment = rest.strip()
+        _extract_data_extension(pkt, rest)
         _extract_altitude(pkt)
 
 
@@ -422,6 +451,27 @@ def _extract_altitude(pkt: APRSPacket):
     match = re.search(r"/A=(\d{6})", pkt.comment)
     if match:
         pkt.altitude = int(match.group(1)) * 0.3048  # feet to meters
+
+
+def _extract_data_extension(pkt: APRSPacket, rest: str):
+    """Extract APRS data extensions that this app can use."""
+    if not rest:
+        pkt.comment = ""
+        return
+
+    course_speed = re.match(r"^(\d{3})/(\d{3})(.*)$", rest, re.DOTALL)
+    if course_speed:
+        course = int(course_speed.group(1))
+        speed_knots = int(course_speed.group(2))
+        if 1 <= course <= 360:
+            pkt.course = 360 if course == 360 else course
+        elif course == 0:
+            pkt.course = 0
+        pkt.speed = speed_knots * 1.852
+        pkt.comment = course_speed.group(3).strip()
+        return
+
+    pkt.comment = rest.strip()
 
 
 def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:

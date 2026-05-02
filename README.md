@@ -1,13 +1,8 @@
-<img width="1536" height="1024" alt="APRS PropView promo img" src="https://github.com/user-attachments/assets/6f6b79ac-9a4f-4e24-8f4c-9ec9019b8d4d" />
-
-
 # APRS PropView — VHF Propagation Monitor
-<sub><sub>("APRS" is a trademark of TUCSON AMATEUR PACKET RADIO CORPORATION</sub></sub><br>
-<sub><sub>APRS PropView is not endorsed, associated, or affliated with any organization.)</sub></sub><BR><BR>
-**Version 1.3.2** | May 1, 2026 
+
+**Version 1.3.3** | May 2, 2026
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
-- !-- If updating from Releases with new .exe, simply replace the .exe (overwrite), leave the config files to keep your settings from previous version. --!
 
 ## Features
 
@@ -30,14 +25,7 @@ A real-time APRS digipeater and IGate application focused on visualizing VHF pro
 - **Solar Data Widget** — Live HF propagation summary image (solar flux, K-index, band conditions) from hamqsl.com in the Propagation tab
 - **Real-time Updates** — WebSocket-driven live dashboard
 
-## Mobile View:
-- Setup alerts of incoming messages to be sent to your phone by email or SMS, recieve and reply to message via you phone
- 
-<img width="330" height="717" alt="IMG_0506" src="https://github.com/user-attachments/assets/c25c0644-5530-4f55-a1a3-9691931fba07" /><br>
-
 ### Analytics
-
-<img width="838" height="260" alt="trop" src="https://github.com/user-attachments/assets/cb088fde-b9fd-48ff-ad96-25ceb3759bd4" /><br>
 
 - **Longest Path Leaderboard** — Daily ranking of the longest RF paths heard
 - **Propagation Heatmap** — Hour-by-hour visualization of propagation activity over time
