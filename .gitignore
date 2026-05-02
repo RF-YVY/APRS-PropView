@@ -1,0 +1,33 @@
+# Local runtime config and data
+config.toml
+propview.db
+*.db
+*.sqlite
+*.sqlite3
+
+# Build output
+build/
+dist/
+
+# Python cache and test artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Logs and local environment files
+*.log
+.env
+.env.*
+
+# OS and editor clutter
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
