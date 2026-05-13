@@ -1,6 +1,8 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.3.3** | May 2, 2026
+**Version 1.3.3** | May 2, 2026<bk>
+
+[![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 
 <img width="1536" height="1024" alt="APRS PropView promo img" src="https://github.com/user-attachments/assets/9942c9df-1599-485c-80a2-4f475c9ff2ae" />
 
