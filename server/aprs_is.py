@@ -200,7 +200,7 @@ class APRSISClient:
                 equipment=cfg.equipment,
             ),
         )
-        packet = f"{cfg.full_callsign}>APRSPV,TCPIP*:{info}"
+        packet = f"{cfg.full_callsign}>APPRPV,TCPIP*:{info}"
         return await self.send(packet)
 
     async def close(self):

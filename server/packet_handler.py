@@ -409,14 +409,14 @@ class PacketHandler:
 
             frame = AX25Frame()
             frame.source = AX25Address.from_string(my_call)
-            frame.destination = AX25Address.from_string("APRSPV")
+            frame.destination = AX25Address.from_string("APPRPV")
             frame.digipeaters = [AX25Address.from_string("WIDE1-1")]
             frame.info = info.encode("latin-1")
             await self._transmit_rf(frame)
 
         # Send on APRS-IS
         if send_is and self.aprs_is and self.aprs_is.connected:
-            is_packet = f"{my_call}>APRSPV,TCPIP*:{info}"
+            is_packet = f"{my_call}>APPRPV,TCPIP*:{info}"
             await self.aprs_is.send(is_packet)
             self.stats["is_tx"] += 1
 
@@ -581,7 +581,7 @@ class PacketHandler:
 
             frame = AX25Frame()
             frame.source = AX25Address.from_string(cfg.full_callsign)
-            frame.destination = AX25Address.from_string("APRSPV")
+            frame.destination = AX25Address.from_string("APPRPV")
 
             # Build digipeater path from config (e.g. "WIDE1-1,WIDE2-1")
             path_str = (cfg.beacon_path or "").strip()
@@ -596,7 +596,7 @@ class PacketHandler:
 
             frame.info = info.encode("latin-1")
             await self._transmit_rf(frame)
-            logger.info(f"Beacon RF TX: {cfg.full_callsign}>APRSPV via {path_str or 'DIRECT'}")
+            logger.info(f"Beacon RF TX: {cfg.full_callsign}>APPRPV via {path_str or 'DIRECT'}")
 
         # Beacon on APRS-IS
         if mode in {"aprs_is", "both"} and self.aprs_is and self.aprs_is.connected:
