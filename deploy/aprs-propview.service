@@ -1,0 +1,18 @@
+[Unit]
+Description=APRS PropView
+Documentation=https://github.com/RF-YVY/APRS-PropView
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/opt/aprs-propview
+EnvironmentFile=-/etc/default/aprs-propview
+ExecStart=/opt/aprs-propview/.venv/bin/python /opt/aprs-propview/main.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
