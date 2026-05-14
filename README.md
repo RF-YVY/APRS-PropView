@@ -9,6 +9,8 @@
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
 
+Pi/Linux Guide: [docs/linux-raspberry-pi.md](https://github.com/RF-YVY/APRS-PropView/blob/main/docs/linux-raspberry-pi.md)
+
 ## Features
 
 ### Core
