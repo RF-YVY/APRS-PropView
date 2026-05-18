@@ -11,6 +11,8 @@ A real-time APRS digipeater and IGate application focused on visualizing VHF pro
 
 Pi/Linux Guide: [docs/linux-raspberry-pi.md](https://github.com/RF-YVY/APRS-PropView/blob/main/docs/linux-raspberry-pi.md)
 
+Watch YouTube Video here: https://www.youtube.com/watch?v=OyX6RaNevUk
+
 ## Features
 
 ### Core
