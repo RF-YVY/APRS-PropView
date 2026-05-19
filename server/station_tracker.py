@@ -35,6 +35,7 @@ class StationTracker:
 
         # Analytics engine (set later via set_analytics)
         self._analytics = None
+        self._gps_manager = None
 
     def set_alert_manager(self, alert_manager):
         """Inject the AlertManager instance for band-opening detection."""
@@ -44,6 +45,15 @@ class StationTracker:
         """Inject the AnalyticsEngine for anomaly and Es checks."""
         self._analytics = analytics
 
+    def set_gps_manager(self, gps_manager):
+        """Inject live GPS updates for own-position tracking."""
+        self._gps_manager = gps_manager
+
+    def set_my_position(self, latitude: float, longitude: float):
+        """Update the reference position used for distance and bearing."""
+        self.my_lat = float(latitude)
+        self.my_lon = float(longitude)
+
     async def track_packet(self, packet: APRSPacket):
         """Process a parsed packet and update station tracking."""
         source = packet.source  # 'rf' or 'aprs_is'
@@ -52,6 +62,19 @@ class StationTracker:
 
         if not callsign:
             return
+
+        if (
+            packet.has_position
+            and self._gps_manager
+            and self.config.gps.enabled
+            and self.config.gps.source in {"self_packet", "any"}
+            and callsign.upper() == self.config.station.full_callsign.upper()
+        ):
+            await self._gps_manager.update_location(
+                packet.latitude,
+                packet.longitude,
+                source="self_packet",
+            )
 
         # Calculate distance if we have both positions
         distance_km = None

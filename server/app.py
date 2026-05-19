@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from server.config import (
     Config, StationConfig, DigiConfig, IGateConfig, APRSISConfig,
     KISSSerialConfig, KISSTCPConfig, WebConfig, DatabaseConfig, TrackingConfig,
-    AlertsConfig, PropagationConfig, WeatherConfig, MQTTConfig,
+    AlertsConfig, PropagationConfig, WeatherConfig, GPSConfig, MQTTConfig,
 )
 from server.database import Database
 from server.station_tracker import StationTracker
@@ -37,16 +37,41 @@ else:
 
 # ── Validation helpers ──────────────────────────────────────────────
 
-# Amateur callsign: 1-2 letter prefix + digit + 1-3 letter suffix, optional SSID
-_CALLSIGN_RE = re.compile(r'^[A-Za-z]{1,2}[0-9][A-Za-z]{1,3}$')
+# APRS station identifier base. Keep this deliberately country-neutral;
+# APRS-IS validates account/passcode authority, while the app only guards
+# against characters that cannot be represented safely in APRS packets.
+_STATION_CALLSIGN_RE = re.compile(r'^[A-Z0-9]{1,9}$')
+_MESSAGE_ADDRESSEE_RE = re.compile(r'^[A-Z0-9][A-Z0-9-]{0,8}$')
 _HOSTNAME_RE = re.compile(r'^[A-Za-z0-9._-]{1,253}$')
 _SAFE_PATH_RE = re.compile(r'^[A-Za-z0-9._-]{1,100}$')
 _FILTER_TOKEN_RE = re.compile(r'^[a-z]/[\w.\-*/,]+$', re.IGNORECASE)
+_GPS_SOURCE_VALUES = {"browser", "self_packet", "nmea_serial", "nmea_tcp", "nmea_udp", "any"}
 # Disallowed callsigns (common placeholders)
 _BLOCKED_CALLSIGNS = {'N0CALL', 'NOCALL', 'MYCALL', 'TEST'}
-_INVALID_CALLSIGN_MESSAGE = "Invalid callsign format. Must be a valid amateur radio callsign (e.g. W1ABC, KA9XYZ)."
-_IGATE_CALLSIGN_MESSAGE = "IGate requires a valid amateur radio callsign. Change your callsign from the default."
+_INVALID_CALLSIGN_MESSAGE = "Invalid callsign format. Use 1-9 letters/numbers; APRS-IS will validate your account when connecting."
+_IGATE_CALLSIGN_MESSAGE = "IGate requires your assigned callsign. Change your callsign from the default."
 _IGATE_PASSCODE_MESSAGE = "RF\u2192APRS-IS gating requires a valid APRS-IS passcode. Read-only (passcode -1) cannot inject packets."
+
+
+def _is_valid_message_addressee(value: str) -> bool:
+    """Validate the APRS message addressee field.
+
+    APRS message addressees are a 9-character padded field. They are often
+    callsigns, but can also be tactical or gateway addressees, so this is
+    intentionally broader than the station callsign validator.
+    """
+    addressee = (value or "").strip().upper()
+    if not _MESSAGE_ADDRESSEE_RE.fullmatch(addressee):
+        return False
+    if addressee.startswith("-") or addressee.endswith("-"):
+        return False
+    return True
+
+
+def _is_valid_station_callsign(value: str) -> bool:
+    """Validate only APRS-safe station identifier shape, not license format."""
+    call = (value or "").strip().upper()
+    return bool(_STATION_CALLSIGN_RE.fullmatch(call))
 
 
 def _mask_passcode(passcode: str) -> str:
@@ -66,7 +91,7 @@ def _validate_config(body: Dict[str, Any]) -> Optional[str]:
         s = body["station"]
         call = (s.get("callsign", "") or "").strip().upper()
         if call:
-            if not _CALLSIGN_RE.match(call):
+            if not _is_valid_station_callsign(call):
                 return _INVALID_CALLSIGN_MESSAGE
         ssid = s.get("ssid", 0)
         try:
@@ -192,6 +217,29 @@ def _validate_config(body: Dict[str, Any]) -> Optional[str]:
             except (ValueError, TypeError):
                 return "Web port must be a number."
 
+    if "gps" in body:
+        g = body["gps"]
+        source = (g.get("source", "browser") or "browser").strip().lower()
+        if source not in _GPS_SOURCE_VALUES:
+            return "Invalid GPS source."
+        try:
+            serial_baudrate = int(g.get("serial_baudrate", 9600))
+            if serial_baudrate < 300 or serial_baudrate > 921600:
+                return "GPS serial baudrate must be 300-921600."
+        except (ValueError, TypeError):
+            return "GPS serial baudrate must be a number."
+        for field_name in ("tcp_port", "udp_port"):
+            try:
+                port = int(g.get(field_name, 10110))
+                if port < 1 or port > 65535:
+                    return f"GPS {field_name.replace('_', ' ')} must be 1-65535."
+            except (ValueError, TypeError):
+                return f"GPS {field_name.replace('_', ' ')} must be a number."
+        for field_name in ("tcp_host", "udp_host"):
+            host = g.get(field_name, "")
+            if host and not _HOSTNAME_RE.match(host):
+                return f"Invalid GPS {field_name.replace('_', ' ')}."
+
     if "database" in body:
         db_cfg = body["database"]
         dbpath = db_cfg.get("path", "")
@@ -240,6 +288,7 @@ def create_app(
     aprs_is: APRSISClient = None,
     weather_manager: WeatherManager = None,
     update_checker: UpdateChecker = None,
+    gps_manager = None,
     app_version: str = "1.0.0",
 ) -> FastAPI:
     """Create and configure the FastAPI application."""
@@ -380,6 +429,56 @@ def create_app(
     async def get_status():
         return handler.get_status()
 
+    @app.post("/api/gps/location")
+    async def update_gps_location(request: Request):
+        """Ingest a live GPS position from browser/mobile or a companion app."""
+        if not gps_manager:
+            return JSONResponse(
+                status_code=503,
+                content={"success": False, "message": "GPS manager is not available."},
+            )
+        try:
+            body = await request.json()
+            source = (body.get("source", "browser") or "browser").strip().lower()
+            if source not in {"browser", "companion", "nmea_serial", "nmea_tcp", "nmea_udp", "self_packet"}:
+                return JSONResponse(
+                    status_code=400,
+                    content={"success": False, "message": "Invalid GPS source."},
+                )
+            if not gps_manager._should_accept_source(source) and not (
+                source == "companion" and gps_manager._should_accept_source("browser")
+            ):
+                return JSONResponse(
+                    status_code=409,
+                    content={"success": False, "message": "GPS source is not enabled in settings."},
+                )
+            if "map_update_enabled" in body:
+                config.gps.map_update_enabled = bool(body.get("map_update_enabled"))
+            if "update_station_position" in body:
+                config.gps.update_station_position = bool(body.get("update_station_position"))
+            if "station_position_locked" in body:
+                config.gps.station_position_locked = bool(body.get("station_position_locked"))
+            status = await gps_manager.update_location(
+                float(body.get("latitude")),
+                float(body.get("longitude")),
+                source=source,
+                accuracy_m=body.get("accuracy_m"),
+                update_station_position=body.get("update_station_position"),
+                station_position_locked=body.get("station_position_locked"),
+            )
+            return {"success": True, "gps": status}
+        except (ValueError, TypeError):
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": "Invalid GPS latitude/longitude."},
+            )
+        except Exception as e:
+            logger.error(f"GPS location update failed: {e}")
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "message": "Error updating GPS location."},
+            )
+
     @app.get("/api/stations/rf")
     async def get_rf_stations(
         since: Optional[float] = Query(None, description="Unix timestamp filter"),
@@ -458,7 +557,7 @@ def create_app(
 
     @app.post("/api/messages/send")
     async def send_message(request: Request):
-        """Send an APRS message to another station."""
+        """Send an APRS message to a station, tactical address, or bot."""
         try:
             body = await request.json()
             to_call = (body.get("to", "") or "").strip().upper()
@@ -468,7 +567,7 @@ def create_app(
             if not to_call:
                 return JSONResponse(
                     status_code=400,
-                    content={"success": False, "message": "Recipient callsign is required."},
+                    content={"success": False, "message": "Recipient addressee is required."},
                 )
             if not text:
                 return JSONResponse(
@@ -480,10 +579,10 @@ def create_app(
                     status_code=400,
                     content={"success": False, "message": "Message text too long (max 67 characters per APRS spec)."},
                 )
-            if not _CALLSIGN_RE.match(to_call.split("-")[0]):
+            if not _is_valid_message_addressee(to_call):
                 return JSONResponse(
                     status_code=400,
-                    content={"success": False, "message": "Invalid recipient callsign format."},
+                    content={"success": False, "message": "Invalid APRS message addressee."},
                 )
             if reply_source and reply_source not in {"rf", "aprs_is"}:
                 return JSONResponse(
@@ -901,6 +1000,19 @@ def create_app(
                 "elevated_alert_cooldown_minutes": config.weather.elevated_alert_cooldown_minutes,
                 "elevated_trigger_events": config.weather.elevated_trigger_events,
             },
+            "gps": {
+                "enabled": config.gps.enabled,
+                "source": config.gps.source,
+                "map_update_enabled": config.gps.map_update_enabled,
+                "update_station_position": config.gps.update_station_position,
+                "station_position_locked": config.gps.station_position_locked,
+                "serial_port": config.gps.serial_port,
+                "serial_baudrate": config.gps.serial_baudrate,
+                "tcp_host": config.gps.tcp_host,
+                "tcp_port": config.gps.tcp_port,
+                "udp_host": config.gps.udp_host,
+                "udp_port": config.gps.udp_port,
+            },
             "propagation": {
                 "my_station_full_count": config.propagation.my_station_full_count,
                 "my_station_full_dist_km": config.propagation.my_station_full_dist_km,
@@ -953,6 +1065,7 @@ def create_app(
                 config.station.ssid = int(s.get("ssid", config.station.ssid))
                 config.station.latitude = float(s.get("latitude", config.station.latitude))
                 config.station.longitude = float(s.get("longitude", config.station.longitude))
+                tracker.set_my_position(config.station.latitude, config.station.longitude)
                 config.station.symbol_table = s.get("symbol_table", config.station.symbol_table)
                 config.station.symbol_code = s.get("symbol_code", config.station.symbol_code)
                 config.station.phg = (s.get("phg", config.station.phg) or "").strip().upper()
@@ -1045,6 +1158,24 @@ def create_app(
                     await update_checker.stop_periodic_task()
                     update_checker.start_periodic_task()
                 need_restart.append("web host/port")
+
+            # Update GPS ingestion config
+            if "gps" in body:
+                g = body["gps"]
+                config.gps.enabled = bool(g.get("enabled", config.gps.enabled))
+                config.gps.source = (g.get("source", config.gps.source) or "browser").strip().lower()
+                config.gps.map_update_enabled = bool(g.get("map_update_enabled", config.gps.map_update_enabled))
+                config.gps.update_station_position = bool(g.get("update_station_position", config.gps.update_station_position))
+                config.gps.station_position_locked = bool(g.get("station_position_locked", config.gps.station_position_locked))
+                config.gps.serial_port = g.get("serial_port", config.gps.serial_port)
+                config.gps.serial_baudrate = int(g.get("serial_baudrate", config.gps.serial_baudrate))
+                config.gps.tcp_host = g.get("tcp_host", config.gps.tcp_host)
+                config.gps.tcp_port = int(g.get("tcp_port", config.gps.tcp_port))
+                config.gps.udp_host = g.get("udp_host", config.gps.udp_host)
+                config.gps.udp_port = int(g.get("udp_port", config.gps.udp_port))
+                live_applied.append("GPS ingestion")
+                if gps_manager:
+                    await ws_manager.broadcast({"type": "gps_location", "data": gps_manager.get_status()})
 
             # Update database config
             if "database" in body:

@@ -126,6 +126,19 @@ elevated_alert_polling_seconds = 60
 elevated_alert_cooldown_minutes = 15
 elevated_trigger_events = ["Tornado Watch", "Severe Thunderstorm Watch"]
 
+[gps]
+enabled = false
+source = "browser"
+map_update_enabled = true
+update_station_position = false
+station_position_locked = true
+serial_port = "COM4"
+serial_baudrate = 9600
+tcp_host = "127.0.0.1"
+tcp_port = 10110
+udp_host = "0.0.0.0"
+udp_port = 10110
+
 [mqtt]
 enabled = false
 broker = "localhost"
@@ -280,6 +293,21 @@ class WeatherConfig:
 
 
 @dataclass
+class GPSConfig:
+    enabled: bool = False
+    source: str = "browser"  # browser, self_packet, nmea_serial, nmea_tcp, nmea_udp, any
+    map_update_enabled: bool = True
+    update_station_position: bool = False
+    station_position_locked: bool = True
+    serial_port: str = "COM4"
+    serial_baudrate: int = 9600
+    tcp_host: str = "127.0.0.1"
+    tcp_port: int = 10110
+    udp_host: str = "0.0.0.0"
+    udp_port: int = 10110
+
+
+@dataclass
 class MQTTConfig:
     enabled: bool = False
     broker: str = "localhost"
@@ -303,6 +331,7 @@ class Config:
     alerts: AlertsConfig = field(default_factory=AlertsConfig)
     propagation: PropagationConfig = field(default_factory=PropagationConfig)
     weather: WeatherConfig = field(default_factory=WeatherConfig)
+    gps: GPSConfig = field(default_factory=GPSConfig)
     mqtt: MQTTConfig = field(default_factory=MQTTConfig)
 
     @staticmethod
@@ -329,6 +358,7 @@ class Config:
             "alerts": (AlertsConfig, "alerts"),
             "propagation": (PropagationConfig, "propagation"),
             "weather": (WeatherConfig, "weather"),
+            "gps": (GPSConfig, "gps"),
             "mqtt": (MQTTConfig, "mqtt"),
         }
 
@@ -463,6 +493,19 @@ class Config:
             f"elevated_alert_polling_seconds = {int(self.weather.elevated_alert_polling_seconds)}",
             f"elevated_alert_cooldown_minutes = {int(self.weather.elevated_alert_cooldown_minutes)}",
             'elevated_trigger_events = [' + ', '.join('"' + self._toml_escape(v) + '"' for v in self.weather.elevated_trigger_events) + ']',
+            "",
+            "[gps]",
+            f"enabled = {'true' if self.gps.enabled else 'false'}",
+            f'source = "{esc(self.gps.source)}"',
+            f"map_update_enabled = {'true' if self.gps.map_update_enabled else 'false'}",
+            f"update_station_position = {'true' if self.gps.update_station_position else 'false'}",
+            f"station_position_locked = {'true' if self.gps.station_position_locked else 'false'}",
+            f'serial_port = "{esc(self.gps.serial_port)}"',
+            f"serial_baudrate = {int(self.gps.serial_baudrate)}",
+            f'tcp_host = "{esc(self.gps.tcp_host)}"',
+            f"tcp_port = {int(self.gps.tcp_port)}",
+            f'udp_host = "{esc(self.gps.udp_host)}"',
+            f"udp_port = {int(self.gps.udp_port)}",
             "",
             "[mqtt]",
             f"enabled = {'true' if self.mqtt.enabled else 'false'}",
