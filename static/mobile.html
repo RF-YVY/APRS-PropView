@@ -283,6 +283,7 @@ html, body {
         <button type="button" data-quick-tab="mtab-messages">Messages<span class="qa-badge" id="m-qa-msg-badge">0</span></button>
         <button type="button" data-quick-tab="mtab-map">Map</button>
         <button type="button" id="m-btn-center">Center Me</button>
+        <button type="button" id="m-btn-gps">Share GPS</button>
         <button type="button" data-quick-tab="mtab-stations">Stations</button>
     </div>
 
@@ -298,7 +299,7 @@ html, body {
             </div>
             <div class="msg-list" id="m-msg-list"><div class="msg-empty">No messages yet.</div></div>
             <div class="msg-compose">
-                <input type="text" id="m-msg-to" placeholder="TO CALL" maxlength="9" autocomplete="off" autocapitalize="characters">
+                <input type="text" id="m-msg-to" placeholder="TO CALL" maxlength="9" title="Station, APRS addressee, or bot such as WXBOT" autocomplete="off" autocapitalize="characters">
                 <input type="text" id="m-msg-text" placeholder="Message..." maxlength="67" autocomplete="off">
                 <button id="m-btn-send">Send</button>
             </div>
@@ -443,6 +444,7 @@ const S = {
     unreadCount: 0, activeTab: 'mtab-messages', propData: null,
     messagesLoaded: false, stationsLoaded: false, replyContext: null,
     aprsIsConnected: false, aprsIsVerified: false,
+    gpsWatchId: null, lastGpsPost: 0,
 };
 
 // ── Helpers ────────────────────────────────────────────────
@@ -873,6 +875,10 @@ function connectWS() {
                 if (msg.data) updatePropDisplay(msg.data);
                 break;
 
+            case 'gps_location':
+                if (msg.data) handleGpsStatus(msg.data);
+                break;
+
             case 'message':
                 if (msg.data) {
                     S.messages.unshift(msg.data);
@@ -947,8 +953,12 @@ function handleStatus(data) {
     S.aprsIsVerified = !!data.aprs_is_verified;
     updateAprsIsChip();
 
-    const lat = data.station_info?.latitude ?? data.latitude;
-    const lng = data.station_info?.longitude ?? data.longitude;
+    handleGpsStatus(data.gps);
+
+    const gpsCurrent = data.gps?.current;
+    const gpsDrivesMap = !!(data.gps?.enabled && data.gps?.map_update_enabled && gpsCurrent);
+    const lat = gpsDrivesMap ? gpsCurrent.latitude : (data.station_info?.latitude ?? data.latitude);
+    const lng = gpsDrivesMap ? gpsCurrent.longitude : (data.station_info?.longitude ?? data.longitude);
     if (lat && lng && lat !== 0) {
         S.myPos = [lat, lng];
         if (S.mapReady && !S.myMarker) {
@@ -956,8 +966,54 @@ function handleStatus(data) {
                 radius: 8, color: '#3fb950', fillColor: '#3fb950', fillOpacity: 0.6, weight: 2,
             }).addTo(S.map).bindPopup(`<b style="color:#3fb950">${escHtml(S.myCall)}</b><br>My Station`);
             S.map.setView(S.myPos, 8);
+        } else if (S.mapReady && S.myMarker) {
+            S.myMarker.setLatLng(S.myPos);
         }
     }
+}
+
+function handleGpsStatus(gps) {
+    if (!gps?.current || !gps.enabled || !gps.map_update_enabled) return;
+    S.myPos = [gps.current.latitude, gps.current.longitude];
+    if (S.mapReady && S.myMarker) {
+        S.myMarker.setLatLng(S.myPos);
+    }
+}
+
+function toggleMobileGps() {
+    const btn = $('m-btn-gps');
+    if (S.gpsWatchId !== null) {
+        navigator.geolocation.clearWatch(S.gpsWatchId);
+        S.gpsWatchId = null;
+        if (btn) btn.textContent = 'Share GPS';
+        return;
+    }
+    if (!navigator.geolocation) {
+        alert('This browser does not support geolocation.');
+        return;
+    }
+    S.gpsWatchId = navigator.geolocation.watchPosition(async (position) => {
+        const now = Date.now();
+        if (now - S.lastGpsPost < 5000) return;
+        S.lastGpsPost = now;
+        try {
+            const resp = await fetch('/api/gps/location', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    source: 'browser',
+                    latitude: position.coords.latitude,
+                    longitude: position.coords.longitude,
+                    accuracy_m: position.coords.accuracy,
+                }),
+            });
+            const result = await resp.json();
+            if (result.success) handleGpsStatus(result.gps);
+        } catch { /* keep watching */ }
+    }, (error) => {
+        alert(error.message || 'GPS permission denied.');
+    }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 });
+    if (btn) btn.textContent = 'Stop GPS';
 }
 
 // ── Init ───────────────────────────────────────────────────
@@ -1009,6 +1065,8 @@ $('m-btn-center').addEventListener('click', () => {
         if (S.myMarker) S.myMarker.openPopup();
     }
 });
+
+$('m-btn-gps').addEventListener('click', toggleMobileGps);
 
 document.addEventListener('DOMContentLoaded', init);
 </script>
