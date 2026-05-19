@@ -119,6 +119,43 @@ The installer adds the service user to the `dialout` group when available. Log
 out and back in, or reboot, if you are testing serial access manually as that
 user.
 
+## GPS Ingestion Notes
+
+APRS PropView can use live GPS data on Linux/Pi systems after GPS ingestion is
+enabled in Settings. The most common Pi/mobile options are:
+
+- **This browser/device** - Use a phone, tablet, or laptop browser that has
+  location permission. This is useful when the Pi is running the service but the
+  browser device is what knows the current position.
+- **Own APRS position packets** - Use position packets from your own radio,
+  tracker, or TNC setup. This works well with mobile APRS setups where the TNC
+  or radio is already feeding current position packets into APRS PropView.
+- **NMEA serial GPS** - Use a USB GPS puck or GPS-enabled TNC that exposes NMEA
+  sentences on a serial device such as `/dev/ttyUSB0` or `/dev/ttyACM0`.
+- **NMEA TCP stream** - Connect to a local or network service that emits NMEA
+  GPS sentences over TCP.
+- **NMEA UDP listener** - Listen for NMEA sentences sent over UDP from another
+  app or device on the LAN.
+- **Any source** - Accept the latest valid fix from any supported GPS source.
+  This is helpful for testing or fallback setups, but a specific source gives
+  clearer status if a device is missing.
+
+For serial GPS on Linux, use the device path in Settings or `config.toml`:
+
+```toml
+[gps]
+enabled = true
+source = "nmea_serial"
+serial_port = "/dev/ttyUSB0"
+serial_baudrate = 9600
+map_update_enabled = true
+update_station_position = false
+station_position_locked = true
+```
+
+Keep `station_position_locked = true` if GPS should move only the map marker and
+not overwrite the configured station latitude/longitude.
+
 ## Direwolf Or TCP KISS
 
 For Direwolf or any TCP KISS source running on the same Pi:
@@ -132,6 +169,41 @@ port = 8001
 
 For APRS-IS-only operation, leave both `[kiss_serial]` and `[kiss_tcp]`
 disabled.
+
+## MQTT Integration
+
+MQTT is optional and is meant for external dashboards and automation systems,
+not for APRS transport. Enable it when you want APRS PropView status available
+to a broker such as Mosquitto, Home Assistant, Node-RED, EMQX, or another
+monitoring stack.
+
+Common uses:
+
+- Show propagation level or score on a shack dashboard.
+- Trigger Home Assistant or Node-RED automations from propagation alerts.
+- Log propagation metrics in another time-series or observability system.
+- Feed a small LAN display without scraping the web UI.
+
+Example local Mosquitto install:
+
+```bash
+sudo apt install -y mosquitto mosquitto-clients
+sudo systemctl enable --now mosquitto
+```
+
+Example configuration:
+
+```toml
+[mqtt]
+enabled = true
+broker = "127.0.0.1"
+port = 1883
+topic_prefix = "aprs/propview"
+username = ""
+password = ""
+```
+
+Restart APRS PropView after changing MQTT settings in `config.toml`.
 
 ## Firewall
 
