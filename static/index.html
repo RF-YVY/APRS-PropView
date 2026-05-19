@@ -11,6 +11,16 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/static/ico/favicon-16x16.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/static/ico/apple-touch-icon.png">
     <link rel="manifest" href="/static/ico/site.webmanifest">
+    <script>
+        (function () {
+            try {
+                var state = JSON.parse(localStorage.getItem('pvDesktopUIState') || '{}');
+                if (state.uiTheme === 'light') {
+                    document.documentElement.classList.add('ui-theme-light');
+                }
+            } catch (e) {}
+        })();
+    </script>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="/static/css/style.css" />
@@ -69,6 +79,10 @@
                 <span class="chip-label">APRS-IS</span>
                 <span id="aprs-is-chip-text" class="chip-value">Offline</span>
             </div>
+            <div class="ui-theme-control" title="Toggle UI light/dark mode">
+                <span class="ui-theme-control-label">UI Theme</span>
+                <button id="btn-toggle-ui-theme" class="ui-theme-toggle" type="button" title="Switch to light UI" aria-label="Switch to light UI">🌙</button>
+            </div>
             <div class="header-stats">
                 <span title="RF Stations (1h)">RF: <b id="rf-count-1h">0</b></span>
                 <span title="APRS-IS Stations (1h)">IS: <b id="is-count-1h">0</b></span>
@@ -107,7 +121,10 @@
                         <span title="Pressure">📊 <span id="wx-pressure">--</span> mb</span>
                     </span>
                     <span class="wx-location" id="wx-location">--</span>
-                    <span class="wx-ducting" id="wx-ducting" style="display:none;" title="Tropospheric Ducting Index">🌊 <span id="wx-ducting-value">--</span></span>
+                    <span class="wx-ducting" id="wx-ducting" style="display:none;" title="Tropospheric Ducting Index">
+                        <span class="wx-ducting-label">Tropo Ducting</span>
+                        <span id="wx-ducting-value">--</span>
+                    </span>
                     <button id="wx-refresh-btn" class="wx-refresh-btn" title="Refresh weather">🔄</button>
                 </div>
             </div>
@@ -230,7 +247,7 @@
             <!-- ── Messages Tab ──────────────────────────────── -->
             <div id="tab-messages" class="tab-content">
                 <div class="msg-compose-bar">
-                    <input type="text" id="msg-to-call" class="msg-input-call" placeholder="TO CALL" maxlength="9" title="Recipient callsign (e.g. W1ABC-7)">
+                    <input type="text" id="msg-to-call" class="msg-input-call" placeholder="TO CALL" maxlength="9" title="Recipient station, APRS addressee, or bot such as WXBOT">
                     <input type="text" id="msg-text" class="msg-input-text" placeholder="Type message... (max 67 chars)" maxlength="67">
                     <button id="btn-send-msg" class="btn-primary btn-send-msg" title="Send APRS Message">📨 Send</button>
                 </div>
@@ -538,7 +555,13 @@
                         </div>
                         <div class="settings-row">
                             <label for="cfg-latitude">Latitude</label>
-                            <input type="number" id="cfg-latitude" step="0.0001" placeholder="0.0">
+                            <div class="coord-lock-row">
+                                <input type="number" id="cfg-latitude" step="0.0001" placeholder="0.0">
+                                <label class="inline-check lock-check" title="Prevent active GPS from changing station latitude/longitude">
+                                    <input type="checkbox" id="cfg-gps-position-locked">
+                                    LOCK
+                                </label>
+                            </div>
                         </div>
                         <div class="settings-row">
                             <label for="cfg-longitude">Longitude</label>
@@ -547,6 +570,70 @@
                         <div class="settings-row">
                             <label></label>
                             <button id="btn-pick-location-settings" class="btn-small btn-pick" title="Click to pick location on the map">📌 Pick on Map</button>
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-gps-enabled">GPS Ingestion</label>
+                            <label class="inline-check">
+                                <input type="checkbox" id="cfg-gps-enabled">
+                                Enabled
+                            </label>
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-gps-source">GPS Source</label>
+                            <select id="cfg-gps-source">
+                                <option value="browser">This browser/device</option>
+                                <option value="self_packet">Own APRS position packets</option>
+                                <option value="nmea_serial">NMEA serial GPS</option>
+                                <option value="nmea_tcp">NMEA TCP stream</option>
+                                <option value="nmea_udp">NMEA UDP listener</option>
+                                <option value="any">Any source</option>
+                            </select>
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-gps-update-station">GPS Updates</label>
+                            <select id="cfg-gps-update-station">
+                                <option value="false">Update map location only</option>
+                                <option value="true">Update station latitude/longitude</option>
+                            </select>
+                        </div>
+                        <div class="settings-row">
+                            <label></label>
+                            <label class="inline-check">
+                                <input type="checkbox" id="cfg-gps-map-update" checked>
+                                Move my map marker from GPS
+                            </label>
+                        </div>
+                        <div class="settings-row">
+                            <label></label>
+                            <button id="btn-gps-browser" class="btn-small" title="Start or stop this browser/device location sharing">Start GPS</button>
+                        </div>
+                        <div class="settings-row">
+                            <label>GPS Status</label>
+                            <div id="gps-status-text" class="settings-help">Idle</div>
+                        </div>
+                        <div class="settings-row gps-source-setting gps-source-nmea_serial">
+                            <label for="cfg-gps-serial-port">GPS Serial Port</label>
+                            <input type="text" id="cfg-gps-serial-port" placeholder="COM4">
+                        </div>
+                        <div class="settings-row gps-source-setting gps-source-nmea_serial">
+                            <label for="cfg-gps-serial-baud">GPS Baudrate</label>
+                            <input type="number" id="cfg-gps-serial-baud" min="300" max="921600" step="1" placeholder="9600">
+                        </div>
+                        <div class="settings-row gps-source-setting gps-source-nmea_tcp">
+                            <label for="cfg-gps-tcp-host">GPS TCP Host</label>
+                            <input type="text" id="cfg-gps-tcp-host" placeholder="127.0.0.1">
+                        </div>
+                        <div class="settings-row gps-source-setting gps-source-nmea_tcp">
+                            <label for="cfg-gps-tcp-port">GPS TCP Port</label>
+                            <input type="number" id="cfg-gps-tcp-port" min="1" max="65535" step="1" placeholder="10110">
+                        </div>
+                        <div class="settings-row gps-source-setting gps-source-nmea_udp">
+                            <label for="cfg-gps-udp-host">GPS UDP Bind</label>
+                            <input type="text" id="cfg-gps-udp-host" placeholder="0.0.0.0">
+                        </div>
+                        <div class="settings-row gps-source-setting gps-source-nmea_udp">
+                            <label for="cfg-gps-udp-port">GPS UDP Port</label>
+                            <input type="number" id="cfg-gps-udp-port" min="1" max="65535" step="1" placeholder="10110">
                         </div>
                         <div class="settings-row">
                             <label>Station Icon</label>
@@ -747,6 +834,13 @@
                                 <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
                                 <option value="Consolas, monospace">Consolas (Mono)</option>
                                 <option value="'Courier New', monospace">Courier New (Mono)</option>
+                            </select>
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-ui-theme">UI Theme</label>
+                            <select id="cfg-ui-theme">
+                                <option value="dark">Dark</option>
+                                <option value="light">Light</option>
                             </select>
                         </div>
                         <div class="settings-row">
@@ -1060,7 +1154,7 @@
                 <div class="about-panel">
                     <div class="about-header">
                         <h2>APRS PropView</h2>
-                        <span id="about-version" class="about-version">v1.3.4</span>
+                        <span id="about-version" class="about-version">v1.4.0</span>
                     </div>
                     <div class="about-section">
                         <p>A real-time APRS digipeater and IGate focused on VHF propagation, live mapping, APRS messaging, analytics, and weather-aware situational awareness.</p>
@@ -1076,7 +1170,7 @@
                     </div>
                     <div class="about-section">
                         <h3>Build Info</h3>
-                        <p>Version: <span id="about-version-detail">1.3.4</span></p>
+                        <p>Version: <span id="about-version-detail">1.4.0</span></p>
                         <p>Release Date: <span id="about-date">May 14, 2026</span></p>
                         <p>Highlights: Update application TOCALL identifier to allocated APPRPV.</p>
                     </div>
@@ -1234,6 +1328,18 @@
                     <p>All settings are saved to <code>config.toml</code> next to the executable. Most UI, weather, alert, and analytics changes apply live; transport-layer changes such as TNC connection settings may still require a restart.</p>
                     <h4>Station</h4>
                     <p>Your callsign, SSID, latitude/longitude (or use the 📌 map picker), APRS symbol, status comment, beacon interval (minutes), and beacon path (e.g. <code>WIDE1-1</code>).</p>
+                    <h4>GPS Ingestion</h4>
+                    <p>GPS ingestion lets APRS PropView use a live position instead of only the saved station latitude/longitude. Turn on <b>GPS Ingestion</b>, choose a source, then choose whether GPS should only move your map marker or also update the station latitude/longitude fields.</p>
+                    <p><b>LOCK</b> prevents active GPS from changing the saved station latitude/longitude. Leave it enabled when you want GPS to move the map marker during mobile use without changing your configured home/base station position.</p>
+                    <ul>
+                        <li><b>This browser/device</b> - Uses browser geolocation from the current desktop or mobile browser. Use this when running the app from a phone, tablet, laptop, or remote browser that can provide location permission.</li>
+                        <li><b>Own APRS position packets</b> - Uses your own heard APRS position packets as the live GPS source. Use this when a radio/TNC, tracker, or Mobilink-style setup is already transmitting your current position into APRS PropView.</li>
+                        <li><b>NMEA serial GPS</b> - Reads NMEA GPS sentences from a local serial port such as a USB GPS puck, GPS-enabled TNC, or serial feed from another device.</li>
+                        <li><b>NMEA TCP stream</b> - Connects to a TCP host/port that provides NMEA sentences. Use this with network GPS bridges, companion software, or devices that expose GPS over TCP.</li>
+                        <li><b>NMEA UDP listener</b> - Listens for NMEA sentences sent to the configured UDP bind address and port. Use this when another app or device broadcasts GPS updates over the LAN.</li>
+                        <li><b>Any source</b> - Accepts the latest valid GPS fix from any supported source. This is useful for testing, mixed mobile/base setups, or fallback workflows, but selecting a specific source gives clearer status messages when a device is missing.</li>
+                    </ul>
+                    <p><b>Move my map marker from GPS</b> controls whether the live GPS fix moves your station marker on the map. <b>Update station latitude/longitude</b> also writes the live coordinates into Settings when unlocked; save the configuration if you want those coordinates kept after restart.</p>
                     <h4>Digipeater</h4>
                     <p>Enable/disable the digipeater. Configure which aliases to respond to (<code>WIDE1-1, WIDE2-1</code>) and the de-duplication window to prevent re-digipeating the same packet.</p>
                     <h4>IGate</h4>
@@ -1245,6 +1351,7 @@
                     <h4>Web Interface</h4>
                     <p><b>Host/Port</b> — Bind address and port for the web UI (default <code>127.0.0.1:14501</code>). Use <code>0.0.0.0</code> to allow network access.</p>
                     <p><b>Font</b> — Choose a display font for the entire UI.</p>
+                    <p><b>UI Theme</b> — Switch the application interface between dark and light mode independently from the map tile theme.</p>
                     <p><b>Ghost After (min)</b> — Stations not heard within this time will fade (pulsing dashed border, reduced opacity). Set to 0 to disable ghosting.</p>
                     <p><b>Expire After (min)</b> — Stations not heard within this time are completely removed from the map. Set to 0 to never auto-expire. Ghost time should be shorter than expiry time so stations fade before disappearing.</p>
                     <p><b>Update Checks</b> - Enable or disable automatic GitHub release checks and set how often the app should poll for a newer published version during long-running uptime.</p>
@@ -1259,22 +1366,28 @@
                     <p><b>Map Overlays</b> - Turn radar and NWS polygons on or off, adjust radar opacity, enable radar animation, and choose which alert categories should be drawn on the map.</p>
                     <p><b>Alert Polling</b> - Choose point-based alerts or monitor a county/forecast-zone UGC. Use Auto-Fill to resolve the local county or zone from the configured weather location.</p>
                     <p><b>Adaptive Severe Weather Polling</b> - When one of your configured trigger events, such as <code>Tornado Watch</code> or <code>Severe Thunderstorm Watch</code>, becomes active, alert polling automatically speeds up to the elevated interval so newly issued warnings are detected more quickly. After the trigger clears, polling stays elevated through the configured cooldown before returning to normal.</p>
+                    <h4>MQTT Integration</h4>
+                    <p>MQTT is for sending APRS PropView events and propagation status to other systems. It is not needed for normal APRS, digipeater, IGate, mapping, or messaging operation; enable it when you have an MQTT broker such as Mosquitto, Home Assistant, Node-RED, EMQX, or another dashboard/automation system that should receive PropView data.</p>
+                    <p>Common use cases include showing current propagation level on a wall dashboard, triggering Home Assistant or Node-RED automations when a band opening alert fires, logging propagation metrics into another time-series system, or bridging PropView status to a shack display without scraping the web UI.</p>
+                    <p>Configure the broker host, port, topic prefix, and optional username/password. The default topic prefix is <code>aprs/propview</code>; integrations should subscribe under that prefix for propagation, score, level, and alert-style messages.</p>
                 </section>
 
                 <section class="help-section">
                     <h3>📱 Mobile View</h3>
-                    <p>Access <code>/mobile</code> from a phone browser (e.g. via Tailscale) for a touch-optimized interface with Messages, Map, Stations, Propagation, and About tabs.</p>
+                    <p>Access <code>/mobile</code> from a phone browser (e.g. via Tailscale) for a touch-optimized interface with Messages, Map, Stations, Propagation, and About tabs. The mobile <b>Share GPS</b> button can feed the phone's browser location into GPS ingestion when the source is set to <b>This browser/device</b> or <b>Any source</b>.</p>
                 </section>
 
                 <section class="help-section">
                     <h3>⌨️ Tips</h3>
                     <ul>
                         <li>Distance units (mi/km) can be toggled via the button in the map legend — the setting persists across sessions.</li>
-                        <li>All map UI preferences (toggles, filters, zoom, position, theme) are saved automatically to your browser and restored on next launch.</li>
+                        <li>All map UI preferences (toggles, filters, zoom, position, map theme) are saved automatically to your browser and restored on next launch.</li>
+                        <li>The desktop UI light/dark theme is saved separately from the map light/dark theme.</li>
                         <li>Ghost + Expire work together: set Ghost to 60 min and Expire to 180 min, for example, so stations fade at 1 hour and vanish at 3 hours.</li>
                         <li>Auto-Fit zoom (🔎) will keep all visible stations in view and zoom back in as stations expire. It turns off when you manually pan or zoom — click the button again to re-enable.</li>
                         <li>The propagation score is calculated from RF station count, maximum distance, and average distance within the last hour.</li>
-                        <li>If you want faster warning pickup for a surrounding county, switch alert scope from <b>Station point</b> to <b>County/Zone UGC</b> and enable elevated polling triggers in Settings â†’ Weather.</li>
+                        <li>If you want faster warning pickup for a surrounding county, switch alert scope from <b>Station point</b> to <b>County/Zone UGC</b> and enable elevated polling triggers in Settings → Weather.</li>
+                        <li>For mobile operation, keep station latitude/longitude locked if you only want GPS to move your map marker. Unlock it only when you intentionally want the live GPS fix to update your saved station coordinates.</li>
                     </ul>
                 </section>
 
