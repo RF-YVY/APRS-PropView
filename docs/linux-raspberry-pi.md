@@ -9,7 +9,7 @@ systemd. It works well on Raspberry Pi OS, Debian, and Ubuntu.
 - Raspberry Pi OS 64-bit, Debian, or Ubuntu
 - Network access for APRS-IS and the web dashboard
 - Optional KISS TNC over USB serial, Bluetooth serial, or TCP
-- Optional Direwolf KISS TCP service
+- Optional Direwolf or Soundmodem by uz7ho KISS TCP service
 
 ## Install System Packages
 
