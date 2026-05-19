@@ -11,10 +11,15 @@
     const SETTINGS_COLLAPSE_KEY = 'pvSettingsCollapsed';
     const UI_STATE_KEY = 'pvDesktopUIState';
     const UPDATE_BANNER_DISMISS_KEY = 'pvUpdateBannerDismissed';
+    const DEFAULT_UI_THEME = 'dark';
     let lastStatus = null;
     let manualBeaconPending = false;
     let liveSyncPending = false;
     let updateCheckPending = false;
+    let gpsWatchId = null;
+    let lastGpsPost = 0;
+    let settingsLoading = false;
+    let settingsDirty = false;
 
     // ── Distance unit helpers (mi / km) ────────────────────────
     // Default to miles; persisted in localStorage
@@ -77,6 +82,8 @@
     // ── Initialize ─────────────────────────────────────────────
 
     document.addEventListener('DOMContentLoaded', () => {
+        initUIThemeControls();
+
         // Apply saved distance unit to all labels
         _refreshAllDistanceDisplays();
 
@@ -107,6 +114,8 @@
         initWeatherSettingsUi();
         initTncProfileSettings();
         initUpdateCheckerUi();
+        initGpsControls();
+        initSettingsDirtyTracking();
 
         // Wire up WebSocket events
         wireWebSocket();
@@ -153,6 +162,12 @@
         setInterval(() => {
             refreshLiveData();
         }, 30000);
+
+        window.addEventListener('beforeunload', (e) => {
+            if (!settingsDirty) return;
+            e.preventDefault();
+            e.returnValue = '';
+        });
     });
 
     // ── Tab switching ──────────────────────────────────────────
@@ -444,6 +459,51 @@
         localStorage.setItem(UI_STATE_KEY, JSON.stringify(state || {}));
     }
 
+    function getUITheme() {
+        return _loadUIState().uiTheme === 'light' ? 'light' : DEFAULT_UI_THEME;
+    }
+
+    function applyUITheme(theme) {
+        const normalized = theme === 'light' ? 'light' : DEFAULT_UI_THEME;
+        const isLight = normalized === 'light';
+        document.documentElement.classList.toggle('ui-theme-light', isLight);
+
+        const metaTheme = document.querySelector('meta[name="theme-color"]');
+        if (metaTheme) metaTheme.setAttribute('content', isLight ? '#f5f7fa' : '#0d1117');
+
+        const toggle = document.getElementById('btn-toggle-ui-theme');
+        if (toggle) {
+            toggle.textContent = isLight ? '☀️' : '🌙';
+            toggle.title = isLight ? 'Switch to dark UI' : 'Switch to light UI';
+            toggle.setAttribute('aria-label', toggle.title);
+        }
+
+        const select = document.getElementById('cfg-ui-theme');
+        if (select) select.value = normalized;
+    }
+
+    function setUITheme(theme) {
+        const normalized = theme === 'light' ? 'light' : DEFAULT_UI_THEME;
+        const uiState = _loadUIState();
+        uiState.uiTheme = normalized;
+        _saveUIState(uiState);
+        applyUITheme(normalized);
+    }
+
+    function toggleUITheme() {
+        const next = getUITheme() === 'light' ? DEFAULT_UI_THEME : 'light';
+        setUITheme(next);
+    }
+
+    function initUIThemeControls() {
+        applyUITheme(getUITheme());
+
+        document.getElementById('btn-toggle-ui-theme')?.addEventListener('click', toggleUITheme);
+        document.getElementById('cfg-ui-theme')?.addEventListener('change', (e) => {
+            setUITheme(e.target.value);
+        });
+    }
+
     function _escapeHTML(text) {
         const div = document.createElement('div');
         div.textContent = text;
@@ -491,6 +551,10 @@
                 updatePropagation(msg.data);
                 if (window.pvMap) window.pvMap.updateObservedRange(msg.data.timestamp);
             }
+        });
+
+        ws.on('gps_location', (msg) => {
+            handleGpsStatus(msg.data);
         });
 
         ws.on('alert', (msg) => {
@@ -719,9 +783,36 @@
             setTextById('stat-gated', (status.stats.gated_rf_to_is || 0) + (status.stats.gated_is_to_rf || 0));
         }
 
-        // Set map position
-        if (status.latitude && status.longitude && status.latitude !== 0) {
+        handleGpsStatus(status.gps);
+
+        // Set map position from configured station when live GPS is not driving the map.
+        const gpsCurrent = status.gps?.current;
+        const gpsDrivesMap = !!(status.gps?.enabled && status.gps?.map_update_enabled && gpsCurrent);
+        if (!gpsDrivesMap && status.latitude && status.longitude && status.latitude !== 0) {
             window.pvMap.setMyPosition(status.latitude, status.longitude, status.station);
+        }
+    }
+
+    function handleGpsStatus(gps) {
+        if (!gps) return;
+        const current = gps.current;
+        const textEl = document.getElementById('gps-status-text');
+        if (current) {
+            const age = Math.max(0, Math.round(Date.now() / 1000 - (current.timestamp || 0)));
+            const applied = current.applied_to_station ? 'station' : 'map';
+            if (textEl) {
+                textEl.textContent = `${current.source}: ${current.latitude.toFixed(5)}, ${current.longitude.toFixed(5)} (${applied}, ${age}s ago)`;
+            }
+            if (gps.enabled && gps.map_update_enabled) {
+                window.pvMap?.setMyPosition(current.latitude, current.longitude, lastStatus?.station || 'GPS');
+            }
+            if (current.applied_to_station) {
+                setVal('cfg-latitude', current.latitude.toFixed(5));
+                setVal('cfg-longitude', current.longitude.toFixed(5));
+                markSettingsDirty('GPS updated station latitude/longitude. Save to keep these coordinates after restart.');
+            }
+        } else if (textEl) {
+            textEl.textContent = gps.source_status?.message || (gps.enabled ? 'Waiting for GPS fix' : 'Disabled');
         }
     }
 
@@ -1131,7 +1222,7 @@
 
     function renderUpdateStatus(data, els) {
         const { messageEl, detailEl, linkEl, footerEl } = els;
-        const currentVersion = data?.current_version || '1.3.4';
+        const currentVersion = data?.current_version || '1.4.0';
         const latestVersion = data?.latest_version || currentVersion;
         const releaseUrl = data?.release_url || 'https://github.com/RF-YVY/APRS-PropView/releases';
         const publishedAt = data?.published_at ? formatReleaseDate(data.published_at) : '';
@@ -1212,6 +1303,159 @@
         }
     }
 
+    function initGpsControls() {
+        document.getElementById('cfg-gps-source')?.addEventListener('change', updateGpsSourceVisibility);
+        document.getElementById('btn-gps-browser')?.addEventListener('click', toggleBrowserGps);
+        updateGpsSourceVisibility();
+    }
+
+    function updateGpsSourceVisibility() {
+        const source = getVal('cfg-gps-source') || 'browser';
+        document.querySelectorAll('.gps-source-setting').forEach(row => {
+            row.classList.toggle('visible', row.classList.contains(`gps-source-${source}`));
+        });
+        const browserCapable = source === 'browser' || source === 'any';
+        const btn = document.getElementById('btn-gps-browser');
+        if (btn) {
+            btn.disabled = !browserCapable;
+            btn.title = getGpsBrowserButtonTitle(source, browserCapable);
+            if (!browserCapable) btn.textContent = getGpsSourceButtonText(source);
+            else if (gpsWatchId === null) btn.textContent = getGpsBrowserStartText(source);
+            else btn.textContent = getGpsBrowserStopText(source);
+        }
+        if (!browserCapable && gpsWatchId !== null) {
+            navigator.geolocation.clearWatch(gpsWatchId);
+            gpsWatchId = null;
+            const textEl = document.getElementById('gps-status-text');
+            if (textEl) textEl.textContent = 'Browser GPS stopped; selected source is waiting for its own input.';
+        }
+    }
+
+    function getGpsBrowserStartText(source) {
+        return source === 'any' ? 'Start Browser GPS' : 'Start GPS';
+    }
+
+    function getGpsBrowserStopText(source) {
+        return source === 'any' ? 'Stop Browser GPS' : 'Stop GPS';
+    }
+
+    function getGpsSourceButtonText(source) {
+        const labels = {
+            self_packet: 'Using APRS packets',
+            nmea_serial: 'Using NMEA serial',
+            nmea_tcp: 'Using NMEA TCP',
+            nmea_udp: 'Using NMEA UDP',
+        };
+        return labels[source] || 'Browser GPS unavailable';
+    }
+
+    function getGpsBrowserButtonTitle(source, browserCapable) {
+        if (browserCapable) return 'Start or stop this browser/device location sharing';
+        const titles = {
+            self_packet: 'This source uses your own APRS position packets.',
+            nmea_serial: 'This source reads from the configured NMEA serial GPS port.',
+            nmea_tcp: 'This source reads from the configured NMEA TCP stream.',
+            nmea_udp: 'This source listens for NMEA UDP sentences on the configured port.',
+        };
+        return titles[source] || 'Select Browser or Any Source to use browser/device location.';
+    }
+
+    function initSettingsDirtyTracking() {
+        const panel = document.querySelector('.settings-panel');
+        if (!panel) return;
+
+        panel.addEventListener('input', (e) => {
+            if (isSettingsControl(e.target)) markSettingsDirty();
+        });
+        panel.addEventListener('change', (e) => {
+            if (isSettingsControl(e.target)) markSettingsDirty();
+        });
+    }
+
+    function isSettingsControl(el) {
+        return !!(
+            el &&
+            el.id &&
+            el.id.startsWith('cfg-') &&
+            el.id !== 'cfg-is-filter'
+        );
+    }
+
+    function markSettingsDirty(message) {
+        if (settingsLoading) return;
+        settingsDirty = true;
+        const statusEl = document.getElementById('settings-status');
+        const btn = document.getElementById('btn-save-settings');
+        if (btn) btn.classList.add('dirty');
+        if (statusEl) {
+            statusEl.style.display = 'block';
+            statusEl.className = 'settings-status warning dirty';
+            statusEl.textContent = message || 'Unsaved settings. Save Configuration to apply these changes and keep them after restart.';
+        }
+    }
+
+    function clearSettingsDirty() {
+        settingsDirty = false;
+        document.getElementById('btn-save-settings')?.classList.remove('dirty');
+    }
+
+    function toggleBrowserGps() {
+        if (gpsWatchId !== null) {
+            navigator.geolocation.clearWatch(gpsWatchId);
+            gpsWatchId = null;
+            const btn = document.getElementById('btn-gps-browser');
+            if (btn) btn.textContent = getGpsBrowserStartText(getVal('cfg-gps-source') || 'browser');
+            const textEl = document.getElementById('gps-status-text');
+            if (textEl) textEl.textContent = 'Browser GPS stopped';
+            return;
+        }
+
+        if (!navigator.geolocation) {
+            showSystemNotification('This browser does not support geolocation.', 'error');
+            return;
+        }
+
+        gpsWatchId = navigator.geolocation.watchPosition(
+            async (position) => {
+                const now = Date.now();
+                if (now - lastGpsPost < 5000) return;
+                lastGpsPost = now;
+                try {
+                    const resp = await fetch('/api/gps/location', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            source: 'browser',
+                            latitude: position.coords.latitude,
+                            longitude: position.coords.longitude,
+                            accuracy_m: position.coords.accuracy,
+                            map_update_enabled: getChk('cfg-gps-map-update'),
+                            update_station_position: getVal('cfg-gps-update-station') === 'true',
+                            station_position_locked: getChk('cfg-gps-position-locked'),
+                        }),
+                    });
+                    const result = await resp.json();
+                    if (!resp.ok || !result.success) {
+                        throw new Error(result.message || 'GPS update rejected.');
+                    }
+                    handleGpsStatus(result.gps);
+                } catch (e) {
+                    const textEl = document.getElementById('gps-status-text');
+                    if (textEl) textEl.textContent = e.message || 'GPS update failed';
+                }
+            },
+            (error) => {
+                const textEl = document.getElementById('gps-status-text');
+                if (textEl) textEl.textContent = error.message || 'GPS permission denied';
+                showSystemNotification(error.message || 'GPS permission denied.', 'error');
+            },
+            { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 },
+        );
+
+        const btn = document.getElementById('btn-gps-browser');
+        if (btn) btn.textContent = getGpsBrowserStopText(getVal('cfg-gps-source') || 'browser');
+    }
+
     // Apply saved font on initial load
     (async function initFont() {
         try {
@@ -1226,6 +1470,7 @@
     // ── Settings load/save ─────────────────────────────────────
 
     async function loadSettings() {
+        settingsLoading = true;
         try {
             const resp = await fetch('/api/config');
             const cfg = await resp.json();
@@ -1242,6 +1487,20 @@
             setVal('cfg-comment', cfg.station?.comment);
             setVal('cfg-beacon-interval', Math.round((cfg.station?.beacon_interval || 0) / 60));
             setVal('cfg-beacon-path', cfg.station?.beacon_path || 'WIDE1-1');
+
+            // GPS
+            setChk('cfg-gps-enabled', cfg.gps?.enabled);
+            setVal('cfg-gps-source', cfg.gps?.source || 'browser');
+            setVal('cfg-gps-update-station', String(!!cfg.gps?.update_station_position));
+            setChk('cfg-gps-map-update', cfg.gps?.map_update_enabled ?? true);
+            setChk('cfg-gps-position-locked', cfg.gps?.station_position_locked ?? true);
+            setVal('cfg-gps-serial-port', cfg.gps?.serial_port || 'COM4');
+            setVal('cfg-gps-serial-baud', cfg.gps?.serial_baudrate || 9600);
+            setVal('cfg-gps-tcp-host', cfg.gps?.tcp_host || '127.0.0.1');
+            setVal('cfg-gps-tcp-port', cfg.gps?.tcp_port || 10110);
+            setVal('cfg-gps-udp-host', cfg.gps?.udp_host || '0.0.0.0');
+            setVal('cfg-gps-udp-port', cfg.gps?.udp_port || 10110);
+            updateGpsSourceVisibility();
 
             // Digipeater
             setChk('cfg-digi-enabled', cfg.digipeater?.enabled);
@@ -1278,6 +1537,8 @@
             setVal('cfg-web-host', cfg.web?.host);
             setVal('cfg-web-port', cfg.web?.port);
             setVal('cfg-web-font', cfg.web?.font_family || '');
+            setVal('cfg-ui-theme', getUITheme());
+            applyUITheme(getUITheme());
             applyFont(cfg.web?.font_family || '');
             setVal('cfg-web-ghost', cfg.web?.ghost_after_minutes ?? 60);
             window._ghostMinutes = cfg.web?.ghost_after_minutes ?? 60;
@@ -1352,6 +1613,13 @@
 
         } catch (e) {
             console.error('Failed to load settings:', e);
+        } finally {
+            settingsLoading = false;
+            clearSettingsDirty();
+            const statusEl = document.getElementById('settings-status');
+            if (statusEl && statusEl.classList.contains('dirty')) {
+                statusEl.style.display = 'none';
+            }
         }
 
         // Update icon picker preview with loaded symbol
@@ -1407,6 +1675,19 @@
                 enabled: getChk('cfg-kt-enabled'),
                 host: getVal('cfg-kt-host'),
                 port: getVal('cfg-kt-port'),
+            },
+            gps: {
+                enabled: getChk('cfg-gps-enabled'),
+                source: getVal('cfg-gps-source') || 'browser',
+                map_update_enabled: getChk('cfg-gps-map-update'),
+                update_station_position: getVal('cfg-gps-update-station') === 'true',
+                station_position_locked: getChk('cfg-gps-position-locked'),
+                serial_port: getVal('cfg-gps-serial-port') || 'COM4',
+                serial_baudrate: parseInt(getVal('cfg-gps-serial-baud')) || 9600,
+                tcp_host: getVal('cfg-gps-tcp-host') || '127.0.0.1',
+                tcp_port: parseInt(getVal('cfg-gps-tcp-port')) || 10110,
+                udp_host: getVal('cfg-gps-udp-host') || '0.0.0.0',
+                udp_port: parseInt(getVal('cfg-gps-udp-port')) || 10110,
             },
             web: {
                 host: getVal('cfg-web-host'),
@@ -1496,9 +1777,13 @@
                 statusEl.className = 'settings-status ' + cls;
                 statusEl.textContent = result.message || (result.success ? 'Saved!' : 'Error saving.');
                 const delay = result.needRestart ? 10000 : 5000;
-                setTimeout(() => { statusEl.style.display = 'none'; }, delay);
             }
             if (result.success) {
+                clearSettingsDirty();
+                const delay = result.needRestart ? 10000 : 5000;
+                setTimeout(() => {
+                    if (!settingsDirty) statusEl.style.display = 'none';
+                }, delay);
                 window.pvWeather?.fetchWeather(true);
                 loadUpdateStatus(false);
             }
@@ -1508,7 +1793,9 @@
                 statusEl.style.display = 'block';
                 statusEl.className = 'settings-status error';
                 statusEl.textContent = 'Network error saving configuration.';
-                setTimeout(() => { statusEl.style.display = 'none'; }, 5000);
+                setTimeout(() => {
+                    if (!settingsDirty) statusEl.style.display = 'none';
+                }, 5000);
             }
         } finally {
             if (btn) btn.disabled = false;
