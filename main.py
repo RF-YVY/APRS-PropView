@@ -4,7 +4,7 @@
 Launch this to start the application. The web interface opens automatically.
 """
 
-APP_VERSION = "1.3.4"
+APP_VERSION = "1.4.0"
 
 import asyncio
 import sys
@@ -40,6 +40,7 @@ from server.analytics import AnalyticsEngine
 from server.alerts import AlertManager, AlertConfig
 from server.weather import WeatherManager
 from server.update_checker import UpdateChecker
+from server.gps import GPSManager
 
 # Configure logging
 logging.basicConfig(
@@ -132,8 +133,11 @@ async def main():
     tracker = StationTracker(db, config, ws_manager)
     digipeater = Digipeater(config) if config.digipeater.enabled else None
     igate = IGate(config) if config.igate.enabled else None
+    gps_manager = GPSManager(config, ws_manager, tracker)
+    tracker.set_gps_manager(gps_manager)
 
     handler = PacketHandler(config, tracker, digipeater, igate, ws_manager)
+    handler.set_gps_manager(gps_manager)
 
     # ── Analytics & Alerts ──────────────────────────────────────────
 
@@ -258,6 +262,7 @@ async def main():
         aprs_is,
         weather_manager,
         update_checker=update_checker,
+        gps_manager=gps_manager,
         app_version=APP_VERSION,
     )
 
@@ -274,6 +279,9 @@ async def main():
 
     tasks.append(asyncio.create_task(tracker.cleanup_loop()))
     tasks.append(asyncio.create_task(tracker.propagation_broadcast_loop()))
+    tasks.append(asyncio.create_task(gps_manager.run_serial_nmea()))
+    tasks.append(asyncio.create_task(gps_manager.run_tcp_nmea()))
+    tasks.append(asyncio.create_task(gps_manager.run_udp_nmea()))
 
     # Beacon loop always runs — it re-reads interval from config each iteration
     # so changes via the web UI apply live (interval=0 means disabled, loop sleeps)

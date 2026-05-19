@@ -122,6 +122,20 @@ elevated_alert_polling_seconds = 60
 elevated_alert_cooldown_minutes = 15
 elevated_trigger_events = ["Tornado Watch", "Severe Thunderstorm Watch"]
 
+[gps]
+# Sources: browser, self_packet, nmea_serial, nmea_tcp, nmea_udp, any
+enabled = false
+source = "browser"
+map_update_enabled = true
+update_station_position = false
+station_position_locked = true
+serial_port = "COM4"
+serial_baudrate = 9600
+tcp_host = "127.0.0.1"
+tcp_port = 10110
+udp_host = "0.0.0.0"
+udp_port = 10110
+
 [mqtt]
 enabled = false
 broker = "localhost"
