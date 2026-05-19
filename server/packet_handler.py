@@ -42,6 +42,7 @@ class PacketHandler:
         self.igate = igate
         self.ws = ws_manager
         self.aprs_is = None
+        self.gps_manager = None
         self.rf_interfaces = []
 
         # Alert manager (set later via set_alert_manager)
@@ -116,6 +117,10 @@ class PacketHandler:
     def set_alert_manager(self, alert_manager):
         """Inject the AlertManager for message notifications."""
         self._alert_manager = alert_manager
+
+    def set_gps_manager(self, gps_manager):
+        """Inject the GPS manager for status reporting."""
+        self.gps_manager = gps_manager
 
     def add_rf_interface(self, interface):
         """Register an RF interface (KISS client)."""
@@ -644,5 +649,6 @@ class PacketHandler:
             "digipeater_enabled": self.config.digipeater.enabled,
             "igate_enabled": self.config.igate.enabled,
             "beacon": self.get_beacon_status(),
+            "gps": self.gps_manager.get_status() if self.gps_manager else None,
             "stats": dict(self.stats),
         }
