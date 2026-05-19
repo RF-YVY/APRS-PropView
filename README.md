@@ -1,17 +1,12 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.3.4** | May 14, 2026<bk>
-
-[![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
-
-<img width="1536" height="1024" alt="APRS PropView promo img" src="https://github.com/user-attachments/assets/9942c9df-1599-485c-80a2-4f475c9ff2ae" />
-
+**Version 1.4.0** | May 19, 2026
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
 
-Pi/Linux Guide: [docs/linux-raspberry-pi.md](https://github.com/RF-YVY/APRS-PropView/blob/main/docs/linux-raspberry-pi.md)
+Version 1.4.0 adds relaxed APRS message addressee handling, global callsign support, and GPS ingestion options.
 
-Watch YouTube Video here: https://www.youtube.com/watch?v=OyX6RaNevUk
+Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs/linux-raspberry-pi.md).
 
 ## Features
 
@@ -77,6 +72,7 @@ Watch YouTube Video here: https://www.youtube.com/watch?v=OyX6RaNevUk
 - **Beacon Path Selector** — Choose digipeater path for beacons (DIRECT, WIDE1-1, WIDE1-1,WIDE2-1, etc.)
 - **Minute-based Timers** — All timer settings (beacon interval, dedupe, cleanup, cooldown) displayed in minutes for simplicity
 - **Pick Location on Map** — Click the map to set your station coordinates
+- **GPS Ingestion** — Use browser/mobile GPS, own APRS position packets, or NMEA serial/TCP/UDP streams to move the map marker or update station coordinates
 - **APRS Symbol Picker** — Visual icon chooser with both primary and alternate symbol tables
 - **Callsign + SSID Selector** — Uppercase callsign input with SSID dropdown (0–15) and descriptions
 - **Miles-based Range Filter** — Enter range in miles; auto-generates APRS-IS `r/` filter
@@ -92,7 +88,7 @@ Watch YouTube Video here: https://www.youtube.com/watch?v=OyX6RaNevUk
 ### APRS-IS Policy Compliance
 
 - Lossless APRS packet handling across RF and APRS-IS transports (no UTF-8 re-encoding or trailing-space trimming)
-- Proper amateur callsign format validation (rejects N0CALL, NOCALL, etc.)
+- Country-neutral callsign handling with APRS-safe character checks and APRS-IS placeholder protection
 - Minimum 10-minute beacon interval enforced per APRS-IS usage policy
 - Read-only mode: unverified connections (passcode `-1`) cannot transmit or gate
 - RF→IS gating does not deduplicate or suppress traffic except for `NOGATE` / `RFONLY`
