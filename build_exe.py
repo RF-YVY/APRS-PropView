@@ -85,7 +85,7 @@ def _write_manifest(path):
   <assemblyIdentity
     type="win32"
     name="WickerMade.APRSPropView"
-    version="1.3.4.0"
+    version="1.4.1.0"
     processorArchitecture="amd64"
   />
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
@@ -130,8 +130,8 @@ def _write_version_info(path):
     content = """# UTF-8
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 3, 4, 0),
-    prodvers=(1, 3, 4, 0),
+    filevers=(1, 4, 0, 0),
+    prodvers=(1, 4, 0, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -147,11 +147,11 @@ VSVersionInfo(
           [
             StringStruct(u'CompanyName', u'Wicker Made, LLC'),
             StringStruct(u'FileDescription', u'APRS PropView - VHF Propagation Monitor'),
-            StringStruct(u'FileVersion', u'1.3.4.0'),
+            StringStruct(u'FileVersion', u'1.4.1.0'),
             StringStruct(u'InternalName', u'APRSPropView'),
             StringStruct(u'OriginalFilename', u'APRSPropView.exe'),
             StringStruct(u'ProductName', u'APRS PropView'),
-            StringStruct(u'ProductVersion', u'1.3.4.0'),
+            StringStruct(u'ProductVersion', u'1.4.1.0'),
           ]
         )
       ]
@@ -205,6 +205,7 @@ def build():
         "--hidden-import", "aiosqlite",
         "--hidden-import", "aprslib",
         "--hidden-import", "serial",
+        "--hidden-import", "serial_asyncio",
         "--hidden-import", "serial.tools",
         "--hidden-import", "serial.tools.list_ports",
         "--hidden-import", "geopy",
@@ -248,7 +249,7 @@ def build():
         exe_path = dist_dir / "APRSPropView.exe"
         if exe_path.exists():
             size_mb = exe_path.stat().st_size / (1024 * 1024)
-            print(f"\n  \u2705 Build successful!")
+            print(f"\n  Build successful!")
             print(f"  Executable: {exe_path}")
             print(f"  Size:       {size_mb:.1f} MB")
 
@@ -261,9 +262,9 @@ def build():
             print(f"\n  To run: dist\\APRSPropView.exe")
             print(f"  On first run, config.toml is created next to the exe and the app starts immediately.\n")
         else:
-            print(f"\n  ⚠ Build completed but exe not found at expected path.")
+            print(f"\n  Warning: Build completed but exe not found at expected path.")
     else:
-        print(f"\n  ❌ Build failed with return code {result.returncode}")
+        print(f"\n  Build failed with return code {result.returncode}")
         sys.exit(1)
 
 
