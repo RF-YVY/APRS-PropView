@@ -519,6 +519,24 @@ def create_app(
             "is_count": len(data["aprs_is"]),
         }
 
+    @app.delete("/api/stations/{source}/{callsign}")
+    async def delete_station(source: str, callsign: str):
+        normalized_source = "aprs_is" if source in {"aprs_is", "is"} else source
+        if normalized_source not in {"rf", "aprs_is"}:
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": "Invalid station source."},
+            )
+        deleted = await tracker.delete_station(callsign.strip().upper(), normalized_source)
+        if not deleted:
+            return JSONResponse(
+                status_code=404,
+                content={"success": False, "message": "Station not found."},
+            )
+        prop_data = await tracker.get_propagation_data()
+        await ws_manager.broadcast({"type": "propagation", "data": prop_data})
+        return {"success": True}
+
     @app.get("/api/packets")
     async def get_packets(
         limit: int = Query(100, ge=1, le=1000),

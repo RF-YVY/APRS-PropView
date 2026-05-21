@@ -72,7 +72,7 @@ class APRSISClient:
         if base_call in _BLOCKED_CALLSIGNS or not base_call:
             logger.error(
                 f"Cannot connect to APRS-IS with callsign '{base_call}'. "
-                "Set a valid amateur radio callsign in settings."
+                "Set your assigned callsign in settings."
             )
             return
 

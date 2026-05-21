@@ -233,6 +233,15 @@ class Database:
         await self.db.execute("DELETE FROM stations WHERE last_heard < ?", (cutoff,))
         await self.db.commit()
 
+    async def delete_station(self, callsign: str, source: str) -> bool:
+        """Remove one station record. Returns True when a row was deleted."""
+        cursor = await self.db.execute(
+            "DELETE FROM stations WHERE callsign = ? AND source = ?",
+            (callsign, source),
+        )
+        await self.db.commit()
+        return cursor.rowcount > 0
+
     async def get_rf_station_count(self, since: Optional[float] = None) -> int:
         query = "SELECT COUNT(*) FROM stations WHERE source = 'rf'"
         params = []

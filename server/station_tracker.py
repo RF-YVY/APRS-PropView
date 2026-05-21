@@ -63,6 +63,37 @@ class StationTracker:
         if not callsign:
             return
 
+        if source == "rf" and self._has_internet_path(packet.path):
+            await self.db.log_packet(
+                source=source,
+                from_call=callsign,
+                to_call=packet.to_call,
+                path=packet.path,
+                raw=packet.raw,
+                packet_type=packet.packet_type,
+                latitude=packet.latitude,
+                longitude=packet.longitude,
+            )
+            await self.ws.broadcast(
+                {
+                    "type": "packet",
+                    "data": {
+                        "timestamp": time.time(),
+                        "source": source,
+                        "from_call": callsign,
+                        "to_call": packet.to_call,
+                        "path": packet.path,
+                        "raw": packet.raw,
+                        "packet_type": packet.packet_type,
+                        "latitude": packet.latitude,
+                        "longitude": packet.longitude,
+                        "distance_km": None,
+                    },
+                }
+            )
+            logger.info("RF: %s [third-party internet path ignored for propagation]", callsign)
+            return
+
         if (
             packet.has_position
             and self._gps_manager
@@ -226,6 +257,18 @@ class StationTracker:
         aprs_is = await self.get_is_stations(since=since)
         return {"rf": rf, "aprs_is": aprs_is}
 
+    async def delete_station(self, callsign: str, source: str) -> bool:
+        """Delete one station from storage, cache, and connected clients."""
+        deleted = await self.db.delete_station(callsign, source)
+        cache = self._rf_stations if source == "rf" else self._is_stations
+        cache.pop(callsign, None)
+        if deleted:
+            await self.ws.broadcast({
+                "type": "station_removed",
+                "data": {"callsign": callsign, "source": source},
+            })
+        return deleted
+
     @staticmethod
     def _is_direct_path(path: str) -> bool:
         """Return True if the APRS path indicates a direct (no digipeater) reception.
@@ -257,6 +300,18 @@ class StationTracker:
             if hop.endswith("*"):
                 count += 1
         return count
+
+    @staticmethod
+    def _has_internet_path(path: str) -> bool:
+        """Return True if a path shows APRS-IS/TCP-originated traffic."""
+        if not path:
+            return False
+        internet_hops = {"TCPIP", "TCPXX"}
+        for hop in path.split(","):
+            base = hop.strip().rstrip("*").upper()
+            if base in internet_hops or base.startswith("QA"):
+                return True
+        return False
 
     async def get_propagation_data(self, log_sample: bool = False) -> Dict[str, Any]:
         """Calculate current propagation metrics for both meters."""

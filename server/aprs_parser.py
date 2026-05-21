@@ -36,6 +36,10 @@ class APRSPacket:
     # Object/Item
     object_name: str = ""
     alive: bool = True
+    # Third-party wrapper metadata
+    third_party: bool = False
+    outer_from_call: str = ""
+    outer_path: str = ""
 
     @property
     def has_position(self) -> bool:
@@ -117,6 +121,9 @@ def parse_packet(raw: str, source: str = "rf") -> APRSPacket:
         if info[0] == "}":
             inner = parse_packet(info[1:], source=source)
             inner.raw = raw
+            inner.third_party = True
+            inner.outer_from_call = pkt.from_call
+            inner.outer_path = pkt.path
             return inner
 
         # Determine packet type from data type identifier
@@ -124,10 +131,10 @@ def parse_packet(raw: str, source: str = "rf") -> APRSPacket:
 
         if dti in ("!", "="):
             _parse_position(pkt, info[1:], with_messaging=(dti == "="))
-            pkt.packet_type = "position"
+            pkt.packet_type = "position" if pkt.has_position else "other"
         elif dti in ("/", "@"):
             _parse_position_with_timestamp(pkt, info[1:], with_messaging=(dti == "@"))
-            pkt.packet_type = "position"
+            pkt.packet_type = "position" if pkt.has_position else "other"
         elif dti == ":":
             _parse_message(pkt, info[1:])
             pkt.packet_type = "message"
@@ -203,9 +210,19 @@ def _looks_like_compressed_position(data: str) -> bool:
     """Return True when data has the fixed compressed position shape."""
     if len(data) < 13 or _is_uncompressed_position(data):
         return False
-    if not (33 <= ord(data[0]) <= 126):
+    if not _is_valid_compressed_symbol_table(data[0]):
         return False
     return _is_base91_position_chars(data[1:9])
+
+
+def _is_valid_compressed_symbol_table(value: str) -> bool:
+    """Return True for compressed-position symbol table/overlay identifiers."""
+    return (
+        value in ("/", "\\")
+        or "0" <= value <= "9"
+        or "A" <= value <= "Z"
+        or "a" <= value <= "z"
+    )
 
 
 def _parse_compressed_lat_lon(data: str):

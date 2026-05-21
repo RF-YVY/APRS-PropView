@@ -151,7 +151,7 @@ class PacketHandler:
         await self.tracker.track_packet(packet)
 
         # Note RF station for IGate IS→RF decisions
-        if self.igate:
+        if self.igate and not self.tracker._has_internet_path(packet.path):
             self.igate.note_rf_station(frame.from_call)
 
         # Check for APRS message addressed to us
@@ -195,7 +195,7 @@ class PacketHandler:
         packet = parse_packet(raw_str, source="rf")
         await self.tracker.track_packet(packet)
 
-        if self.igate:
+        if self.igate and not self.tracker._has_internet_path(packet.path):
             self.igate.note_rf_station(packet.from_call)
 
         await self._check_incoming_message(packet, source="rf")

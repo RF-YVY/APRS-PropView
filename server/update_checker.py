@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import re
+import ssl
 import time
 import urllib.error
 import urllib.request
@@ -14,6 +15,16 @@ logger = logging.getLogger("propview.update")
 GITHUB_REPO = "RF-YVY/APRS-PropView"
 GITHUB_RELEASES_URL = "https://github.com/RF-YVY/APRS-PropView/releases"
 GITHUB_LATEST_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+
+
+def _github_ssl_context() -> ssl.SSLContext:
+    """Create an HTTPS context with certifi's CA bundle when available."""
+    try:
+        import certifi
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return ssl.create_default_context()
 
 
 def _normalize_version(value: str) -> str:
@@ -219,7 +230,7 @@ class UpdateChecker:
             },
         )
         try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            with urllib.request.urlopen(req, timeout=15, context=_github_ssl_context()) as resp:
                 return json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
@@ -236,7 +247,7 @@ class UpdateChecker:
             },
         )
         try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            with urllib.request.urlopen(req, timeout=15, context=_github_ssl_context()) as resp:
                 html = resp.read().decode("utf-8", errors="replace")
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
