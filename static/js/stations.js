@@ -161,6 +161,9 @@ class StationManager {
         const directBadge = source === 'rf'
             ? `<span class="heard-badge ${direct ? 'direct' : 'via-digi'}">${direct ? 'DIRECT' : 'VIA DIGI'}</span>`
             : '';
+        const deleteButton = source === 'rf'
+            ? `<button class="station-delete" type="button" title="Delete RF station" aria-label="Delete ${call}">×</button>`
+            : '';
 
         return `
             <div class="station-item ${source}" data-callsign="${escapedCallAttr}" data-source="${source}" data-last-heard="${station.last_heard || 0}" data-packet-count="${count}">
@@ -173,6 +176,7 @@ class StationManager {
                     <div class="station-distance">${dist} ${heading}</div>
                     <div class="station-time">${elapsed} | ${count} pkt${count > 1 ? 's' : ''}</div>
                 </div>
+                ${deleteButton}
             </div>
         `;
     }
@@ -311,6 +315,13 @@ class StationManager {
 
                 const call = el.dataset.callsign;
                 const src = el.dataset.source;
+                if (e.target.closest('.station-delete')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this._deleteStation(call, src);
+                    return;
+                }
+
                 const station = src === 'rf' ? this.rfStations[call] : this.isStations[call];
                 if (station && station.latitude && station.longitude) {
                     window.pvMap.map.setView([station.latitude, station.longitude], 13);
@@ -319,6 +330,25 @@ class StationManager {
                 }
             });
         });
+    }
+
+    async _deleteStation(callsign, source) {
+        if (!callsign || source !== 'rf') return;
+        if (!confirm(`Delete ${callsign} from RF Stations?`)) return;
+
+        try {
+            const resp = await fetch(`/api/stations/${encodeURIComponent(source)}/${encodeURIComponent(callsign)}`, {
+                method: 'DELETE',
+            });
+            if (!resp.ok) {
+                const result = await resp.json().catch(() => ({}));
+                throw new Error(result.message || 'Delete failed.');
+            }
+            this.removeStation(callsign, source);
+            window.pvMap?.removeStation(callsign, source);
+        } catch (error) {
+            alert(error.message || 'Unable to delete station.');
+        }
     }
 
     _emptyStateHTML(source, timeFilter) {
