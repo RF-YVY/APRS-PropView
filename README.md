@@ -2,6 +2,11 @@
 
 **Version 1.4.2** | May 22, 2026
 
+[![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
+
+<img width="1536" height="1024" alt="APRS PropView promo img" src="https://github.com/user-attachments/assets/9942c9df-1599-485c-80a2-4f475c9ff2ae" />
+
+
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
 
 Version 1.4.2 adds custom map tile support for local/offline tile servers, international ICAO weather lookup fallback, faster first-load behavior, and UI performance improvements.
