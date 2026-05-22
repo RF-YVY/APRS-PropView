@@ -23,7 +23,7 @@
     </script>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css" />
-    <link rel="stylesheet" href="/static/css/style.css" />
+    <link rel="stylesheet" href="/static/css/style.css?v=weather-settings-pane-4" />
     <!-- Leaflet JS -->
     <script defer src="/static/vendor/leaflet/leaflet.js"></script>
 </head>
@@ -523,6 +523,16 @@
             <!-- ── Settings Tab ──────────────────────────────── -->
             <div id="tab-settings" class="tab-content">
                 <div class="settings-panel">
+                    <div class="settings-pane-header">
+                        <div>
+                            <h2>Settings</h2>
+                            <p>Configure APRS, map, weather, alerts, GPS, and integrations.</p>
+                        </div>
+                        <div class="settings-pane-header-actions">
+                            <button id="btn-save-settings-top" class="btn-primary btn-save-settings">Save Configuration</button>
+                            <button id="btn-close-settings" class="settings-pane-close" type="button" title="Close settings">&times;</button>
+                        </div>
+                    </div>
                     <div id="settings-status" class="settings-status" style="display:none;"></div>
 
                     <!-- Station -->
@@ -924,6 +934,32 @@
                             <input type="number" id="cfg-wx-refresh" min="5" max="120" value="15">
                         </div>
                         <div class="weather-overlay-card">
+                            <div class="weather-overlay-title">Weather Sources</div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-current-provider">Current Conditions</label>
+                                <select id="cfg-wx-current-provider">
+                                    <option value="open_meteo">Open-Meteo - global, no key</option>
+                                </select>
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-alert-provider">Alerts / Risk Source</label>
+                                <select id="cfg-wx-alert-provider" onchange="window.pvUpdateWeatherProviderUi?.()">
+                                    <option value="auto">Auto - NWS in US, Open-Meteo risk elsewhere</option>
+                                    <option value="weatherbit">Weatherbit official alerts - API key</option>
+                                    <option value="disabled">Disabled</option>
+                                </select>
+                            </div>
+                            <div class="settings-row wx-provider-key wx-provider-weatherbit">
+                                <label for="cfg-wx-weatherbit-key">Weatherbit API Key</label>
+                                <input type="password" id="cfg-wx-weatherbit-key" placeholder="Required for Weatherbit alerts">
+                            </div>
+                            <div class="settings-row wx-provider-key wx-provider-weatherbit">
+                                <label for="cfg-wx-weatherbit-poll">Weatherbit Polling (min)</label>
+                                <input type="number" id="cfg-wx-weatherbit-poll" min="30" max="1440" step="5" value="30">
+                            </div>
+                            <p id="cfg-wx-provider-note" class="weather-overlay-note">Auto uses NWS official alerts for US locations and Open-Meteo risk indicators elsewhere. Open-Meteo risk is not an official government warning feed.</p>
+                        </div>
+                        <div class="weather-overlay-card">
                             <div class="weather-overlay-title">Alert Polling</div>
                             <div class="settings-row">
                                 <label for="cfg-wx-alert-scope-mode">Alert Scope</label>
@@ -985,7 +1021,7 @@
                                 <input type="checkbox" id="cfg-wx-radar-animate">
                             </div>
                             <div class="settings-row">
-                                <label for="cfg-wx-alert-overlay-enabled">Show NWS Alert Polygons</label>
+                                <label for="cfg-wx-alert-overlay-enabled">Show Alert Polygons</label>
                                 <input type="checkbox" id="cfg-wx-alert-overlay-enabled">
                             </div>
                             <details class="weather-alert-groups">
@@ -1003,7 +1039,7 @@
                                     <label><input type="checkbox" name="cfg-wx-alert-group" value="other"> Other</label>
                                 </div>
                             </details>
-                            <p class="weather-overlay-note">Radar animation is provider-based. NWS polygons display when geometry is available for the alert.</p>
+                            <p class="weather-overlay-note">Radar animation is provider-based. Alert polygons display only when the selected alert source returns geometry.</p>
                         </div>
                     </div>
 
@@ -1162,7 +1198,7 @@
                     </div>
 
                     <div class="settings-actions">
-                        <button id="btn-save-settings" class="btn-primary">💾 Save Configuration</button>
+                        <button id="btn-save-settings" class="btn-primary btn-save-settings">💾 Save Configuration</button>
                         <p class="settings-note">Most settings apply immediately. KISS and web host/port changes require a restart.</p>
                     </div>
                 </div>
@@ -1173,14 +1209,14 @@
                 <div class="about-panel">
                     <div class="about-header">
                         <h2>APRS PropView</h2>
-                        <span id="about-version" class="about-version">v1.4.2</span>
+                        <span id="about-version" class="about-version">v1.4.3</span>
                     </div>
                     <div class="about-section">
                         <p>A real-time APRS digipeater and IGate focused on VHF propagation, live mapping, APRS messaging, analytics, and weather-aware situational awareness.</p>
                     </div>
                     <div class="about-section">
                         <h3>Created By</h3>
-                        <p>Brett Wicker &amp; AI Agent</p>
+                        <p>Brett Wicker - K5YVY &amp; AI Agent</p>
                         <p class="about-company">Wicker Made, LLC</p>
                     </div>
                     <div class="about-section">
@@ -1189,9 +1225,13 @@
                     </div>
                     <div class="about-section">
                         <h3>Build Info</h3>
-                        <p>Version: <span id="about-version-detail">1.4.2</span></p>
-                        <p>Release Date: <span id="about-date">May 14, 2026</span></p>
-                        <p>Highlights: Update application TOCALL identifier to allocated APPRPV.</p>
+                        <p>Version: <span id="about-version-detail">1.4.3</span></p>
+                        <p>Release Date: <span id="about-date">May 22, 2026</span></p>
+                        <p>Highlights: Full settings pane, international weather source options, Weatherbit quota-aware polling, Raspberry Pi install fixes, and updated help resources.</p>
+                    </div>
+                    <div class="about-section">
+                        <h3>Video Guide</h3>
+                        <p><a href="https://www.youtube.com/watch?v=OyX6RaNevUk&t=76s" target="_blank" class="about-link" rel="noreferrer">Watch the APRS PropView video guide</a></p>
                     </div>
                     <div class="about-section">
                         <h3>Updates</h3>
@@ -1278,6 +1318,7 @@
                 <section class="help-section">
                     <h3>Overview</h3>
                     <p>APRS PropView is a real-time APRS digipeater and Internet Gateway (IGate) application focused on visualizing VHF propagation conditions. It decodes APRS packets from RF (via a TNC) and APRS-IS, plots stations on a live map, draws signal paths, scores propagation quality, and adds weather radar plus configurable NWS alert overlays for faster storm awareness.</p>
+                    <p><a href="https://www.youtube.com/watch?v=OyX6RaNevUk&t=76s" target="_blank" class="about-link" rel="noreferrer">Watch the APRS PropView video guide</a></p>
                 </section>
 
                 <section class="help-section">
@@ -1382,9 +1423,9 @@
                     <h4>Alerts — Message Notification Channels</h4>
                     <p>Separate channel toggles for forwarding incoming APRS messages to Discord, Email, or SMS — independent from band-opening channels.</p>
                     <h4>Weather</h4>
-                    <p>Enable weather with a US zip code or ICAO airport code. Current conditions support worldwide ICAO stations; NWS alert polygons and county/zone alert scopes are US-only.</p>
-                    <p><b>Map Overlays</b> - Turn radar and NWS polygons on or off, adjust radar opacity, enable radar animation, and choose which alert categories should be drawn on the map.</p>
-                    <p><b>Alert Polling</b> - Choose point-based alerts or monitor a county/forecast-zone UGC. Use Auto-Fill to resolve the local county or zone from the configured weather location.</p>
+                    <p>Enable weather with a US zip code or ICAO airport code. Current conditions use Open-Meteo. Alert sources can be automatic, Weatherbit with a user API key, or disabled. Auto uses NWS for US stations and Open-Meteo risk indicators outside the US.</p>
+                    <p><b>Map Overlays</b> - Turn radar and alert polygons on or off, adjust radar opacity, enable radar animation, and choose which alert categories should be drawn on the map. Polygons display only when the selected alert source returns geometry.</p>
+                    <p><b>Alert Polling</b> - NWS county/zone UGC scope is available for US locations. Other alert sources use point-based or provider-defined coverage.</p>
                     <p><b>Adaptive Severe Weather Polling</b> - When one of your configured trigger events, such as <code>Tornado Watch</code> or <code>Severe Thunderstorm Watch</code>, becomes active, alert polling automatically speeds up to the elevated interval so newly issued warnings are detected more quickly. After the trigger clears, polling stays elevated through the configured cooldown before returning to normal.</p>
                     <h4>MQTT Integration</h4>
                     <p>MQTT is for sending APRS PropView events and propagation status to other systems. It is not needed for normal APRS, digipeater, IGate, mapping, or messaging operation; enable it when you have an MQTT broker such as Mosquitto, Home Assistant, Node-RED, EMQX, or another dashboard/automation system that should receive PropView data.</p>
@@ -1423,6 +1464,6 @@
     <script defer src="/static/js/analytics.js"></script>
     <script defer src="/static/js/messages.js"></script>
     <script defer src="/static/js/weather.js"></script>
-    <script defer src="/static/js/app.js"></script>
+    <script defer src="/static/js/app.js?v=weather-settings-pane-4"></script>
 </body>
 </html>

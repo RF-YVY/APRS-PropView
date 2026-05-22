@@ -111,6 +111,10 @@ regional_full_dist_km = 200.0
 [weather]
 enabled = false
 location_code = ""
+current_provider = "open_meteo"
+alert_provider = "auto"
+weatherbit_api_key = ""
+weatherbit_poll_minutes = 30
 alert_range_miles = 50
 refresh_minutes = 15
 radar_enabled = false

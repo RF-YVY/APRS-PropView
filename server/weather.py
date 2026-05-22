@@ -1,8 +1,9 @@
-"""Weather data provider using Open-Meteo (current conditions) and NWS (alerts).
+"""Weather data provider using Open-Meteo (current conditions/risk) and NWS/Weatherbit alerts.
 
-All APIs used are free and require no API key:
+Default APIs are free and require no API key:
   - Open-Meteo: https://open-meteo.com/
   - NWS:        https://api.weather.gov/
+  - Weatherbit: https://www.weatherbit.io/api/alerts (optional user API key)
   - Zippopotam: http://api.zippopotam.us/  (zip → lat/lon)
 """
 
@@ -273,6 +274,9 @@ async def fetch_current_weather(lat: float, lon: float) -> Optional[Dict[str, An
         "surface_pressure_mb": c.get("surface_pressure"),
         "cloud_cover": c.get("cloud_cover"),
         "precipitation_in": c.get("precipitation"),
+        "rain": c.get("rain"),
+        "showers": c.get("showers"),
+        "snowfall": c.get("snowfall"),
         "weather_code": code,
         "description": desc,
         "icon": icon,
@@ -553,6 +557,149 @@ async def fetch_nws_alerts(
     return alerts
 
 
+async def fetch_weatherbit_alerts(
+    lat: float,
+    lon: float,
+    api_key: str,
+) -> List[Dict[str, Any]]:
+    """Fetch Weatherbit severe weather alerts for a point.
+
+    Weatherbit aggregates alerts from local agencies for several regions,
+    including NOAA, Meteoalarm, Environment Canada, and CMA. It requires a
+    user-supplied API key.
+    """
+    if not api_key:
+        return []
+
+    url = (
+        "https://api.weatherbit.io/v2.0/alerts?"
+        f"lat={lat:.4f}&lon={lon:.4f}&key={urllib.parse.quote(api_key)}"
+    )
+    data = await _async_http_get(url, timeout=30, retries=1)
+    alerts: List[Dict[str, Any]] = []
+
+    for item in (data or {}).get("alerts", []) or []:
+        event = item.get("title") or item.get("event") or "Weather Alert"
+        severity = item.get("severity") or item.get("severity_level") or "Unknown"
+        severity_lower = str(severity).lower()
+        event_lower = str(event).lower()
+        alert_type = "warning" if (
+            "warning" in event_lower
+            or severity_lower in {"severe", "extreme", "warning", "red"}
+        ) else "watch"
+
+        area_desc = item.get("regions")
+        if isinstance(area_desc, list):
+            area_desc = ", ".join(str(region) for region in area_desc if region)
+        if not area_desc:
+            area_desc = item.get("areas") or item.get("region") or ""
+
+        alerts.append({
+            "id": item.get("uri") or item.get("alert_id") or item.get("id") or event,
+            "event": event,
+            "severity": severity,
+            "alert_type": alert_type,
+            "certainty": item.get("certainty") or "Unknown",
+            "urgency": item.get("urgency") or "Unknown",
+            "headline": item.get("title") or event,
+            "description": (item.get("description") or "")[:6000],
+            "instruction": (item.get("instruction") or "")[:3000],
+            "sender": item.get("source") or item.get("sender_name") or "Weatherbit",
+            "effective": item.get("effective_utc") or item.get("onset_utc") or item.get("effective_local") or "",
+            "expires": item.get("expires_utc") or item.get("expires_local") or "",
+            "area_desc": area_desc,
+            "geometry": None,
+            "overlay_categories": _classify_alert_categories(event, alert_type),
+            "source": "weatherbit",
+        })
+
+    alerts.sort(key=lambda a: (0 if a["alert_type"] == "warning" else 1))
+    return alerts
+
+
+def build_open_meteo_risk_alerts(weather: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Build lightweight forecast-risk alerts from Open-Meteo current values.
+
+    These are not official warnings. They provide international situational
+    awareness when no official alert provider is configured.
+    """
+    if not weather:
+        return []
+
+    risks: List[Tuple[str, str, str]] = []
+    code = int(weather.get("weather_code") or 0)
+    wind_gust = weather.get("wind_gusts_mph")
+    wind_speed = weather.get("wind_speed_mph")
+    precip = weather.get("precipitation_in")
+    rain = weather.get("rain")
+    snow = weather.get("snowfall")
+
+    if code >= 95:
+        risks.append((
+            "Thunderstorm Risk",
+            "Moderate",
+            "Open-Meteo current conditions indicate thunderstorm weather near the configured location.",
+        ))
+    if wind_gust is not None and wind_gust >= 45:
+        risks.append((
+            "High Wind Risk",
+            "Moderate" if wind_gust < 58 else "Severe",
+            f"Open-Meteo reports wind gusts near {round(wind_gust)} mph.",
+        ))
+    elif wind_speed is not None and wind_speed >= 35:
+        risks.append((
+            "Strong Wind Risk",
+            "Moderate",
+            f"Open-Meteo reports sustained wind near {round(wind_speed)} mph.",
+        ))
+    if precip is not None and precip >= 0.25:
+        risks.append((
+            "Heavy Precipitation Risk",
+            "Moderate",
+            f"Open-Meteo reports recent precipitation near {precip:.2f} inches.",
+        ))
+    elif rain is not None and rain >= 0.25:
+        risks.append((
+            "Heavy Rain Risk",
+            "Moderate",
+            f"Open-Meteo reports recent rain near {rain:.2f} inches.",
+        ))
+    if snow is not None and snow >= 1:
+        risks.append((
+            "Snow Risk",
+            "Moderate",
+            f"Open-Meteo reports recent snowfall near {snow:.1f} inches.",
+        ))
+
+    alerts: List[Dict[str, Any]] = []
+    now = time.time()
+    for event, severity, description in risks:
+        alert_type = "warning" if severity in {"Severe", "Extreme"} else "watch"
+        alerts.append({
+            "id": f"open-meteo-risk-{event.lower().replace(' ', '-')}",
+            "event": event,
+            "severity": severity,
+            "alert_type": alert_type,
+            "certainty": "Observed",
+            "urgency": "Expected",
+            "headline": f"{event} based on Open-Meteo conditions",
+            "description": (
+                description
+                + " This is a forecast/observed-condition risk indicator, not an official government warning."
+            ),
+            "instruction": "",
+            "sender": "Open-Meteo risk estimate",
+            "effective": "",
+            "expires": "",
+            "area_desc": weather.get("location_name") or "",
+            "geometry": None,
+            "overlay_categories": _classify_alert_categories(event, alert_type),
+            "source": "open_meteo_risk",
+            "timestamp": now,
+        })
+    return alerts
+
+
 # ── Weather Manager (caching + periodic refresh) ─────────────────────
 
 class WeatherManager:
@@ -618,6 +765,11 @@ class WeatherManager:
         return self._alert_scope_info
 
     def _get_alert_poll_interval_seconds(self) -> int:
+        provider = (getattr(self.config.weather, "alert_provider", "auto") or "auto").strip().lower()
+        if provider == "weatherbit":
+            minutes = max(30, int(getattr(self.config.weather, "weatherbit_poll_minutes", 30) or 30))
+            return minutes * 60
+
         normal = 300
         if (
             self.config.weather.elevated_alert_polling_enabled
@@ -676,26 +828,47 @@ class WeatherManager:
         return self._current
 
     async def get_alerts(self, force: bool = False) -> List[Dict[str, Any]]:
-        """Get NWS alerts, fetching from API if cache is stale."""
+        """Get configured weather alerts, fetching from API if cache is stale."""
         if not self.is_configured or not self._location:
-            return []
-
-        if self._location.get("country") and self._location.get("country") != "US":
-            self._alerts = []
-            self._last_alert_fetch = time.time()
             return []
 
         cache_seconds = self._get_alert_poll_interval_seconds()
         if not force and self._alerts is not None and (time.time() - self._last_alert_fetch < cache_seconds):
             return self._alerts
 
-        alerts = await fetch_nws_alerts(
-            self._location["latitude"],
-            self._location["longitude"],
-            self.config.weather.alert_range_miles,
-            self.config.weather.alert_scope_mode,
-            (self.config.weather.alert_scope_zone or "").strip().upper(),
-        )
+        country = (self._location.get("country") or "").upper()
+        provider = (getattr(self.config.weather, "alert_provider", "auto") or "auto").strip().lower()
+        if provider in {"nws", "open_meteo_risk"}:
+            provider = "auto"
+        if provider == "auto":
+            provider = "nws" if country == "US" else "open_meteo_risk"
+
+        lat = self._location["latitude"]
+        lon = self._location["longitude"]
+        alerts: List[Dict[str, Any]] = []
+
+        if provider == "disabled":
+            alerts = []
+        elif provider == "weatherbit":
+            alerts = await fetch_weatherbit_alerts(
+                lat,
+                lon,
+                getattr(self.config.weather, "weatherbit_api_key", "") or "",
+            )
+        elif provider == "open_meteo_risk":
+            current = await self.get_current_weather(force=force)
+            alerts = build_open_meteo_risk_alerts(current)
+        elif provider == "nws" and country == "US":
+            alerts = await fetch_nws_alerts(
+                lat,
+                lon,
+                self.config.weather.alert_range_miles,
+                self.config.weather.alert_scope_mode,
+                (self.config.weather.alert_scope_zone or "").strip().upper(),
+            )
+        else:
+            alerts = []
+
         self._alerts = alerts
         self._last_alert_fetch = time.time()
         if self._alerts_trigger_elevated_mode(alerts):
@@ -732,6 +905,8 @@ class WeatherManager:
             "configured": self.is_configured,
             "refresh_minutes": self.config.weather.refresh_minutes,
             "location": self._location,
+            "current_provider": self.config.weather.current_provider,
+            "alert_provider": self.config.weather.alert_provider,
             "current": current,
             "alerts": alerts,
             "ducting": ducting,
@@ -752,5 +927,6 @@ class WeatherManager:
                 "radar_animate": self.config.weather.radar_animate,
                 "alert_overlay_enabled": self.config.weather.alert_overlay_enabled,
                 "alert_overlay_groups": self.config.weather.alert_overlay_groups,
+                "alert_provider": self.config.weather.alert_provider,
             },
         }

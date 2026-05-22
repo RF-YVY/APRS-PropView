@@ -4,7 +4,7 @@
 Launch this to start the application. The web interface opens automatically.
 """
 
-APP_VERSION = "1.4.2"
+APP_VERSION = "1.4.3"
 
 import asyncio
 import sys

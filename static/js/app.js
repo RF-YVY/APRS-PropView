@@ -20,6 +20,7 @@
     let lastGpsPost = 0;
     let settingsLoading = false;
     let settingsDirty = false;
+    let lastNonSettingsTab = 'tab-rf';
 
     async function loadConfig(force) {
         if (force || !window.pvConfigPromise) {
@@ -112,6 +113,12 @@
 
         // Init tab switching
         initTabs();
+        document.addEventListener('click', (e) => {
+            if (e.target?.closest?.('#btn-close-settings')) {
+                e.preventDefault();
+                closeSettingsPane();
+            }
+        }, true);
         document.querySelector('.tab-btn.active')?.dispatchEvent(new Event('click'));
 
         // Organize settings UI before control bindings are attached
@@ -201,6 +208,10 @@
         const btn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
         if (!btn) return;
 
+        if (tabId !== 'tab-settings') {
+            lastNonSettingsTab = tabId;
+        }
+
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
         btn.classList.add('active');
@@ -222,6 +233,11 @@
             setTimeout(() => window.pvMap?.map?.invalidateSize(), 300);
         }
     }
+
+    function closeSettingsPane() {
+        _activateDesktopTab(lastNonSettingsTab || 'tab-rf');
+    }
+    window.pvCloseSettingsPane = closeSettingsPane;
 
     function initTabs() {
         window.pvActivateTab = _activateDesktopTab;
@@ -311,19 +327,23 @@
         noResults.textContent = 'No settings matched that search.';
 
         function updateStickyOffsets() {
+            const headerHeight = panel.querySelector('.settings-pane-header')?.offsetHeight || 0;
             const toolbarHeight = toolbar.offsetHeight || 0;
-            quickNav.style.top = `${toolbarHeight}px`;
-            panel.style.setProperty('--settings-sticky-offset', `${toolbarHeight + (quickNav.offsetHeight || 0) + 10}px`);
+            toolbar.style.top = `${headerHeight}px`;
+            quickNav.style.top = `${headerHeight + toolbarHeight}px`;
+            panel.style.setProperty('--settings-sticky-offset', `${headerHeight + toolbarHeight + (quickNav.offsetHeight || 0) + 10}px`);
         }
 
         function scrollSectionIntoView(section) {
             const toolbarHeight = toolbar.offsetHeight || 0;
             const quickNavHeight = quickNav.offsetHeight || 0;
+            const headerHeight = panel.querySelector('.settings-pane-header')?.offsetHeight || 0;
             const extraGap = 8;
             const targetTop =
                 panel.scrollTop +
                 section.getBoundingClientRect().top -
                 panel.getBoundingClientRect().top -
+                headerHeight -
                 toolbarHeight -
                 quickNavHeight -
                 extraGap;
@@ -1245,7 +1265,7 @@
 
     function renderUpdateStatus(data, els) {
         const { messageEl, detailEl, linkEl, footerEl } = els;
-        const currentVersion = data?.current_version || '1.4.2';
+        const currentVersion = data?.current_version || '1.4.3';
         const latestVersion = data?.latest_version || currentVersion;
         const releaseUrl = data?.release_url || 'https://github.com/RF-YVY/APRS-PropView/releases';
         const publishedAt = data?.published_at ? formatReleaseDate(data.published_at) : '';
@@ -1408,8 +1428,7 @@
         if (settingsLoading) return;
         settingsDirty = true;
         const statusEl = document.getElementById('settings-status');
-        const btn = document.getElementById('btn-save-settings');
-        if (btn) btn.classList.add('dirty');
+        document.querySelectorAll('.btn-save-settings').forEach((btn) => btn.classList.add('dirty'));
         if (statusEl) {
             statusEl.style.display = 'block';
             statusEl.className = 'settings-status warning dirty';
@@ -1419,7 +1438,7 @@
 
     function clearSettingsDirty() {
         settingsDirty = false;
-        document.getElementById('btn-save-settings')?.classList.remove('dirty');
+        document.querySelectorAll('.btn-save-settings').forEach((btn) => btn.classList.remove('dirty'));
     }
 
     function toggleBrowserGps() {
@@ -1611,6 +1630,10 @@
             // Weather
             setChk('cfg-wx-enabled', cfg.weather?.enabled);
             setVal('cfg-wx-location', cfg.weather?.location_code);
+            setVal('cfg-wx-current-provider', cfg.weather?.current_provider || 'open_meteo');
+            setVal('cfg-wx-alert-provider', normalizeWeatherAlertProvider(cfg.weather?.alert_provider || 'auto'));
+            setVal('cfg-wx-weatherbit-key', cfg.weather?.weatherbit_api_key || '');
+            setVal('cfg-wx-weatherbit-poll', cfg.weather?.weatherbit_poll_minutes ?? 30);
             setVal('cfg-wx-range', cfg.weather?.alert_range_miles);
             setVal('cfg-wx-refresh', cfg.weather?.refresh_minutes);
             setChk('cfg-wx-radar-enabled', cfg.weather?.radar_enabled);
@@ -1627,6 +1650,7 @@
             setVal('cfg-wx-elevated-events', (cfg.weather?.elevated_trigger_events || []).join(', '));
             updateWeatherOverlayOpacityLabel();
             updateWeatherAlertGroupSummary();
+            updateWeatherProviderUi();
             updateWeatherAlertScopePreview();
 
             // MQTT
@@ -1653,9 +1677,9 @@
     }
 
     async function saveSettings() {
-        const btn = document.getElementById('btn-save-settings');
+        const buttons = Array.from(document.querySelectorAll('.btn-save-settings'));
         const statusEl = document.getElementById('settings-status');
-        if (btn) btn.disabled = true;
+        buttons.forEach((btn) => { btn.disabled = true; });
 
         const body = {
             station: {
@@ -1760,6 +1784,10 @@
             weather: {
                 enabled: getChk('cfg-wx-enabled'),
                 location_code: getVal('cfg-wx-location'),
+                current_provider: getVal('cfg-wx-current-provider') || 'open_meteo',
+                alert_provider: normalizeWeatherAlertProvider(getVal('cfg-wx-alert-provider') || 'auto'),
+                weatherbit_api_key: getVal('cfg-wx-weatherbit-key') || '',
+                weatherbit_poll_minutes: parseInt(getVal('cfg-wx-weatherbit-poll')) || 30,
                 alert_range_miles: getVal('cfg-wx-range'),
                 refresh_minutes: getVal('cfg-wx-refresh'),
                 radar_enabled: getChk('cfg-wx-radar-enabled'),
@@ -1830,7 +1858,7 @@
                 }, 5000);
             }
         } finally {
-            if (btn) btn.disabled = false;
+            buttons.forEach((btn) => { btn.disabled = false; });
         }
     }
 
@@ -1869,6 +1897,7 @@
 
     function initWeatherSettingsUi() {
         document.getElementById('cfg-wx-radar-opacity')?.addEventListener('input', updateWeatherOverlayOpacityLabel);
+        document.getElementById('cfg-wx-alert-provider')?.addEventListener('change', updateWeatherProviderUi);
         document.querySelectorAll('input[name="cfg-wx-alert-group"]').forEach((el) => {
             el.addEventListener('change', updateWeatherAlertGroupSummary);
         });
@@ -1877,7 +1906,31 @@
         document.getElementById('btn-wx-resolve-scope')?.addEventListener('click', resolveWeatherAlertScope);
         updateWeatherOverlayOpacityLabel();
         updateWeatherAlertGroupSummary();
+        updateWeatherProviderUi();
         updateWeatherAlertScopePreview();
+    }
+
+    function updateWeatherProviderUi() {
+        const provider = normalizeWeatherAlertProvider(getVal('cfg-wx-alert-provider') || 'auto');
+        setVal('cfg-wx-alert-provider', provider);
+        document.querySelectorAll('.wx-provider-key').forEach((el) => {
+            el.style.display = el.classList.contains(`wx-provider-${provider}`) ? 'flex' : 'none';
+        });
+
+        const note = document.getElementById('cfg-wx-provider-note');
+        if (!note) return;
+        const notes = {
+            auto: 'Auto uses NWS official alerts for US locations and Open-Meteo risk indicators elsewhere. Open-Meteo risk is not an official government warning feed.',
+            weatherbit: 'Weatherbit requires your API key. The free tier is limited, so polling defaults to 30 minutes to stay under about 50 requests per day.',
+            disabled: 'Weather alerts are disabled. Current conditions and radar can still run if weather and radar are enabled.',
+        };
+        note.textContent = notes[provider] || notes.auto;
+    }
+    window.pvUpdateWeatherProviderUi = updateWeatherProviderUi;
+
+    function normalizeWeatherAlertProvider(provider) {
+        if (provider === 'nws' || provider === 'open_meteo_risk') return 'auto';
+        return ['auto', 'weatherbit', 'disabled'].includes(provider) ? provider : 'auto';
     }
 
     function initTncProfileSettings() {
@@ -2095,7 +2148,10 @@
     });
 
     // Save button
-    document.getElementById('btn-save-settings')?.addEventListener('click', saveSettings);
+    document.querySelectorAll('.btn-save-settings').forEach((btn) => {
+        btn.addEventListener('click', saveSettings);
+    });
+    document.getElementById('btn-close-settings')?.addEventListener('click', closeSettingsPane);
 
     // Live font preview when changed in settings
     document.getElementById('cfg-web-font')?.addEventListener('change', (e) => {

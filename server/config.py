@@ -115,6 +115,10 @@ regional_full_dist_km = 200.0
 [weather]
 enabled = false
 location_code = ""
+current_provider = "open_meteo"
+alert_provider = "auto"
+weatherbit_api_key = ""
+weatherbit_poll_minutes = 30
 alert_range_miles = 50
 refresh_minutes = 15
 radar_enabled = false
@@ -280,6 +284,10 @@ class PropagationConfig:
 class WeatherConfig:
     enabled: bool = False
     location_code: str = ""       # US zip code or ICAO code
+    current_provider: str = "open_meteo"
+    alert_provider: str = "auto"   # auto, nws, open_meteo_risk, weatherbit, disabled
+    weatherbit_api_key: str = ""
+    weatherbit_poll_minutes: int = 30
     alert_range_miles: int = 50    # Range for severe weather alerts
     refresh_minutes: int = 15      # How often to refresh weather data
     radar_enabled: bool = False
@@ -491,6 +499,10 @@ class Config:
             "[weather]",
             f"enabled = {'true' if self.weather.enabled else 'false'}",
             f'location_code = "{esc(self.weather.location_code)}"',
+            f'current_provider = "{esc(self.weather.current_provider)}"',
+            f'alert_provider = "{esc(self.weather.alert_provider)}"',
+            f'weatherbit_api_key = "{esc(self.weather.weatherbit_api_key)}"',
+            f"weatherbit_poll_minutes = {int(self.weather.weatherbit_poll_minutes)}",
             f"alert_range_miles = {int(self.weather.alert_range_miles)}",
             f"refresh_minutes = {int(self.weather.refresh_minutes)}",
             f"radar_enabled = {'true' if self.weather.radar_enabled else 'false'}",

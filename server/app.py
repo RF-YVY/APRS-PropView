@@ -1030,6 +1030,10 @@ def create_app(
             "weather": {
                 "enabled": config.weather.enabled,
                 "location_code": config.weather.location_code,
+                "current_provider": config.weather.current_provider,
+                "alert_provider": config.weather.alert_provider,
+                "weatherbit_api_key": _mask_passcode(config.weather.weatherbit_api_key),
+                "weatherbit_poll_minutes": config.weather.weatherbit_poll_minutes,
                 "alert_range_miles": config.weather.alert_range_miles,
                 "refresh_minutes": config.weather.refresh_minutes,
                 "radar_enabled": config.weather.radar_enabled,
@@ -1306,6 +1310,16 @@ def create_app(
                 wc = body["weather"]
                 config.weather.enabled = bool(wc.get("enabled", config.weather.enabled))
                 config.weather.location_code = (wc.get("location_code", config.weather.location_code) or "").strip()
+                current_provider = (wc.get("current_provider", config.weather.current_provider) or "open_meteo").strip().lower()
+                config.weather.current_provider = current_provider if current_provider in {"open_meteo"} else "open_meteo"
+                alert_provider = (wc.get("alert_provider", config.weather.alert_provider) or "auto").strip().lower()
+                if alert_provider in {"nws", "open_meteo_risk"}:
+                    alert_provider = "auto"
+                config.weather.alert_provider = alert_provider if alert_provider in {"auto", "weatherbit", "disabled"} else "auto"
+                new_weatherbit_key = wc.get("weatherbit_api_key", "")
+                if new_weatherbit_key and "*" not in new_weatherbit_key:
+                    config.weather.weatherbit_api_key = new_weatherbit_key.strip()
+                config.weather.weatherbit_poll_minutes = max(30, int(wc.get("weatherbit_poll_minutes", config.weather.weatherbit_poll_minutes)))
                 config.weather.alert_range_miles = int(wc.get("alert_range_miles", config.weather.alert_range_miles))
                 config.weather.refresh_minutes = max(5, int(wc.get("refresh_minutes", config.weather.refresh_minutes)))
                 config.weather.radar_enabled = bool(wc.get("radar_enabled", config.weather.radar_enabled))

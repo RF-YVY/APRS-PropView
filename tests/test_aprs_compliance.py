@@ -78,9 +78,9 @@ class APRSISComplianceTests(unittest.TestCase):
         config = Config()
         config.station.callsign = "K5ABC"
         config.aprs_is.passcode = "12345"
-        client = APRSISClient(config, lambda packet: None, app_version="1.4.2")
+        client = APRSISClient(config, lambda packet: None, app_version="1.4.3")
 
-        self.assertIn("vers APRSPropView 1.4.2", client._build_login())
+        self.assertIn("vers APRSPropView 1.4.3", client._build_login())
 
 
 class MessageAddresseeValidationTests(unittest.TestCase):

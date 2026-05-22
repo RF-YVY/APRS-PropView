@@ -1,6 +1,6 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.4.2** | May 21, 2026
+**Version 1.4.3** | May 22, 2026
 
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 
@@ -9,7 +9,7 @@
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
 
-Version 1.4.2 adds custom map tile support for local/offline tile servers, international ICAO weather lookup fallback, faster first-load behavior, and UI performance improvements.
+Version 1.4.3 adds a full settings pane, international weather alert source controls, Weatherbit quota-aware polling, Raspberry Pi dependency fixes, and updated in-app help/about resources.
 
 Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs/linux-raspberry-pi.md).
 
@@ -233,7 +233,7 @@ This project is licensed under the Apache License, Version 2.0. See
 
 ## About
 
-APRS PropView was created by **Brett Wicker** with the assistance of an **AI agent**.
+APRS PropView was created by **Brett Wicker - K5YVY** with the assistance of an **AI agent**.
 
 Official project support: [Donate via PayPal](https://www.paypal.com/ncp/payment/2TZHQAECTSDGC)
 
