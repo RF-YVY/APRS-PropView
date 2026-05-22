@@ -9,7 +9,7 @@ systemd. It works well on Raspberry Pi OS, Debian, and Ubuntu.
 - Raspberry Pi OS 64-bit, Debian, or Ubuntu
 - Network access for APRS-IS and the web dashboard
 - Optional KISS TNC over USB serial, Bluetooth serial, or TCP
-- Optional Direwolf or Soundmodem by uz7ho KISS TCP service
+- Optional Direwolf KISS TCP service
 
 ## Install System Packages
 
@@ -93,6 +93,21 @@ sudo systemctl stop aprs-propview
 sudo systemctl restart aprs-propview
 sudo systemctl status aprs-propview
 journalctl -u aprs-propview -f
+```
+
+## Troubleshooting Dependency Installs
+
+If `pip install -r requirements.txt` fails while building `uvloop` on a
+Raspberry Pi or other 32-bit ARM Linux system, update to the latest APRS
+PropView requirements and reinstall. `uvloop` is an optional Uvicorn performance
+extra, not required by APRS PropView.
+
+For an existing virtualenv created from older requirements:
+
+```bash
+source /opt/aprs-propview/.venv/bin/activate
+pip uninstall -y uvloop
+pip install -r /opt/aprs-propview/requirements.txt
 ```
 
 ## Serial TNC Notes
