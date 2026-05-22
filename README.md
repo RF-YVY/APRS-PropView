@@ -1,18 +1,10 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.4.0** | May 19, 2026
-[![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
-
-<img width="1536" height="1024" alt="APRS PropView promo img" src="https://github.com/user-attachments/assets/9942c9df-1599-485c-80a2-4f475c9ff2ae" />
-<br>
+**Version 1.4.2** | May 22, 2026
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
 
-
-Watch YouTube Video here: https://www.youtube.com/watch?v=OyX6RaNevUk
-
-
-Version 1.4.0 adds relaxed APRS message addressee handling, global callsign support, and GPS ingestion options.
+Version 1.4.2 adds custom map tile support for local/offline tile servers, international ICAO weather lookup fallback, faster first-load behavior, and UI performance improvements.
 
 Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs/linux-raspberry-pi.md).
 
@@ -25,6 +17,7 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **RF Station Tracking** — Separate list of stations heard directly on RF
 - **APRS-IS Station Tracking** — Separate list of stations received from APRS-IS
 - **Propagation Map** — Interactive Leaflet map with APRS sprite icons (16px markers, 32px in popup), directional arrowed path lines, and light/dark theme toggle
+- **Custom Map Tiles** — Point the map at a local XYZ tile server for offline/field use
 - **Dual Propagation Meters** — Header gauges: "VHF Propagation My Station" (direct-heard RF only) and "Regional VHF Propagation" (all RF including via digipeater), each with configurable scoring thresholds
 - **Animated Path Lines** — Dashed propagation lines flow from remote stations toward your position, color-coded by distance (red/orange/green/purple)
 - **Callsign Labels** — Toggle persistent callsign labels above each station icon on the map
@@ -56,12 +49,12 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 ### Weather
 
 - **Current Conditions Banner** - Live weather banner on the map view (temperature, wind, humidity, pressure, feels-like) powered by Open-Meteo
-- **US Zip Code & ICAO Location** - Set your weather location by entering a US zip code or ICAO airport code
+- **US Zip Code & ICAO Location** - Set your weather location by entering a US zip code or worldwide ICAO airport code
 - **Severe Weather Alerts** - NWS active alerts displayed as color-coded banners (red for warnings, orange for watches/advisories)
 - **Configurable Alert Range** - Select how far from your location to monitor severe weather (default 50 miles)
 - **NWS Alert Awareness** - Current conditions, animated radar overlays, and NWS alert banners/polygons for weather situational awareness
 - **Weather Radar Overlay** - Optional animated radar tiles layered directly on the map with adjustable opacity for fast visual storm tracking
-- **NWS Alert Polygons** - Optional map overlay for severe weather polygons, with per-category filters for warnings, watches, flood, winter, marine, fire/heat, and other alerts
+- **NWS Alert Polygons** - Optional US map overlay for severe weather polygons, with per-category filters for warnings, watches, flood, winter, marine, fire/heat, and other alerts
 - **Adaptive Alert Polling** - Automatically increases alert checks to a 1-minute cadence when selected trigger events, such as Tornado Watch or Severe Thunderstorm Watch, become active
 - **Point or County/Zone Scope** - Monitor alerts for your exact station point or switch to a county/forecast-zone UGC target for broader warning coverage
 - **Adaptive Refresh Strategy** - Weather condition refresh stays user-configurable while alert polling cadence can increase automatically during elevated severe-weather scenarios
@@ -153,7 +146,7 @@ All settings are in `config.toml` and can be edited from the web UI **Settings**
 | `[aprs_is]` | Server, port, passcode, filter string |
 | `[kiss_serial]` | Serial RF TNC port, baud rate, KISS/TNC2 monitor mode, flow control, and optional startup profile |
 | `[kiss_tcp]` | TCP KISS TNC host and port |
-| `[web]` | Web interface bind address, port, font, ghost time, expire time |
+| `[web]` | Web interface bind address, port, font, custom map tile source, ghost time, expire time |
 | `[tracking]` | Station age limits and cleanup intervals |
 | `[database]` | SQLite database path |
 | `[propagation]` | Scoring thresholds for My Station and Regional propagation meters |

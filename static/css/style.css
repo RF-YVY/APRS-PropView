@@ -899,6 +899,29 @@ body {
     flex-shrink: 0;
 }
 
+.station-delete {
+    width: 28px;
+    height: 28px;
+    border: 1px solid rgba(248, 81, 73, 0.32);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+    font-size: 18px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.station-delete:hover {
+    background: rgba(248, 81, 73, 0.16);
+    border-color: rgba(248, 81, 73, 0.62);
+    color: #ff7b72;
+}
+
 .station-distance {
     font-size: 12px;
     font-weight: 600;
@@ -1338,7 +1361,7 @@ canvas {
 .callsign-label {
     background: rgba(13, 17, 23, 0.85) !important;
     border: 1px solid var(--border) !important;
-    color: var(--text) !important;
+    color: #e6edf3 !important;
     font-size: 10px !important;
     font-weight: 600 !important;
     padding: 1px 4px !important;

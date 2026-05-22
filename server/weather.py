@@ -14,6 +14,7 @@ import re
 import time
 import urllib.request
 import urllib.error
+import urllib.parse
 from typing import Optional, Dict, Any, List, Tuple
 
 from server.config import Config
@@ -93,7 +94,7 @@ def _classify_alert_categories(event: str, alert_type: str) -> List[str]:
     return list(dict.fromkeys(categories))
 
 
-def _sync_http_get(url: str, timeout: int = 10, retries: int = 1) -> Optional[Dict]:
+def _sync_http_get(url: str, timeout: int = 10, retries: int = 1, log_fail: bool = True) -> Optional[Dict]:
     """Synchronous HTTP GET returning parsed JSON, or None on failure.
 
     Retries on timeout/connection errors with exponential backoff.
@@ -117,21 +118,22 @@ def _sync_http_get(url: str, timeout: int = 10, retries: int = 1) -> Optional[Di
                 import time as _time
                 _time.sleep(2 ** attempt)  # 1s, 2s backoff
                 logger.debug(f"Retrying ({attempt + 1}/{retries}) {url}")
-    logger.warning(f"HTTP GET failed for {url}: {last_err}")
+    if log_fail:
+        logger.warning(f"HTTP GET failed for {url}: {last_err}")
     return None
 
 
-async def _async_http_get(url: str, timeout: int = 10, retries: int = 1) -> Optional[Dict]:
+async def _async_http_get(url: str, timeout: int = 10, retries: int = 1, log_fail: bool = True) -> Optional[Dict]:
     """Run a synchronous HTTP GET on an executor to keep the event loop free."""
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
-        None, _sync_http_get, url, timeout, retries
+        None, _sync_http_get, url, timeout, retries, log_fail
     )
 
 
 # ── Geocoding helpers ─────────────────────────────────────────────────
 
-async def _resolve_zip(zip_code: str) -> Optional[Tuple[float, float, str]]:
+async def _resolve_zip(zip_code: str) -> Optional[Tuple[float, float, str, str]]:
     """Resolve a US zip code → (lat, lon, place_name)."""
     data = await _async_http_get(f"http://api.zippopotam.us/us/{zip_code}")
     if not data or "places" not in data or len(data["places"]) == 0:
@@ -140,13 +142,14 @@ async def _resolve_zip(zip_code: str) -> Optional[Tuple[float, float, str]]:
     lat = float(p.get("latitude", 0))
     lon = float(p.get("longitude", 0))
     name = f"{p.get('place name', '')}, {p.get('state abbreviation', '')}"
-    return lat, lon, name.strip(", ")
+    return lat, lon, name.strip(", "), "US"
 
 
-async def _resolve_icao(icao: str) -> Optional[Tuple[float, float, str]]:
-    """Resolve an ICAO airport code → (lat, lon, station_name) via NWS."""
+async def _resolve_icao_nws(icao: str) -> Optional[Tuple[float, float, str, str]]:
+    """Resolve a US ICAO/NWS station code → (lat, lon, station_name, country) via NWS."""
     data = await _async_http_get(
-        f"https://api.weather.gov/stations/{icao.upper()}"
+        f"https://api.weather.gov/stations/{icao.upper()}",
+        log_fail=False,
     )
     if not data or "geometry" not in data:
         return None
@@ -155,7 +158,39 @@ async def _resolve_icao(icao: str) -> Optional[Tuple[float, float, str]]:
         return None
     lon, lat = coords[0], coords[1]
     name = data.get("properties", {}).get("name", icao.upper())
-    return lat, lon, name
+    return lat, lon, name, "US"
+
+
+async def _resolve_icao_aviationweather(icao: str) -> Optional[Tuple[float, float, str, str]]:
+    """Resolve an international ICAO airport code via AviationWeather station info."""
+    station_id = urllib.parse.quote(icao.upper())
+    data = await _async_http_get(
+        f"https://aviationweather.gov/api/data/stationinfo?ids={station_id}&format=json"
+    )
+    if not isinstance(data, list) or not data:
+        return None
+
+    station = next(
+        (
+            item for item in data
+            if (item.get("icaoId") or item.get("id") or "").upper() == icao.upper()
+        ),
+        data[0],
+    )
+    try:
+        lat = float(station.get("lat"))
+        lon = float(station.get("lon"))
+    except (TypeError, ValueError):
+        return None
+
+    name = station.get("site") or station.get("icaoId") or station.get("id") or icao.upper()
+    country = (station.get("country") or "").upper()
+    return lat, lon, name, country
+
+
+async def _resolve_icao(icao: str) -> Optional[Tuple[float, float, str, str]]:
+    """Resolve an ICAO airport code using NWS first, then a worldwide station fallback."""
+    return await _resolve_icao_nws(icao) or await _resolve_icao_aviationweather(icao)
 
 
 async def resolve_location(code: str) -> Optional[Dict[str, Any]]:
@@ -174,8 +209,8 @@ async def resolve_location(code: str) -> Optional[Dict[str, Any]]:
     if not result:
         return None
 
-    lat, lon, name = result
-    return {"latitude": lat, "longitude": lon, "name": name}
+    lat, lon, name, country = result
+    return {"latitude": lat, "longitude": lon, "name": name, "country": country}
 
 
 async def resolve_alert_scope_from_point(lat: float, lon: float) -> Optional[Dict[str, Any]]:
@@ -552,8 +587,10 @@ class WeatherManager:
             # Reset caches to force fresh fetch
             self._last_fetch = 0
             self._last_alert_fetch = 0
+            self._last_ducting_fetch = 0
             self._alert_scope_info = None
-            logger.info(f"Weather location resolved: {result['name']} "
+            country = f", {result.get('country')}" if result.get("country") else ""
+            logger.info(f"Weather location resolved: {result['name']}{country} "
                         f"({result['latitude']:.4f}, {result['longitude']:.4f})")
         return result
 
@@ -566,6 +603,9 @@ class WeatherManager:
             await self.resolve_and_set_location(self.config.weather.location_code)
 
         if not self._location:
+            return None
+
+        if self._location.get("country") and self._location.get("country") != "US":
             return None
 
         if self._alert_scope_info and not force:
@@ -638,6 +678,11 @@ class WeatherManager:
     async def get_alerts(self, force: bool = False) -> List[Dict[str, Any]]:
         """Get NWS alerts, fetching from API if cache is stale."""
         if not self.is_configured or not self._location:
+            return []
+
+        if self._location.get("country") and self._location.get("country") != "US":
+            self._alerts = []
+            self._last_alert_fetch = time.time()
             return []
 
         cache_seconds = self._get_alert_poll_interval_seconds()

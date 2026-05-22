@@ -15,6 +15,7 @@ class StationManager {
         this.maxPackets = 500;
         this._listClickBound = false;
         this.hasLoadedInitialStations = false;
+        this._renderPending = { rf: false, aprs_is: false };
     }
 
     init() {
@@ -34,7 +35,7 @@ class StationManager {
         }
 
         window.pvMap.addOrUpdateStation(station);
-        this._renderStationList(source);
+        this._scheduleRenderStationList(source);
     }
 
     loadInitialStations(rfList, isList) {
@@ -85,6 +86,16 @@ class StationManager {
     render() {
         this._renderStationList('rf');
         this._renderStationList('aprs_is');
+    }
+
+    _scheduleRenderStationList(source) {
+        const key = source === 'rf' ? 'rf' : 'aprs_is';
+        if (this._renderPending[key]) return;
+        this._renderPending[key] = true;
+        requestAnimationFrame(() => {
+            this._renderPending[key] = false;
+            this._renderStationList(key);
+        });
     }
 
     refreshRelativeTimes() {

@@ -54,6 +54,8 @@ class PropViewMap {
         this.radarMetadata = null;
         this.radarMetadataFetchedAt = 0;
         this.radarMetadataRequest = null;
+        this.baseTileLayer = null;
+        this.mapTileConfig = this._defaultTileConfig();
     }
 
     init(lat, lng) {
@@ -69,11 +71,7 @@ class PropViewMap {
             attributionControl: true,
         });
 
-        // Dark tile layer
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-            attribution: '&copy; OpenStreetMap contributors'
-        }).addTo(this.map);
+        this._loadMapTileConfig();
 
         // Default to dark mode
         this.map.getContainer().classList.add('dark-tiles');
@@ -111,6 +109,71 @@ class PropViewMap {
         this._restoreUIState();
 
         return this;
+    }
+
+    _defaultTileConfig() {
+        return {
+            map_tile_source: 'osm',
+            map_tile_url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+            map_tile_attribution: '&copy; OpenStreetMap contributors',
+            map_tile_max_zoom: 19,
+        };
+    }
+
+    _normalizeTileConfig(config) {
+        const defaults = this._defaultTileConfig();
+        const source = (config?.map_tile_source || defaults.map_tile_source).trim().toLowerCase();
+        if (source === 'custom' && config?.map_tile_url) {
+            return {
+                map_tile_source: 'custom',
+                map_tile_url: config.map_tile_url,
+                map_tile_attribution: config.map_tile_attribution || '',
+                map_tile_max_zoom: parseInt(config.map_tile_max_zoom, 10) || defaults.map_tile_max_zoom,
+            };
+        }
+        return defaults;
+    }
+
+    async _loadMapTileConfig() {
+        try {
+            const cfg = window.pvConfigPromise
+                ? await window.pvConfigPromise
+                : await fetch('/api/config').then((resp) => resp.json());
+            this.setMapTileConfig(cfg.web || {});
+        } catch (e) {
+            console.warn('Failed to load map tile config, using default OSM tiles:', e);
+            this.setMapTileConfig(this._defaultTileConfig());
+        }
+    }
+
+    setMapTileConfig(config) {
+        if (!this.map) return;
+        const next = this._normalizeTileConfig(config);
+        const prev = this.mapTileConfig || {};
+        if (
+            this.baseTileLayer &&
+            prev.map_tile_source === next.map_tile_source &&
+            prev.map_tile_url === next.map_tile_url &&
+            prev.map_tile_attribution === next.map_tile_attribution &&
+            prev.map_tile_max_zoom === next.map_tile_max_zoom
+        ) {
+            return;
+        }
+
+        if (this.baseTileLayer) {
+            this.map.removeLayer(this.baseTileLayer);
+        }
+
+        const options = {
+            maxZoom: Math.min(22, Math.max(1, parseInt(next.map_tile_max_zoom, 10) || 19)),
+            attribution: next.map_tile_attribution,
+        };
+        if (next.map_tile_url.includes('{s}')) {
+            options.subdomains = next.map_tile_source === 'custom' ? 'abc' : 'abc';
+        }
+
+        this.baseTileLayer = L.tileLayer(next.map_tile_url, options).addTo(this.map);
+        this.mapTileConfig = next;
     }
 
     setMyPosition(lat, lng, callsign) {

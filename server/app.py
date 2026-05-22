@@ -3,6 +3,7 @@
 import re
 import time
 import logging
+import urllib.parse
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -46,6 +47,7 @@ _HOSTNAME_RE = re.compile(r'^[A-Za-z0-9._-]{1,253}$')
 _SAFE_PATH_RE = re.compile(r'^[A-Za-z0-9._-]{1,100}$')
 _FILTER_TOKEN_RE = re.compile(r'^[a-z]/[\w.\-*/,]+$', re.IGNORECASE)
 _GPS_SOURCE_VALUES = {"browser", "self_packet", "nmea_serial", "nmea_tcp", "nmea_udp", "any"}
+_TILE_URL_TOKENS = ("{z}", "{x}", "{y}")
 # Disallowed callsigns (common placeholders)
 _BLOCKED_CALLSIGNS = {'N0CALL', 'NOCALL', 'MYCALL', 'TEST'}
 _INVALID_CALLSIGN_MESSAGE = "Invalid callsign format. Use 1-9 letters/numbers; APRS-IS will validate your account when connecting."
@@ -216,6 +218,24 @@ def _validate_config(body: Dict[str, Any]) -> Optional[str]:
                     return "Web port must be 1-65535."
             except (ValueError, TypeError):
                 return "Web port must be a number."
+        tile_source = (w.get("map_tile_source", "osm") or "osm").strip().lower()
+        if tile_source not in {"osm", "custom"}:
+            return "Map tile source must be osm or custom."
+        tile_url = (w.get("map_tile_url", "") or "").strip()
+        if tile_source == "custom":
+            if not tile_url:
+                return "Custom map tile URL is required when custom tiles are selected."
+            if not all(token in tile_url for token in _TILE_URL_TOKENS):
+                return "Custom map tile URL must include {z}, {x}, and {y} placeholders."
+            parsed = urllib.parse.urlparse(tile_url)
+            if parsed.scheme not in {"http", "https"}:
+                return "Custom map tile URL must start with http:// or https://."
+            try:
+                max_zoom = int(w.get("map_tile_max_zoom", 19))
+                if max_zoom < 1 or max_zoom > 22:
+                    return "Map tile max zoom must be 1-22."
+            except (ValueError, TypeError):
+                return "Map tile max zoom must be a number."
 
     if "gps" in body:
         g = body["gps"]
@@ -301,10 +321,8 @@ def create_app(
             return
         try:
             update_checker.start_periodic_task()
-            if update_checker.enabled:
-                await update_checker.get_status(force=False)
         except Exception as exc:
-            logger.warning("Initial update check failed: %s", exc)
+            logger.warning("Could not start update checker: %s", exc)
 
     @app.on_event("shutdown")
     async def shutdown_update_check():
@@ -856,7 +874,7 @@ def create_app(
 
     @app.post("/api/weather/resolve-location")
     async def resolve_weather_location(request: Request):
-        """Resolve a US zip code or ICAO code to lat/lon for weather."""
+        """Resolve a US zip code or worldwide ICAO code to lat/lon for weather."""
         try:
             body = await request.json()
             code = (body.get("code", "") or "").strip()
@@ -870,7 +888,7 @@ def create_app(
             if not result:
                 return JSONResponse(
                     status_code=404,
-                    content={"success": False, "message": f"Could not resolve '{code}'. Enter a valid US zip code (e.g. 28801) or ICAO code (e.g. KAVL)."},
+                    content={"success": False, "message": f"Could not resolve '{code}'. Enter a valid US zip code (e.g. 28801) or ICAO code (e.g. KAVL, EGLL)."},
                 )
             return {"success": True, "location": result}
         except Exception as e:
@@ -897,6 +915,11 @@ def create_app(
                 return JSONResponse(
                     status_code=404,
                     content={"success": False, "message": f"Could not resolve '{code}'."},
+                )
+            if location.get("country") and location.get("country") != "US":
+                return JSONResponse(
+                    status_code=400,
+                    content={"success": False, "message": "County/zone alert scopes are only available for US NWS locations."},
                 )
             scope = await resolve_alert_scope_from_point(location["latitude"], location["longitude"])
             if not scope:
@@ -963,6 +986,10 @@ def create_app(
                 "host": config.web.host,
                 "port": config.web.port,
                 "font_family": config.web.font_family,
+                "map_tile_source": config.web.map_tile_source,
+                "map_tile_url": config.web.map_tile_url,
+                "map_tile_attribution": config.web.map_tile_attribution,
+                "map_tile_max_zoom": config.web.map_tile_max_zoom,
                 "ghost_after_minutes": config.web.ghost_after_minutes,
                 "expire_after_minutes": config.web.expire_after_minutes,
                 "mobile_pin": config.web.mobile_pin,
@@ -1160,9 +1187,15 @@ def create_app(
             # Update web config
             if "web" in body:
                 w = body["web"]
+                old_host = config.web.host
+                old_port = config.web.port
                 config.web.host = w.get("host", config.web.host)
                 config.web.port = int(w.get("port", config.web.port))
                 config.web.font_family = w.get("font_family", config.web.font_family) or ""
+                config.web.map_tile_source = (w.get("map_tile_source", config.web.map_tile_source) or "osm").strip().lower()
+                config.web.map_tile_url = (w.get("map_tile_url", config.web.map_tile_url) or "").strip()
+                config.web.map_tile_attribution = (w.get("map_tile_attribution", config.web.map_tile_attribution) or "").strip()
+                config.web.map_tile_max_zoom = min(22, max(1, int(w.get("map_tile_max_zoom", config.web.map_tile_max_zoom))))
                 config.web.ghost_after_minutes = int(w.get("ghost_after_minutes", config.web.ghost_after_minutes))
                 config.web.expire_after_minutes = int(w.get("expire_after_minutes", config.web.expire_after_minutes))
                 config.web.mobile_pin = (w.get("mobile_pin", config.web.mobile_pin) or "").strip()
@@ -1175,7 +1208,10 @@ def create_app(
                     )
                     await update_checker.stop_periodic_task()
                     update_checker.start_periodic_task()
-                need_restart.append("web host/port")
+                if config.web.host != old_host or config.web.port != old_port:
+                    need_restart.append("web host/port")
+                else:
+                    live_applied.append("web UI")
 
             # Update GPS ingestion config
             if "gps" in body:

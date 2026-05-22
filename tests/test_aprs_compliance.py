@@ -38,6 +38,29 @@ class APRSParserComplianceTests(unittest.TestCase):
         self.assertEqual(packet.symbol_table, "A")
         self.assertEqual(packet.comment, "overlay")
 
+    def test_double_bang_telemetry_is_not_compressed_position(self):
+        packet = parse_packet(
+            "K4CCC-9>APRS,NC4CD-1*,WIDE2-1:!!0000005B028C015D27E002E8--------008B01B600000000",
+            source="rf",
+        )
+
+        self.assertEqual(packet.packet_type, "other")
+        self.assertIsNone(packet.latitude)
+        self.assertIsNone(packet.longitude)
+
+    def test_third_party_tcpip_position_preserves_internet_path_metadata(self):
+        packet = parse_packet(
+            "WINNSB>APDW16,NE4SC-12*,WIDE2*:}OH6SC>APRS,TCPIP,WINNSB*:!6247.33N/02248.17E-",
+            source="rf",
+        )
+
+        self.assertEqual(packet.packet_type, "position")
+        self.assertTrue(packet.third_party)
+        self.assertEqual(packet.from_call, "OH6SC")
+        self.assertEqual(packet.path, "TCPIP,WINNSB*")
+        self.assertEqual(packet.outer_from_call, "WINNSB")
+        self.assertEqual(packet.outer_path, "NE4SC-12*,WIDE2*")
+
     def test_uncompressed_course_speed_extension(self):
         packet = parse_packet(
             "CALL>APRS:=4903.50N/07201.75W>088/036Moving",
@@ -55,9 +78,9 @@ class APRSISComplianceTests(unittest.TestCase):
         config = Config()
         config.station.callsign = "K5ABC"
         config.aprs_is.passcode = "12345"
-        client = APRSISClient(config, lambda packet: None, app_version="1.4.0")
+        client = APRSISClient(config, lambda packet: None, app_version="1.4.2")
 
-        self.assertIn("vers APRSPropView 1.4.0", client._build_login())
+        self.assertIn("vers APRSPropView 1.4.2", client._build_login())
 
 
 class MessageAddresseeValidationTests(unittest.TestCase):

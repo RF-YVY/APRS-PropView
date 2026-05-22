@@ -22,10 +22,10 @@
         })();
     </script>
     <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css" />
     <link rel="stylesheet" href="/static/css/style.css" />
     <!-- Leaflet JS -->
-    <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script defer src="/static/vendor/leaflet/leaflet.js"></script>
 </head>
 <body>
     <!-- ── Header Bar ─────────────────────────────────────────── -->
@@ -844,6 +844,25 @@
                             </select>
                         </div>
                         <div class="settings-row">
+                            <label for="cfg-map-tile-source">Map Tiles</label>
+                            <select id="cfg-map-tile-source">
+                                <option value="osm">Online OpenStreetMap</option>
+                                <option value="custom">Custom XYZ / local server</option>
+                            </select>
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-map-tile-url">Tile URL</label>
+                            <input type="text" id="cfg-map-tile-url" placeholder="http://127.0.0.1:8080/tile/{z}/{x}/{y}.png">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-map-tile-attribution">Tile Attribution</label>
+                            <input type="text" id="cfg-map-tile-attribution" placeholder="Optional attribution text">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-map-tile-max-zoom">Tile Max Zoom</label>
+                            <input type="number" id="cfg-map-tile-max-zoom" min="1" max="22" step="1" value="19">
+                        </div>
+                        <div class="settings-row">
                             <label for="cfg-web-ghost">Ghost After (min)</label>
                             <input type="number" id="cfg-web-ghost" min="0" max="1440" step="5" value="60">
                         </div>
@@ -888,7 +907,7 @@
                         <div class="settings-row">
                             <label for="cfg-wx-location">Location Code</label>
                             <div class="wx-location-input">
-                                <input type="text" id="cfg-wx-location" placeholder="US Zip (28801) or ICAO (KAVL)" maxlength="5">
+                                <input type="text" id="cfg-wx-location" placeholder="US Zip (28801) or ICAO (KAVL, EGLL)" maxlength="5">
                                 <button id="btn-wx-resolve" class="btn-small" title="Look up location">🔍 Lookup</button>
                             </div>
                         </div>
@@ -1154,7 +1173,7 @@
                 <div class="about-panel">
                     <div class="about-header">
                         <h2>APRS PropView</h2>
-                        <span id="about-version" class="about-version">v1.4.1</span>
+                        <span id="about-version" class="about-version">v1.4.2</span>
                     </div>
                     <div class="about-section">
                         <p>A real-time APRS digipeater and IGate focused on VHF propagation, live mapping, APRS messaging, analytics, and weather-aware situational awareness.</p>
@@ -1170,7 +1189,7 @@
                     </div>
                     <div class="about-section">
                         <h3>Build Info</h3>
-                        <p>Version: <span id="about-version-detail">1.4.1</span></p>
+                        <p>Version: <span id="about-version-detail">1.4.2</span></p>
                         <p>Release Date: <span id="about-date">May 14, 2026</span></p>
                         <p>Highlights: Update application TOCALL identifier to allocated APPRPV.</p>
                     </div>
@@ -1352,6 +1371,7 @@
                     <p><b>Host/Port</b> — Bind address and port for the web UI (default <code>127.0.0.1:14501</code>). Use <code>0.0.0.0</code> to allow network access.</p>
                     <p><b>Font</b> — Choose a display font for the entire UI.</p>
                     <p><b>UI Theme</b> — Switch the application interface between dark and light mode independently from the map tile theme.</p>
+                    <p><b>Map Tiles</b> — Use the default online OpenStreetMap tiles or point PropView at a custom XYZ tile URL such as a local MBTiles/XYZ server. Custom URLs must include <code>{z}</code>, <code>{x}</code>, and <code>{y}</code>.</p>
                     <p><b>Ghost After (min)</b> — Stations not heard within this time will fade (pulsing dashed border, reduced opacity). Set to 0 to disable ghosting.</p>
                     <p><b>Expire After (min)</b> — Stations not heard within this time are completely removed from the map. Set to 0 to never auto-expire. Ghost time should be shorter than expiry time so stations fade before disappearing.</p>
                     <p><b>Update Checks</b> - Enable or disable automatic GitHub release checks and set how often the app should poll for a newer published version during long-running uptime.</p>
@@ -1362,7 +1382,7 @@
                     <h4>Alerts — Message Notification Channels</h4>
                     <p>Separate channel toggles for forwarding incoming APRS messages to Discord, Email, or SMS — independent from band-opening channels.</p>
                     <h4>Weather</h4>
-                    <p>Enable weather with a US zip code or ICAO airport code. APRS PropView shows a current-conditions banner, optional animated radar overlay, and optional NWS alert polygons on the map.</p>
+                    <p>Enable weather with a US zip code or ICAO airport code. Current conditions support worldwide ICAO stations; NWS alert polygons and county/zone alert scopes are US-only.</p>
                     <p><b>Map Overlays</b> - Turn radar and NWS polygons on or off, adjust radar opacity, enable radar animation, and choose which alert categories should be drawn on the map.</p>
                     <p><b>Alert Polling</b> - Choose point-based alerts or monitor a county/forecast-zone UGC. Use Auto-Fill to resolve the local county or zone from the configured weather location.</p>
                     <p><b>Adaptive Severe Weather Polling</b> - When one of your configured trigger events, such as <code>Tornado Watch</code> or <code>Severe Thunderstorm Watch</code>, becomes active, alert polling automatically speeds up to the elevated interval so newly issued warnings are detected more quickly. After the trigger clears, polling stays elevated through the configured cooldown before returning to normal.</p>

@@ -439,12 +439,12 @@ const S = {
     ws: null, connected: false, myCall: '', messages: [], msgFilter: 'all',
     rfStations: {}, isStations: {},
     map: null, mapReady: false, rfMarkers: {}, isMarkers: {},
-    rfLayer: null, isLayer: null, myMarker: null, myPos: null,
+    rfLayer: null, isLayer: null, myMarker: null, myPos: null, baseTileLayer: null,
     startTime: 0, ghostMinutes: 60, stationMeta: {},
     unreadCount: 0, activeTab: 'mtab-messages', propData: null,
     messagesLoaded: false, stationsLoaded: false, replyContext: null,
     aprsIsConnected: false, aprsIsVerified: false,
-    gpsWatchId: null, lastGpsPost: 0,
+    gpsWatchId: null, lastGpsPost: 0, config: null,
 };
 
 // ── Helpers ────────────────────────────────────────────────
@@ -617,9 +617,13 @@ function initMap() {
 
     S.map = L.map('m-map', { zoomControl: false, attributionControl: false }).setView([lat, lng], zoom);
     L.control.zoom({ position: 'topright' }).addTo(S.map);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        maxZoom: 19, subdomains: 'abcd',
-    }).addTo(S.map);
+    const tileCfg = getMapTileConfig();
+    const tileOpts = {
+        maxZoom: tileCfg.maxZoom,
+        attribution: tileCfg.attribution,
+    };
+    if (tileCfg.url.includes('{s}')) tileOpts.subdomains = tileCfg.subdomains;
+    S.baseTileLayer = L.tileLayer(tileCfg.url, tileOpts).addTo(S.map);
 
     S.rfLayer = L.layerGroup().addTo(S.map);
     S.isLayer = L.layerGroup().addTo(S.map);
@@ -633,6 +637,24 @@ function initMap() {
     for (const st of Object.values(S.rfStations)) addMapMarker(st);
     for (const st of Object.values(S.isStations)) addMapMarker(st);
     S.mapReady = true;
+}
+
+function getMapTileConfig() {
+    const web = S.config?.web || {};
+    if (web.map_tile_source === 'custom' && web.map_tile_url) {
+        return {
+            url: web.map_tile_url,
+            attribution: web.map_tile_attribution || '',
+            maxZoom: Math.min(22, Math.max(1, parseInt(web.map_tile_max_zoom || 19, 10))),
+            subdomains: 'abc',
+        };
+    }
+    return {
+        url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+        attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+        maxZoom: 19,
+        subdomains: 'abcd',
+    };
 }
 
 function addMapMarker(st) {
@@ -1021,6 +1043,12 @@ async function init() {
     S.activeTab = localStorage.getItem(MOBILE_TAB_KEY) || S.activeTab;
     S.msgFilter = localStorage.getItem(MOBILE_MSG_FILTER_KEY) || S.msgFilter;
     syncMsgFilterButtons();
+    try {
+        const r = await fetch('/api/config');
+        const d = await r.json();
+        S.config = d;
+        S.ghostMinutes = d.web?.ghost_after_minutes ?? 60;
+    } catch { /* silent */ }
     activateTab(S.activeTab);
     renderMessages();
     renderStations();
@@ -1039,13 +1067,6 @@ async function init() {
         const r = await fetch('/api/version');
         const d = await r.json();
         $('m-version').textContent = 'Version ' + (d.version || '?');
-    } catch { /* silent */ }
-
-    // Load ghost setting
-    try {
-        const r = await fetch('/api/config');
-        const d = await r.json();
-        S.ghostMinutes = d.web?.ghost_after_minutes ?? 60;
     } catch { /* silent */ }
 
     // Weather

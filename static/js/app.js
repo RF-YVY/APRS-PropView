@@ -21,6 +21,29 @@
     let settingsLoading = false;
     let settingsDirty = false;
 
+    async function loadConfig(force) {
+        if (force || !window.pvConfigPromise) {
+            window.pvConfigPromise = fetch('/api/config')
+                .then((resp) => {
+                    if (!resp.ok) throw new Error(`Config request failed: ${resp.status}`);
+                    return resp.json();
+                })
+                .then((cfg) => {
+                    serverConfig = cfg;
+                    return cfg;
+                })
+                .catch((err) => {
+                    window.pvConfigPromise = null;
+                    throw err;
+                });
+        }
+        const cfg = await window.pvConfigPromise;
+        serverConfig = cfg;
+        return cfg;
+    }
+
+    window.pvConfigPromise = loadConfig(false);
+
     // ── Distance unit helpers (mi / km) ────────────────────────
     // Default to miles; persisted in localStorage
     window.pvDistUnit = localStorage.getItem('pvDistUnit') || 'mi';
@@ -141,8 +164,10 @@
         // Refresh relative station timestamps without rebuilding whole lists
         setInterval(() => {
             window.pvStations.refreshRelativeTimes();
-            window.pvStations.render();
         }, 15000);
+        setInterval(() => {
+            window.pvStations.render();
+        }, 60000);
 
         // Periodically ghost stale markers (every 30s)
         window._ghostMinutes = 60; // default, overwritten by loadSettings
@@ -616,8 +641,6 @@
         ws.on('connected', () => {
             // Fetch propagation history for charts
             fetchPropagationHistory();
-            refreshLiveData();
-            window.pvStations?.render();
             window.pvMessages?.render();
             updateAprsIsIndicator(lastStatus);
         });
@@ -1222,7 +1245,7 @@
 
     function renderUpdateStatus(data, els) {
         const { messageEl, detailEl, linkEl, footerEl } = els;
-        const currentVersion = data?.current_version || '1.4.1';
+        const currentVersion = data?.current_version || '1.4.2';
         const latestVersion = data?.latest_version || currentVersion;
         const releaseUrl = data?.release_url || 'https://github.com/RF-YVY/APRS-PropView/releases';
         const publishedAt = data?.published_at ? formatReleaseDate(data.published_at) : '';
@@ -1459,8 +1482,7 @@
     // Apply saved font on initial load
     (async function initFont() {
         try {
-            const resp = await fetch('/api/config');
-            const cfg = await resp.json();
+            const cfg = await loadConfig(false);
             applyFont(cfg.web?.font_family || '');
             window._ghostMinutes = cfg.web?.ghost_after_minutes ?? 60;
             window._expireMinutes = cfg.web?.expire_after_minutes ?? 0;
@@ -1472,8 +1494,7 @@
     async function loadSettings() {
         settingsLoading = true;
         try {
-            const resp = await fetch('/api/config');
-            const cfg = await resp.json();
+            const cfg = await loadConfig(true);
 
             // Station
             setVal('cfg-callsign', cfg.station?.callsign);
@@ -1540,6 +1561,11 @@
             setVal('cfg-ui-theme', getUITheme());
             applyUITheme(getUITheme());
             applyFont(cfg.web?.font_family || '');
+            setVal('cfg-map-tile-source', cfg.web?.map_tile_source || 'osm');
+            setVal('cfg-map-tile-url', cfg.web?.map_tile_url || '');
+            setVal('cfg-map-tile-attribution', cfg.web?.map_tile_attribution || '');
+            setVal('cfg-map-tile-max-zoom', cfg.web?.map_tile_max_zoom ?? 19);
+            window.pvMap?.setMapTileConfig(cfg.web || {});
             setVal('cfg-web-ghost', cfg.web?.ghost_after_minutes ?? 60);
             window._ghostMinutes = cfg.web?.ghost_after_minutes ?? 60;
             window.pvMap?.ghostStaleMarkers(window._ghostMinutes);
@@ -1693,6 +1719,10 @@
                 host: getVal('cfg-web-host'),
                 port: getVal('cfg-web-port'),
                 font_family: getVal('cfg-web-font') || '',
+                map_tile_source: getVal('cfg-map-tile-source') || 'osm',
+                map_tile_url: getVal('cfg-map-tile-url') || '',
+                map_tile_attribution: getVal('cfg-map-tile-attribution') || '',
+                map_tile_max_zoom: parseInt(getVal('cfg-map-tile-max-zoom')) || 19,
                 ghost_after_minutes: parseInt(getVal('cfg-web-ghost')) || 0,
                 expire_after_minutes: parseInt(getVal('cfg-web-expire')) || 0,
                 mobile_pin: getVal('cfg-web-pin') || '',
@@ -1780,11 +1810,13 @@
             }
             if (result.success) {
                 clearSettingsDirty();
+                window.pvConfigPromise = null;
                 const delay = result.needRestart ? 10000 : 5000;
                 setTimeout(() => {
                     if (!settingsDirty) statusEl.style.display = 'none';
                 }, delay);
                 window.pvWeather?.fetchWeather(true);
+                window.pvMap?.setMapTileConfig(body.web);
                 loadUpdateStatus(false);
             }
         } catch (e) {
