@@ -596,17 +596,33 @@ class AnalyticsEngine:
         """
         cutoff = time.time() - (hours * 3600)
 
-        # Get RF stations with large distances
+        # Get RF stations with large distances and weight them by path quality.
+        # APRS-IS is excluded entirely; direct RF remains the gold-standard Es
+        # signal while RF relay paths can contribute with reduced confidence.
         cursor = await self.db.db.execute(
-            """SELECT callsign, distance_km, heading, latitude, longitude,
-                      first_heard, last_heard, packet_count
-               FROM stations
-               WHERE source = 'rf'
-                 AND distance_km IS NOT NULL
-                 AND distance_km >= 300
-                 AND last_heard >= ?
-               ORDER BY distance_km DESC""",
-            (cutoff,),
+            """SELECT s.callsign, s.distance_km, s.heading, s.latitude, s.longitude,
+                      s.first_heard, s.last_heard, s.packet_count,
+                      CASE
+                          WHEN MAX(ph.is_direct) = 1 THEN 1.0
+                          WHEN MIN(ph.hop_count) <= 1 THEN 0.6
+                          ELSE 0.3
+                      END AS path_confidence,
+                      CASE
+                          WHEN MAX(ph.is_direct) = 1 THEN 'direct_rf'
+                          WHEN MIN(ph.hop_count) <= 1 THEN 'single_hop_rf'
+                          ELSE 'multi_hop_rf'
+                      END AS path_tier,
+                      MIN(ph.hop_count) AS min_hop_count
+               FROM stations s
+               INNER JOIN path_history ph ON ph.callsign = s.callsign
+               WHERE s.source = 'rf'
+                 AND s.distance_km IS NOT NULL
+                 AND s.distance_km >= 300
+                 AND s.last_heard >= ?
+                 AND ph.timestamp >= ?
+               GROUP BY s.callsign, s.source
+               ORDER BY s.distance_km DESC""",
+            (cutoff, cutoff),
         )
         rows = await cursor.fetchall()
 
@@ -652,7 +668,10 @@ class AnalyticsEngine:
                 score += 10
                 indicators.append("Peak Es time of day")
 
-            if score >= 25:
+            path_confidence = float(row["path_confidence"] or 0)
+            weighted_score = score * path_confidence
+
+            if weighted_score >= 25:
                 es_candidates.append({
                     "callsign": row["callsign"],
                     "distance_km": round(dist, 1),
@@ -662,9 +681,15 @@ class AnalyticsEngine:
                     "first_heard": row["first_heard"],
                     "last_heard": row["last_heard"],
                     "packet_count": row["packet_count"],
-                    "es_score": min(score, 100),
+                    "raw_score": min(score, 100),
+                    "es_score": min(round(weighted_score, 1), 100),
+                    "path_confidence": round(path_confidence, 2),
+                    "path_tier": row["path_tier"],
+                    "min_hop_count": row["min_hop_count"],
                     "indicators": indicators,
                 })
+
+        es_candidates.sort(key=lambda c: c["es_score"], reverse=True)
 
         # Overall Es probability
         if es_candidates:

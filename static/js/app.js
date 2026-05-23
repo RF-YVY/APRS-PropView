@@ -1265,7 +1265,7 @@
 
     function renderUpdateStatus(data, els) {
         const { messageEl, detailEl, linkEl, footerEl } = els;
-        const currentVersion = data?.current_version || '1.4.3';
+        const currentVersion = data?.current_version || '1.4.4';
         const latestVersion = data?.latest_version || currentVersion;
         const releaseUrl = data?.release_url || 'https://github.com/RF-YVY/APRS-PropView/releases';
         const publishedAt = data?.published_at ? formatReleaseDate(data.published_at) : '';
@@ -1600,6 +1600,8 @@
 
             // Alerts
             setChk('cfg-alerts-enabled', cfg.alerts?.enabled);
+            setChk('cfg-alerts-anomaly-enabled', cfg.alerts?.anomaly_alert_enabled ?? true);
+            setChk('cfg-alerts-es-enabled', cfg.alerts?.sporadic_e_alert_enabled ?? true);
             setVal('cfg-alerts-my-min-stations', cfg.alerts?.my_min_stations);
             setVal('cfg-alerts-my-min-dist', Math.round(window.distToDisplay(cfg.alerts?.my_min_distance_km || 0)));
             setVal('cfg-alerts-reg-min-stations', cfg.alerts?.regional_min_stations);
@@ -1759,6 +1761,8 @@
             },
             alerts: {
                 enabled: getChk('cfg-alerts-enabled'),
+                anomaly_alert_enabled: getChk('cfg-alerts-anomaly-enabled'),
+                sporadic_e_alert_enabled: getChk('cfg-alerts-es-enabled'),
                 my_min_stations: getVal('cfg-alerts-my-min-stations'),
                 my_min_distance_km: Math.round(window.displayToDist(parseFloat(getVal('cfg-alerts-my-min-dist')) || 0)),
                 regional_min_stations: getVal('cfg-alerts-reg-min-stations'),

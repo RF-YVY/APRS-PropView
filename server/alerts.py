@@ -15,6 +15,8 @@ logger = logging.getLogger("propview.alerts")
 class AlertConfig:
     """Alert thresholds and notification config."""
     enabled: bool = False
+    anomaly_alert_enabled: bool = True
+    sporadic_e_alert_enabled: bool = True
     # Per-meter thresholds
     my_min_stations: int = 3           # Direct-heard stations in 1h for My Station alert
     my_min_distance_km: float = 100.0  # Max direct distance for My Station alert
@@ -81,6 +83,14 @@ class AlertManager:
         except Exception:
             return False
 
+    @staticmethod
+    def _bearing_label(heading: Optional[float]) -> str:
+        """Convert a numeric bearing to an 8-point compass label."""
+        if heading is None:
+            return "?"
+        sectors = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+        return sectors[int(((heading % 360) + 22.5) // 45) % 8]
+
     def check_and_alert(self, prop_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Check propagation data against thresholds. Returns list of alert dicts."""
         if not self.config.enabled:
@@ -97,6 +107,40 @@ class AlertManager:
         my_max_dist = prop_data.get("my_max_distance_km", 0)
         my_score = prop_data.get("my_score", 0)
         my_level = prop_data.get("my_level", "none")
+        my_top_station = prop_data.get("my_top_station") or {}
+        my_top_call = my_top_station.get("callsign")
+        my_top_heading = my_top_station.get("heading")
+        my_top_bearing = self._bearing_label(my_top_heading)
+        my_top_line = ""
+        if my_top_call:
+            bearing_detail = (
+                f"{my_top_bearing} ({my_top_heading:.0f}\u00b0)"
+                if my_top_heading is not None
+                else my_top_bearing
+            )
+            my_top_line = f"Top Direct Station: {my_top_call} bearing {bearing_detail}\n"
+        near_hop_stations = prop_data.get("my_near_hop_stations") or []
+        near_hop_lines = []
+        for station in near_hop_stations[:5]:
+            call = station.get("callsign")
+            if not call:
+                continue
+            distance_km = station.get("distance_km") or 0
+            heading = station.get("heading")
+            bearing = self._bearing_label(heading)
+            hop_count = station.get("hop_count", 0)
+            if station.get("is_digipeater"):
+                hop_label = "digipeater"
+            elif station.get("via_digipeater"):
+                hop_label = f"1 hop via {station['via_digipeater']}"
+            else:
+                hop_label = "direct" if hop_count == 0 else "1 hop"
+            near_hop_lines.append(
+                f"{call} {distance_km:.1f} km ({distance_km * 0.621371:.1f} mi) {bearing} {hop_label}"
+            )
+        near_hop_block = ""
+        if near_hop_lines:
+            near_hop_block = "Direct/1-Hop RF Stations:\n" + "\n".join(f"- {line}" for line in near_hop_lines) + "\n"
 
         my_meets = (
             my_count >= self.config.my_min_stations
@@ -117,11 +161,17 @@ class AlertManager:
                 "max_distance_km": round(my_max_dist, 1),
                 "score": round(my_score, 1),
                 "level": my_level,
+                "top_station": my_top_call,
+                "top_station_bearing": my_top_bearing,
+                "top_station_heading": my_top_heading,
+                "near_hop_stations": near_hop_stations[:5],
                 "message": (
                     f"\U0001f6a8 {label}\n"
                     f"Station: {self.station_callsign}\n"
                     f"Direct Stations (1h): {my_count}\n"
                     f"Max Distance (Direct): {my_max_dist:.1f} km ({my_max_dist * 0.621371:.1f} mi)\n"
+                    f"{my_top_line}"
+                    f"{near_hop_block}"
                     f"My Station Propagation: {my_level.upper()} (Score: {my_score:.0f})"
                 ),
             })
@@ -209,7 +259,7 @@ class AlertManager:
 
     async def check_anomaly(self, anomaly_data: Dict[str, Any]):
         """Alert when propagation anomaly is detected (conditions significantly above baseline)."""
-        if not self.config.enabled or self._is_quiet_time():
+        if not self.config.enabled or not self.config.anomaly_alert_enabled or self._is_quiet_time():
             return
 
         now = time.time()
@@ -250,7 +300,7 @@ class AlertManager:
 
     async def check_sporadic_e(self, es_data: Dict[str, Any]):
         """Alert when sporadic-E conditions are detected."""
-        if not self.config.enabled or self._is_quiet_time():
+        if not self.config.enabled or not self.config.sporadic_e_alert_enabled or self._is_quiet_time():
             return
 
         now = time.time()
@@ -339,7 +389,41 @@ class AlertManager:
 
     def _alert_embed_fields(self, alert: Dict[str, Any]) -> list[Dict[str, Any]]:
         alert_type = alert.get("type")
-        if alert_type in {"my_station_opening", "regional_watch"}:
+        if alert_type == "my_station_opening":
+            fields = [
+                {"name": "RF Stations", "value": str(alert.get("rf_stations", 0)), "inline": True},
+                {"name": "Max Distance", "value": f"{alert.get('max_distance_km', 0)} km", "inline": True},
+                {"name": "Propagation", "value": f"{str(alert.get('level', 'none')).upper()} ({alert.get('score', 0)})", "inline": True},
+            ]
+            top_station = alert.get("top_station")
+            if top_station:
+                fields.append({
+                    "name": "Top Direct Station",
+                    "value": f"{top_station} bearing {alert.get('top_station_bearing', '?')}",
+                    "inline": True,
+                })
+            near_hop = alert.get("near_hop_stations") or []
+            if near_hop:
+                values = []
+                for station in near_hop[:5]:
+                    distance_km = station.get("distance_km") or 0
+                    if station.get("is_digipeater"):
+                        hop_label = "digipeater"
+                    elif station.get("via_digipeater"):
+                        hop_label = f"1 hop via {station['via_digipeater']}"
+                    else:
+                        hop_label = "direct" if station.get("hop_count", 0) == 0 else "1 hop"
+                    bearing = self._bearing_label(station.get("heading"))
+                    values.append(
+                        f"{station.get('callsign', '?')}: {distance_km:.1f} km {bearing} ({hop_label})"
+                    )
+                fields.append({
+                    "name": "Direct/1-Hop RF Stations",
+                    "value": "\n".join(values),
+                    "inline": False,
+                })
+            return fields
+        if alert_type == "regional_watch":
             return [
                 {"name": "RF Stations", "value": str(alert.get("rf_stations", 0)), "inline": True},
                 {"name": "Max Distance", "value": f"{alert.get('max_distance_km', 0)} km", "inline": True},
@@ -632,6 +716,10 @@ class AlertManager:
                 "discord": self.config.discord_enabled,
                 "email": self.config.email_enabled,
                 "sms": self.config.sms_enabled,
+            },
+            "alert_types": {
+                "anomaly": self.config.anomaly_alert_enabled,
+                "sporadic_e": self.config.sporadic_e_alert_enabled,
             },
             "thresholds": {
                 "my_min_stations": self.config.my_min_stations,

@@ -737,8 +737,7 @@ class WeatherManager:
             self._last_ducting_fetch = 0
             self._alert_scope_info = None
             country = f", {result.get('country')}" if result.get("country") else ""
-            logger.info(f"Weather location resolved: {result['name']}{country} "
-                        f"({result['latitude']:.4f}, {result['longitude']:.4f})")
+            logger.info("Weather location resolved: %s%s", result["name"], country)
         return result
 
     async def get_alert_scope_info(self, force: bool = False) -> Optional[Dict[str, Any]]:

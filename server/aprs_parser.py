@@ -289,7 +289,7 @@ def _parse_position_with_timestamp(pkt: APRSPacket, info: str, with_messaging: b
 
 
 def _parse_message(pkt: APRSPacket, info: str):
-    """Parse APRS message: addressee (9 chars padded) : message {id}."""
+    """Parse APRS message: addressee (9 chars padded) : message {id."""
     if len(info) < 10 or ":" not in info:
         pkt.comment = info
         return
@@ -519,20 +519,20 @@ def calculate_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> flo
 def make_message_packet(addressee: str, message_text: str, message_id: str = "") -> str:
     """Create an APRS message info field.
 
-    Format: :ADDRESSEE :message{id}
+    Format: :ADDRESSEE :message{id
     Addressee is padded to 9 characters.
     """
     padded = addressee.ljust(9)[:9]
     info = f":{padded}:{message_text}"
     if message_id:
-        info += f"{{{message_id}}}"
+        info += f"{{{message_id}"
     return info
 
 
 def make_ack_packet(addressee: str, message_id: str) -> str:
     """Create an APRS message acknowledgement info field.
 
-    Format: :ADDRESSEE :ack{id}
+    Format: :ADDRESSEE :ackid
     """
     padded = addressee.ljust(9)[:9]
     return f":{padded}:ack{message_id}"
@@ -541,7 +541,7 @@ def make_ack_packet(addressee: str, message_id: str) -> str:
 def make_rej_packet(addressee: str, message_id: str) -> str:
     """Create an APRS message rejection info field.
 
-    Format: :ADDRESSEE :rej{id}
+    Format: :ADDRESSEE :rejid
     """
     padded = addressee.ljust(9)[:9]
     return f":{padded}:rej{message_id}"

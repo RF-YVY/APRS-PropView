@@ -1,0 +1,4 @@
+*.sh text eol=lf
+Makefile text eol=lf
+*.manifest text eol=lf
+version_info.txt text eol=lf

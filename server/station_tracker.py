@@ -313,6 +313,22 @@ class StationTracker:
                 return True
         return False
 
+    @staticmethod
+    def _used_digipeaters(path: str) -> List[str]:
+        """Return non-generic used digipeater callsigns from an APRS path."""
+        if not path:
+            return []
+        generic_prefixes = ("WIDE", "RELAY", "TRACE", "TCPIP", "TCPXX", "QA")
+        digis = []
+        for hop in path.split(","):
+            base = hop.strip().rstrip("*")
+            if not hop.strip().endswith("*") or not base:
+                continue
+            if any(base.upper().startswith(prefix) for prefix in generic_prefixes):
+                continue
+            digis.append(base)
+        return digis
+
     async def get_propagation_data(self, log_sample: bool = False) -> Dict[str, Any]:
         """Calculate current propagation metrics for both meters."""
         now = time.time()
@@ -326,6 +342,12 @@ class StationTracker:
         all_distances = [s["distance_km"] for s in rf_1h if s.get("distance_km")]
         direct_stations = [s for s in rf_1h if self._is_direct_path(s.get("last_path", ""))]
         direct_distances = [s["distance_km"] for s in direct_stations if s.get("distance_km")]
+        near_hop_stations = [
+            s for s in rf_1h
+            if s.get("distance_km")
+            and not self._has_internet_path(s.get("last_path", ""))
+            and self._count_hops(s.get("last_path", "")) <= 1
+        ]
         regional_stations = [s for s in rf_1h if not self._is_direct_path(s.get("last_path", ""))]
         regional_distances = [s["distance_km"] for s in regional_stations if s.get("distance_km")]
 
@@ -338,6 +360,39 @@ class StationTracker:
         my_count = len(direct_stations)
         my_max_dist = max(direct_distances) if direct_distances else 0
         my_avg_dist = sum(direct_distances) / len(direct_distances) if direct_distances else 0
+        my_top_station = None
+        if direct_distances:
+            top = max(
+                (s for s in direct_stations if s.get("distance_km")),
+                key=lambda s: s["distance_km"],
+            )
+            my_top_station = {
+                "callsign": top.get("callsign"),
+                "distance_km": round(top["distance_km"], 1),
+                "heading": round(top["heading"], 1) if top.get("heading") is not None else None,
+            }
+        sorted_near_hop = sorted(near_hop_stations, key=lambda s: s["distance_km"], reverse=True)
+        if my_top_station and my_top_station.get("callsign"):
+            top_call = my_top_station["callsign"].upper()
+            top_matches = [s for s in sorted_near_hop if (s.get("callsign") or "").upper() == top_call]
+            other_matches = [s for s in sorted_near_hop if (s.get("callsign") or "").upper() != top_call]
+            sorted_near_hop = top_matches[:1] + other_matches
+
+        my_near_hop_stations = []
+        for station in sorted_near_hop[:8]:
+            used_digis = self._used_digipeaters(station.get("last_path", ""))
+            my_near_hop_stations.append({
+                "callsign": station.get("callsign"),
+                "distance_km": round(station["distance_km"], 1),
+                "heading": round(station["heading"], 1) if station.get("heading") is not None else None,
+                "hop_count": self._count_hops(station.get("last_path", "")),
+                "path": station.get("last_path", ""),
+                "via_digipeater": used_digis[0] if used_digis else "",
+                "is_digipeater": bool(
+                    station.get("callsign")
+                    and station.get("callsign", "").upper() in {d.upper() for d in used_digis}
+                ),
+            })
         my_full_count = max(prop_cfg.my_station_full_count, 1)
         my_full_dist = max(prop_cfg.my_station_full_dist_km, 1)
         my_count_score = min(my_count / my_full_count * 50, 50)
@@ -363,6 +418,8 @@ class StationTracker:
             "my_stations_1h": my_count,
             "my_max_distance_km": round(my_max_dist, 1),
             "my_avg_distance_km": round(my_avg_dist, 1),
+            "my_top_station": my_top_station,
+            "my_near_hop_stations": my_near_hop_stations,
             # Regional meter
             "score": round(reg_score, 1),
             "level": reg_level,

@@ -713,11 +713,18 @@
                 let chtml = '<h4>Candidate Stations</h4>';
                 chtml += '<div class="es-candidate-list">';
                 data.candidates.forEach(c => {
+                    const tierLabels = {
+                        direct_rf: 'direct RF',
+                        single_hop_rf: '1-hop RF',
+                        multi_hop_rf: 'multi-hop RF'
+                    };
+                    const tier = tierLabels[c.path_tier] || 'RF';
+                    const confidence = c.path_confidence != null ? ` · ${Math.round(c.path_confidence * 100)}%` : '';
                     chtml += `<div class="es-candidate-item">`;
                     chtml += `<span class="es-c-call">${_esc(c.callsign)}</span>`;
                     chtml += `<span class="es-c-dist">${window.formatDist(c.distance_km)}</span>`;
                     const candidateScore = c.es_score ?? c.score ?? 0;
-                    chtml += `<span class="es-c-score">score ${candidateScore}</span>`;
+                    chtml += `<span class="es-c-score">score ${candidateScore} · ${tier}${confidence}</span>`;
                     chtml += `</div>`;
                 });
                 chtml += '</div>';

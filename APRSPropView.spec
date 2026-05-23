@@ -28,6 +28,7 @@ hiddenimports = [
     'aiosqlite',
     'aprslib',
     'serial',
+    'serial_asyncio',
     'serial.tools',
     'serial.tools.list_ports',
     'geopy',

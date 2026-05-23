@@ -4,7 +4,7 @@
 Launch this to start the application. The web interface opens automatically.
 """
 
-APP_VERSION = "1.4.3"
+APP_VERSION = "1.4.4"
 
 import asyncio
 import sys
@@ -145,6 +145,8 @@ async def main():
 
     alert_config = AlertConfig(
         enabled=config.alerts.enabled,
+        anomaly_alert_enabled=config.alerts.anomaly_alert_enabled,
+        sporadic_e_alert_enabled=config.alerts.sporadic_e_alert_enabled,
         my_min_stations=config.alerts.my_min_stations,
         my_min_distance_km=config.alerts.my_min_distance_km,
         regional_min_stations=config.alerts.regional_min_stations,

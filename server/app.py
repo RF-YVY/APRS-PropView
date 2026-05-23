@@ -1005,6 +1005,8 @@ def create_app(
             },
             "alerts": {
                 "enabled": config.alerts.enabled,
+                "anomaly_alert_enabled": config.alerts.anomaly_alert_enabled,
+                "sporadic_e_alert_enabled": config.alerts.sporadic_e_alert_enabled,
                 "my_min_stations": config.alerts.my_min_stations,
                 "my_min_distance_km": config.alerts.my_min_distance_km,
                 "regional_min_stations": config.alerts.regional_min_stations,
@@ -1252,6 +1254,8 @@ def create_app(
             if "alerts" in body:
                 al = body["alerts"]
                 config.alerts.enabled = bool(al.get("enabled", config.alerts.enabled))
+                config.alerts.anomaly_alert_enabled = bool(al.get("anomaly_alert_enabled", config.alerts.anomaly_alert_enabled))
+                config.alerts.sporadic_e_alert_enabled = bool(al.get("sporadic_e_alert_enabled", config.alerts.sporadic_e_alert_enabled))
                 config.alerts.my_min_stations = max(1, int(al.get("my_min_stations", config.alerts.my_min_stations)))
                 config.alerts.my_min_distance_km = max(1.0, float(al.get("my_min_distance_km", config.alerts.my_min_distance_km)))
                 config.alerts.regional_min_stations = max(1, int(al.get("regional_min_stations", config.alerts.regional_min_stations)))
@@ -1281,6 +1285,8 @@ def create_app(
                     from server.alerts import AlertConfig
                     alert_manager.config = AlertConfig(
                         enabled=config.alerts.enabled,
+                        anomaly_alert_enabled=config.alerts.anomaly_alert_enabled,
+                        sporadic_e_alert_enabled=config.alerts.sporadic_e_alert_enabled,
                         my_min_stations=config.alerts.my_min_stations,
                         my_min_distance_km=config.alerts.my_min_distance_km,
                         regional_min_stations=config.alerts.regional_min_stations,

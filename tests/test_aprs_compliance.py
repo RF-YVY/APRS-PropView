@@ -1,14 +1,24 @@
 import unittest
 import asyncio
+import tempfile
 
 from server.aprs_is import APRSISClient
-from server.aprs_parser import parse_packet
+from server.aprs_parser import make_message_packet, parse_packet
 from server.app import _is_valid_message_addressee, _is_valid_station_callsign, _validate_config
+from server.analytics import AnalyticsEngine
+from server.alerts import AlertConfig, AlertManager
 from server.config import Config
+from server.database import Database
 from server.gps import GPSManager, parse_nmea_position
 
 
 class APRSParserComplianceTests(unittest.TestCase):
+    def test_message_packet_id_has_no_closing_brace(self):
+        self.assertEqual(
+            make_message_packet("KK7PZE-10", "hello 501", "4"),
+            ":KK7PZE-10:hello 501{4",
+        )
+
     def test_third_party_message_is_unwrapped(self):
         packet = parse_packet(
             "G9RXG>APRS:}WB4APR-14>APRS,TCPIP,G9RXG*::N0CALL   :Hi{001",
@@ -78,9 +88,9 @@ class APRSISComplianceTests(unittest.TestCase):
         config = Config()
         config.station.callsign = "K5ABC"
         config.aprs_is.passcode = "12345"
-        client = APRSISClient(config, lambda packet: None, app_version="1.4.3")
+        client = APRSISClient(config, lambda packet: None, app_version="1.4.4")
 
-        self.assertIn("vers APRSPropView 1.4.3", client._build_login())
+        self.assertIn("vers APRSPropView 1.4.4", client._build_login())
 
 
 class MessageAddresseeValidationTests(unittest.TestCase):
@@ -178,6 +188,157 @@ class GPSIngestionTests(unittest.TestCase):
         status = gps.get_status()
         self.assertIsNone(status["current"])
         self.assertIn("source_status", status)
+
+
+class SporadicEDetectionTests(unittest.TestCase):
+    def test_weights_direct_rf_above_digipeated_rf(self):
+        async def run_test():
+            with tempfile.TemporaryDirectory() as tmp:
+                db = Database(f"{tmp}/test.db")
+                await db.initialize()
+                try:
+                    await db.upsert_station(
+                        callsign="DIRECT",
+                        source="rf",
+                        latitude=35.0,
+                        longitude=-97.0,
+                        distance_km=650,
+                        heading=180,
+                        commit=False,
+                    )
+                    await db.log_path_event(
+                        callsign="DIRECT",
+                        distance_km=650,
+                        heading=180,
+                        path="WIDE1-1",
+                        is_direct=True,
+                        commit=False,
+                    )
+                    await db.upsert_station(
+                        callsign="DIGI",
+                        source="rf",
+                        latitude=36.0,
+                        longitude=-98.0,
+                        distance_km=900,
+                        heading=90,
+                        path="WIDE1-1,DIGI1*",
+                        commit=False,
+                    )
+                    await db.log_path_event(
+                        callsign="DIGI",
+                        distance_km=900,
+                        heading=90,
+                        path="WIDE1-1,DIGI1*",
+                        is_direct=False,
+                        commit=False,
+                    )
+                    await db.upsert_station(
+                        callsign="ISONLY",
+                        source="aprs_is",
+                        latitude=37.0,
+                        longitude=-99.0,
+                        distance_km=1200,
+                        heading=45,
+                        commit=False,
+                    )
+                    await db.commit()
+
+                    result = await AnalyticsEngine(db).detect_sporadic_e()
+                finally:
+                    await db.close()
+
+            self.assertEqual(result["candidate_count"], 2)
+            self.assertEqual(result["candidates"][0]["callsign"], "DIRECT")
+            self.assertEqual(result["candidates"][0]["path_tier"], "direct_rf")
+            self.assertEqual(result["candidates"][0]["path_confidence"], 1.0)
+            self.assertEqual(result["candidates"][1]["callsign"], "DIGI")
+            self.assertEqual(result["candidates"][1]["path_tier"], "single_hop_rf")
+            self.assertEqual(result["candidates"][1]["path_confidence"], 0.6)
+            self.assertGreater(
+                result["candidates"][0]["es_score"],
+                result["candidates"][1]["es_score"],
+            )
+
+        asyncio.run(run_test())
+
+
+class BandOpeningAlertTests(unittest.TestCase):
+    def test_my_station_alert_includes_top_station_bearing_label(self):
+        alerts = AlertManager(
+            AlertConfig(
+                enabled=True,
+                my_min_stations=1,
+                my_min_distance_km=10,
+                cooldown_seconds=0,
+            ),
+            station_callsign="N0CALL",
+        ).check_and_alert({
+            "my_stations_1h": 1,
+            "my_max_distance_km": 120.0,
+            "my_score": 55,
+            "my_level": "good",
+            "my_top_station": {
+                "callsign": "K1ABC",
+                "distance_km": 120.0,
+                "heading": 315.0,
+            },
+            "my_near_hop_stations": [
+                {
+                    "callsign": "K1ABC",
+                    "distance_km": 120.0,
+                    "heading": 315.0,
+                    "hop_count": 0,
+                },
+                {
+                    "callsign": "N5ONE",
+                    "distance_km": 80.0,
+                    "heading": 90.0,
+                    "hop_count": 1,
+                    "via_digipeater": "W9EN-10",
+                },
+            ],
+        })
+
+        self.assertEqual(len(alerts), 1)
+        alert = alerts[0]
+        self.assertIn("Top Direct Station: K1ABC bearing NW (315°)", alert["message"])
+        self.assertIn("Direct/1-Hop RF Stations:\n- K1ABC 120.0 km", alert["message"])
+        self.assertIn("- N5ONE 80.0 km (49.7 mi) E 1 hop via W9EN-10", alert["message"])
+        self.assertEqual(alert["top_station"], "K1ABC")
+        self.assertEqual(alert["top_station_bearing"], "NW")
+
+    def test_bearing_label_handles_zero_degrees_as_north(self):
+        self.assertEqual(AlertManager._bearing_label(0), "N")
+
+    def test_anomaly_alert_can_be_disabled_independently(self):
+        async def run_test():
+            manager = AlertManager(
+                AlertConfig(enabled=True, anomaly_alert_enabled=False, cooldown_seconds=0),
+                station_callsign="N0CALL",
+            )
+            await manager.check_anomaly({
+                "anomaly_score": 3.0,
+                "anomaly_level": "extreme",
+                "count_pct_above_avg": 200,
+                "dist_pct_above_avg": 150,
+            })
+            self.assertEqual(manager.get_alert_history(), [])
+
+        asyncio.run(run_test())
+
+    def test_sporadic_e_alert_can_be_disabled_independently(self):
+        async def run_test():
+            manager = AlertManager(
+                AlertConfig(enabled=True, sporadic_e_alert_enabled=False, cooldown_seconds=0),
+                station_callsign="N0CALL",
+            )
+            await manager.check_sporadic_e({
+                "es_level": "likely",
+                "candidates": [{"callsign": "K1ABC", "distance_km": 900}],
+            })
+            self.assertEqual(manager.get_alert_history(), [])
+
+        asyncio.run(run_test())
 
 
 if __name__ == "__main__":

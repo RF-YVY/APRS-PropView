@@ -84,6 +84,8 @@ cleanup_interval = 3600
 
 [alerts]
 enabled = false
+anomaly_alert_enabled = true
+sporadic_e_alert_enabled = true
 my_min_stations = 3
 my_min_distance_km = 100.0
 regional_min_stations = 5
@@ -249,6 +251,8 @@ class TrackingConfig:
 @dataclass
 class AlertsConfig:
     enabled: bool = False
+    anomaly_alert_enabled: bool = True
+    sporadic_e_alert_enabled: bool = True
     my_min_stations: int = 3
     my_min_distance_km: float = 100.0
     regional_min_stations: int = 5
@@ -468,6 +472,8 @@ class Config:
             "",
             "[alerts]",
             f"enabled = {'true' if self.alerts.enabled else 'false'}",
+            f"anomaly_alert_enabled = {'true' if self.alerts.anomaly_alert_enabled else 'false'}",
+            f"sporadic_e_alert_enabled = {'true' if self.alerts.sporadic_e_alert_enabled else 'false'}",
             f"my_min_stations = {int(self.alerts.my_min_stations)}",
             f"my_min_distance_km = {float(self.alerts.my_min_distance_km)}",
             f"regional_min_stations = {int(self.alerts.regional_min_stations)}",

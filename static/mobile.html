@@ -971,7 +971,13 @@ function handleStatus(data) {
     if (!data) return;
     S.myCall = (data.station_info?.callsign || data.station || '').toUpperCase();
     $('m-call').textContent = S.myCall || '—';
-    S.startTime = data.start_time || data.uptime_seconds || 0;
+    if (data.start_time) {
+        S.startTime = data.start_time;
+    } else if (data.uptime_seconds != null) {
+        S.startTime = Date.now() / 1000 - data.uptime_seconds;
+    } else {
+        S.startTime = 0;
+    }
     S.aprsIsConnected = !!data.aprs_is_connected;
     S.aprsIsVerified = !!data.aprs_is_verified;
     updateAprsIsChip();

@@ -41,6 +41,16 @@ if command -v rsync >/dev/null 2>&1; then
   rsync -a \
     --exclude ".git" \
     --exclude ".venv" \
+    --exclude ".pytest_cache" \
+    --exclude ".vscode" \
+    --exclude "build" \
+    --exclude "dist" \
+    --exclude "config.toml" \
+    --exclude "propview.db" \
+    --exclude "*.db" \
+    --exclude "*.sqlite" \
+    --exclude "*.sqlite3" \
+    --exclude "*.log" \
     --exclude "__pycache__" \
     --exclude "*.pyc" \
     "${REPO_DIR}/" "${INSTALL_DIR}/"
@@ -48,6 +58,16 @@ else
   tar -C "${REPO_DIR}" \
     --exclude ".git" \
     --exclude ".venv" \
+    --exclude ".pytest_cache" \
+    --exclude ".vscode" \
+    --exclude "build" \
+    --exclude "dist" \
+    --exclude "config.toml" \
+    --exclude "propview.db" \
+    --exclude "*.db" \
+    --exclude "*.sqlite" \
+    --exclude "*.sqlite3" \
+    --exclude "*.log" \
     --exclude "__pycache__" \
     --exclude "*.pyc" \
     -cf - . | tar -C "${INSTALL_DIR}" -xf -
