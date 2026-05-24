@@ -4,7 +4,7 @@
 Launch this to start the application. The web interface opens automatically.
 """
 
-APP_VERSION = "1.4.4"
+APP_VERSION = "1.5.0"
 
 import asyncio
 import sys
@@ -138,6 +138,7 @@ async def main():
 
     handler = PacketHandler(config, tracker, digipeater, igate, ws_manager)
     handler.set_gps_manager(gps_manager)
+    await handler.cleanup_messages()
 
     # ── Analytics & Alerts ──────────────────────────────────────────
 
@@ -247,8 +248,9 @@ async def main():
         connected = await mqtt_publisher.connect()
         if connected:
             logger.info(f"MQTT: connected to {config.mqtt.broker}:{config.mqtt.port}")
+            tracker.set_mqtt_publisher(mqtt_publisher)
         else:
-            logger.warning("MQTT: failed to connect (will retry or check paho-mqtt installation)")
+            logger.warning("MQTT: failed to connect (check broker settings or paho-mqtt installation)")
             mqtt_publisher = None
 
     # ── Create web application ──────────────────────────────────────

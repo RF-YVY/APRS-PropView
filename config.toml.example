@@ -78,6 +78,10 @@ max_station_age = 86400
 # How often to purge old records (seconds)
 cleanup_interval = 3600
 
+[messaging]
+# How many days to retain APRS message history in the database
+message_retention_days = 30
+
 [alerts]
 enabled = false
 anomaly_alert_enabled = true
@@ -93,6 +97,15 @@ msg_notify_enabled = false
 msg_discord_enabled = false
 msg_email_enabled = false
 msg_sms_enabled = false
+audio_output_device_id = ""
+audio_my_station_opening_file = ""
+audio_regional_watch_file = ""
+audio_first_heard_file = ""
+audio_anomaly_file = ""
+audio_sporadic_e_file = ""
+audio_message_received_file = ""
+audio_weather_warning_file = ""
+audio_weather_watch_file = ""
 discord_enabled = false
 discord_webhook_url = ""
 email_enabled = false

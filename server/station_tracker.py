@@ -36,6 +36,7 @@ class StationTracker:
         # Analytics engine (set later via set_analytics)
         self._analytics = None
         self._gps_manager = None
+        self._mqtt_publisher = None
 
     def set_alert_manager(self, alert_manager):
         """Inject the AlertManager instance for band-opening detection."""
@@ -48,6 +49,10 @@ class StationTracker:
     def set_gps_manager(self, gps_manager):
         """Inject live GPS updates for own-position tracking."""
         self._gps_manager = gps_manager
+
+    def set_mqtt_publisher(self, mqtt_publisher):
+        """Inject the optional MQTT publisher."""
+        self._mqtt_publisher = mqtt_publisher
 
     def set_my_position(self, latitude: float, longitude: float):
         """Update the reference position used for distance and bearing."""
@@ -106,6 +111,38 @@ class StationTracker:
                 packet.longitude,
                 source="self_packet",
             )
+
+        is_own_packet = callsign.upper() == self.config.station.full_callsign.upper()
+        if is_own_packet and packet.packet_type == "message" and not packet.has_position:
+            await self.db.log_packet(
+                source=source,
+                from_call=callsign,
+                to_call=packet.to_call,
+                path=packet.path,
+                raw=packet.raw,
+                packet_type=packet.packet_type,
+                latitude=packet.latitude,
+                longitude=packet.longitude,
+            )
+            await self.ws.broadcast(
+                {
+                    "type": "packet",
+                    "data": {
+                        "timestamp": time.time(),
+                        "source": source,
+                        "from_call": callsign,
+                        "to_call": packet.to_call,
+                        "path": packet.path,
+                        "raw": packet.raw,
+                        "packet_type": packet.packet_type,
+                        "latitude": packet.latitude,
+                        "longitude": packet.longitude,
+                        "distance_km": None,
+                    },
+                }
+            )
+            logger.debug("Ignoring own message packet for station tracking: %s", callsign)
+            return
 
         # Calculate distance if we have both positions
         distance_km = None
@@ -178,6 +215,9 @@ class StationTracker:
                 heading=heading,
                 latitude=packet.latitude,
                 longitude=packet.longitude,
+                path=packet.path,
+                hop_count=self._count_hops(packet.path) if source == "rf" else 0,
+                is_direct=is_direct,
                 commit=False,
             )
             # Broadcast first-heard event to web clients
@@ -188,13 +228,17 @@ class StationTracker:
                     "distance_km": distance_km,
                     "heading": heading,
                     "timestamp": time.time(),
+                    "is_direct": is_direct,
+                    "path": packet.path,
                 },
             })
             # Trigger first-heard alert if alert manager is available
             if self._alert_manager and distance_km and (source != "rf" or is_direct):
-                await self._alert_manager.check_first_heard(
+                alert = await self._alert_manager.check_first_heard(
                     callsign, distance_km, heading
                 )
+                if alert:
+                    await self._publish_mqtt_alert(alert)
 
         await self.db.commit()
 
@@ -450,6 +494,28 @@ class StationTracker:
 
         return result
 
+    async def _publish_mqtt_propagation(self, prop_data: Dict[str, Any]):
+        """Publish propagation metrics through the optional MQTT integration."""
+        if not self._mqtt_publisher:
+            return
+        try:
+            await self._mqtt_publisher.publish_propagation(prop_data)
+            await self._mqtt_publisher.publish_prop_score(
+                prop_data.get("score", 0),
+                prop_data.get("level", "none"),
+            )
+        except Exception as e:
+            logger.error(f"MQTT propagation publish error: {e}")
+
+    async def _publish_mqtt_alert(self, alert: Dict[str, Any]):
+        """Publish an alert through the optional MQTT integration."""
+        if not self._mqtt_publisher:
+            return
+        try:
+            await self._mqtt_publisher.publish_alert(alert)
+        except Exception as e:
+            logger.error(f"MQTT alert publish error: {e}")
+
     @staticmethod
     def _score_to_level(score: float) -> str:
         if score >= 75:
@@ -493,6 +559,7 @@ class StationTracker:
                 # Calculate and broadcast propagation update
                 prop_data = await self.get_propagation_data()
                 await self.ws.broadcast({"type": "propagation", "data": prop_data})
+                await self._publish_mqtt_propagation(prop_data)
 
                 logger.info(
                     f"Cleanup: purged stations older than {max_age}s, "
@@ -510,6 +577,7 @@ class StationTracker:
                 await asyncio.sleep(60)
                 prop_data = await self.get_propagation_data(log_sample=True)
                 await self.ws.broadcast({"type": "propagation", "data": prop_data})
+                await self._publish_mqtt_propagation(prop_data)
 
                 # Check for band opening alerts
                 if self._alert_manager:
@@ -518,17 +586,24 @@ class StationTracker:
                         logger.info(f"Alert triggered: {alert['type']} — Score: {alert['score']}")
                         await self._alert_manager.send_alert(alert)
                         await self.ws.broadcast({"type": "alert", "data": alert})
+                        await self._publish_mqtt_alert(alert)
 
                 # Check for anomaly and sporadic-E (every 5th cycle = ~5 min)
                 if self._analytics and self._alert_manager:
                     try:
                         anomaly = await self._analytics.get_anomaly_status()
-                        await self._alert_manager.check_anomaly(anomaly)
+                        anomaly_alert = await self._alert_manager.check_anomaly(anomaly)
+                        if anomaly_alert:
+                            await self.ws.broadcast({"type": "alert", "data": anomaly_alert})
+                            await self._publish_mqtt_alert(anomaly_alert)
                         # Broadcast anomaly status to frontend
                         await self.ws.broadcast({"type": "anomaly", "data": anomaly})
 
                         es_data = await self._analytics.detect_sporadic_e()
-                        await self._alert_manager.check_sporadic_e(es_data)
+                        es_alert = await self._alert_manager.check_sporadic_e(es_data)
+                        if es_alert:
+                            await self.ws.broadcast({"type": "alert", "data": es_alert})
+                            await self._publish_mqtt_alert(es_alert)
                         if es_data.get("es_level") in ("likely", "possible"):
                             await self.ws.broadcast({"type": "sporadic_e", "data": es_data})
                     except Exception as e:

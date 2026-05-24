@@ -82,6 +82,9 @@ path = "propview.db"
 max_station_age = 86400
 cleanup_interval = 3600
 
+[messaging]
+message_retention_days = 30
+
 [alerts]
 enabled = false
 anomaly_alert_enabled = true
@@ -97,6 +100,15 @@ msg_notify_enabled = false
 msg_discord_enabled = false
 msg_email_enabled = false
 msg_sms_enabled = false
+audio_output_device_id = ""
+audio_my_station_opening_file = ""
+audio_regional_watch_file = ""
+audio_first_heard_file = ""
+audio_anomaly_file = ""
+audio_sporadic_e_file = ""
+audio_message_received_file = ""
+audio_weather_warning_file = ""
+audio_weather_watch_file = ""
 discord_enabled = false
 discord_webhook_url = ""
 email_enabled = false
@@ -249,6 +261,11 @@ class TrackingConfig:
 
 
 @dataclass
+class MessagingConfig:
+    message_retention_days: int = 30
+
+
+@dataclass
 class AlertsConfig:
     enabled: bool = False
     anomaly_alert_enabled: bool = True
@@ -264,6 +281,15 @@ class AlertsConfig:
     msg_discord_enabled: bool = False
     msg_email_enabled: bool = False
     msg_sms_enabled: bool = False
+    audio_output_device_id: str = ""
+    audio_my_station_opening_file: str = ""
+    audio_regional_watch_file: str = ""
+    audio_first_heard_file: str = ""
+    audio_anomaly_file: str = ""
+    audio_sporadic_e_file: str = ""
+    audio_message_received_file: str = ""
+    audio_weather_warning_file: str = ""
+    audio_weather_watch_file: str = ""
     discord_enabled: bool = False
     discord_webhook_url: str = ""
     email_enabled: bool = False
@@ -348,6 +374,7 @@ class Config:
     web: WebConfig = field(default_factory=WebConfig)
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     tracking: TrackingConfig = field(default_factory=TrackingConfig)
+    messaging: MessagingConfig = field(default_factory=MessagingConfig)
     alerts: AlertsConfig = field(default_factory=AlertsConfig)
     propagation: PropagationConfig = field(default_factory=PropagationConfig)
     weather: WeatherConfig = field(default_factory=WeatherConfig)
@@ -375,6 +402,7 @@ class Config:
             "web": (WebConfig, "web"),
             "database": (DatabaseConfig, "database"),
             "tracking": (TrackingConfig, "tracking"),
+            "messaging": (MessagingConfig, "messaging"),
             "alerts": (AlertsConfig, "alerts"),
             "propagation": (PropagationConfig, "propagation"),
             "weather": (WeatherConfig, "weather"),
@@ -470,6 +498,9 @@ class Config:
             f"max_station_age = {int(self.tracking.max_station_age)}",
             f"cleanup_interval = {int(self.tracking.cleanup_interval)}",
             "",
+            "[messaging]",
+            f"message_retention_days = {int(self.messaging.message_retention_days)}",
+            "",
             "[alerts]",
             f"enabled = {'true' if self.alerts.enabled else 'false'}",
             f"anomaly_alert_enabled = {'true' if self.alerts.anomaly_alert_enabled else 'false'}",
@@ -485,6 +516,15 @@ class Config:
             f"msg_discord_enabled = {'true' if self.alerts.msg_discord_enabled else 'false'}",
             f"msg_email_enabled = {'true' if self.alerts.msg_email_enabled else 'false'}",
             f"msg_sms_enabled = {'true' if self.alerts.msg_sms_enabled else 'false'}",
+            f'audio_output_device_id = "{esc(self.alerts.audio_output_device_id)}"',
+            f'audio_my_station_opening_file = "{esc(self.alerts.audio_my_station_opening_file)}"',
+            f'audio_regional_watch_file = "{esc(self.alerts.audio_regional_watch_file)}"',
+            f'audio_first_heard_file = "{esc(self.alerts.audio_first_heard_file)}"',
+            f'audio_anomaly_file = "{esc(self.alerts.audio_anomaly_file)}"',
+            f'audio_sporadic_e_file = "{esc(self.alerts.audio_sporadic_e_file)}"',
+            f'audio_message_received_file = "{esc(self.alerts.audio_message_received_file)}"',
+            f'audio_weather_warning_file = "{esc(self.alerts.audio_weather_warning_file)}"',
+            f'audio_weather_watch_file = "{esc(self.alerts.audio_weather_watch_file)}"',
             f"discord_enabled = {'true' if self.alerts.discord_enabled else 'false'}",
             f'discord_webhook_url = "{esc(self.alerts.discord_webhook_url)}"',
             f"email_enabled = {'true' if self.alerts.email_enabled else 'false'}",

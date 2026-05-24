@@ -30,6 +30,17 @@ def check_pyinstaller():
         print("  PyInstaller installed.")
 
 
+def check_runtime_dependencies():
+    """Ensure optional runtime modules that PyInstaller must bundle are installed."""
+    try:
+        import paho.mqtt.client  # noqa: F401
+        print("  paho-mqtt found.")
+    except ImportError:
+        print("  paho-mqtt not found. Installing...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "paho-mqtt>=1.6.1"])
+        print("  paho-mqtt installed.")
+
+
 def _rebuild_ico_png(ico_path):
     """Rebuild the ICO file with PNG-compressed entries (needed for Explorer)."""
     try:
@@ -85,7 +96,7 @@ def _write_manifest(path):
   <assemblyIdentity
     type="win32"
     name="WickerMade.APRSPropView"
-    version="1.4.4.0"
+    version="1.5.0.0"
     processorArchitecture="amd64"
   />
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
@@ -130,8 +141,8 @@ def _write_version_info(path):
     content = """# UTF-8
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 4, 4, 0),
-    prodvers=(1, 4, 4, 0),
+    filevers=(1, 5, 0, 0),
+    prodvers=(1, 5, 0, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -147,11 +158,11 @@ VSVersionInfo(
           [
             StringStruct(u'CompanyName', u'Wicker Made, LLC'),
             StringStruct(u'FileDescription', u'APRS PropView - VHF Propagation Monitor'),
-            StringStruct(u'FileVersion', u'1.4.4.0'),
+            StringStruct(u'FileVersion', u'1.5.0.0'),
             StringStruct(u'InternalName', u'APRSPropView'),
             StringStruct(u'OriginalFilename', u'APRSPropView.exe'),
             StringStruct(u'ProductName', u'APRS PropView'),
-            StringStruct(u'ProductVersion', u'1.4.4.0'),
+            StringStruct(u'ProductVersion', u'1.5.0.0'),
           ]
         )
       ]
@@ -167,6 +178,7 @@ VSVersionInfo(
 def build():
     print("\n=== APRS PropView — Build Executable ===\n")
     check_pyinstaller()
+    check_runtime_dependencies()
 
     # Clean previous builds
     for d in ["build", "dist"]:
@@ -208,6 +220,9 @@ def build():
         "--hidden-import", "serial_asyncio",
         "--hidden-import", "serial.tools",
         "--hidden-import", "serial.tools.list_ports",
+        "--hidden-import", "paho",
+        "--hidden-import", "paho.mqtt",
+        "--hidden-import", "paho.mqtt.client",
         "--hidden-import", "geopy",
         "--hidden-import", "geopy.distance",
         "--hidden-import", "pystray",

@@ -1,5 +1,8 @@
 """FastAPI web application — serves UI and WebSocket endpoints."""
 
+import base64
+import binascii
+import mimetypes
 import re
 import time
 import logging
@@ -15,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from server.config import (
     Config, StationConfig, DigiConfig, IGateConfig, APRSISConfig,
     KISSSerialConfig, KISSTCPConfig, WebConfig, DatabaseConfig, TrackingConfig,
-    AlertsConfig, PropagationConfig, WeatherConfig, GPSConfig, MQTTConfig,
+    MessagingConfig, AlertsConfig, PropagationConfig, WeatherConfig, GPSConfig, MQTTConfig,
 )
 from server.database import Database
 from server.station_tracker import StationTracker
@@ -35,6 +38,19 @@ if getattr(_sys, 'frozen', False):
     STATIC_DIR = Path(_sys._MEIPASS) / "static"
 else:
     STATIC_DIR = Path(__file__).parent.parent / "static"
+USER_AUDIO_DIR = Path.cwd() / "user_audio"
+ALERT_AUDIO_KEYS = {
+    "my_station_opening": "audio_my_station_opening_file",
+    "regional_watch": "audio_regional_watch_file",
+    "first_heard": "audio_first_heard_file",
+    "anomaly": "audio_anomaly_file",
+    "sporadic_e": "audio_sporadic_e_file",
+    "message_received": "audio_message_received_file",
+    "weather_warning": "audio_weather_warning_file",
+    "weather_watch": "audio_weather_watch_file",
+}
+ALERT_AUDIO_EXTS = {".wav", ".mp3"}
+MAX_ALERT_AUDIO_BYTES = 15 * 1024 * 1024
 
 # ── Validation helpers ──────────────────────────────────────────────
 
@@ -81,6 +97,19 @@ def _mask_passcode(passcode: str) -> str:
     if not passcode or passcode == "-1":
         return passcode
     return "*" * (len(passcode) - 1) + passcode[-1]
+
+
+def _safe_alert_audio_filename(name: str) -> str:
+    stem = Path(name or "alert").stem
+    ext = Path(name or "").suffix.lower()
+    safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("._-")[:60] or "alert"
+    return f"{safe_stem}{ext}"
+
+
+def _alert_audio_url(filename: str) -> str:
+    if not filename:
+        return ""
+    return f"/api/alert-audio/file/{urllib.parse.quote(filename)}"
 
 
 def _validate_config(body: Dict[str, Any]) -> Optional[str]:
@@ -588,8 +617,31 @@ def create_app(
     @app.delete("/api/messages")
     async def clear_messages():
         """Clear all stored messages."""
-        handler.clear_messages()
+        await handler.clear_messages()
         return {"success": True, "message": "Messages cleared."}
+
+    @app.get("/api/messages/contacts")
+    async def get_message_contacts():
+        contacts = await db.get_message_contacts()
+        return {"contacts": contacts, "count": len(contacts)}
+
+    @app.post("/api/messages/contacts")
+    async def save_message_contact(request: Request):
+        body = await request.json()
+        callsign = (body.get("callsign", "") or "").strip().upper()
+        display_name = (body.get("display_name", "") or "").strip()
+        if not _is_valid_message_addressee(callsign):
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": "Invalid contact callsign or addressee."},
+            )
+        contact = await db.upsert_message_contact(callsign, display_name=display_name)
+        return {"success": True, "contact": contact}
+
+    @app.delete("/api/messages/contacts/{callsign}")
+    async def delete_message_contact(callsign: str):
+        deleted = await db.delete_message_contact(callsign)
+        return {"success": True, "deleted": deleted}
 
     @app.post("/api/messages/send")
     async def send_message(request: Request):
@@ -752,8 +804,9 @@ def create_app(
     @app.get("/api/first-heard")
     async def get_first_heard(
         hours: int = Query(24, ge=1, le=168),
+        direct_only: bool = Query(False),
     ):
-        log = await db.get_first_heard_log(hours=hours)
+        log = await db.get_first_heard_log(hours=hours, direct_only=direct_only)
         return {"log": log, "count": len(log)}
 
     @app.get("/api/ducting")
@@ -935,6 +988,53 @@ def create_app(
                 content={"success": False, "message": "Error resolving alert scope."},
             )
 
+    @app.post("/api/alert-audio/upload")
+    async def upload_alert_audio(request: Request):
+        """Store a user-selected local alert sound for browser playback."""
+        try:
+            body = await request.json()
+            alert_key = (body.get("alert_key") or "").strip()
+            original_name = body.get("filename") or ""
+            data_url = body.get("data") or ""
+            if alert_key not in ALERT_AUDIO_KEYS:
+                return JSONResponse(status_code=400, content={"success": False, "message": "Unknown alert sound slot."})
+
+            ext = Path(original_name).suffix.lower()
+            if ext not in ALERT_AUDIO_EXTS:
+                return JSONResponse(status_code=400, content={"success": False, "message": "Select a .wav or .mp3 file."})
+
+            if "," in data_url:
+                data_url = data_url.split(",", 1)[1]
+            try:
+                audio_bytes = base64.b64decode(data_url, validate=True)
+            except (binascii.Error, ValueError):
+                return JSONResponse(status_code=400, content={"success": False, "message": "Invalid audio upload."})
+
+            if not audio_bytes:
+                return JSONResponse(status_code=400, content={"success": False, "message": "Audio file is empty."})
+            if len(audio_bytes) > MAX_ALERT_AUDIO_BYTES:
+                return JSONResponse(status_code=400, content={"success": False, "message": "Audio file must be 15 MB or smaller."})
+
+            USER_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+            filename = f"{alert_key}_{int(time.time())}_{_safe_alert_audio_filename(original_name)}"
+            path = USER_AUDIO_DIR / filename
+            path.write_bytes(audio_bytes)
+            return {"success": True, "filename": filename, "url": _alert_audio_url(filename)}
+        except Exception as e:
+            logger.error("Alert audio upload failed: %s", e, exc_info=True)
+            return JSONResponse(status_code=500, content={"success": False, "message": "Error saving alert audio."})
+
+    @app.get("/api/alert-audio/file/{filename}")
+    async def get_alert_audio_file(filename: str):
+        safe_name = _safe_alert_audio_filename(filename)
+        if safe_name != filename or Path(filename).suffix.lower() not in ALERT_AUDIO_EXTS:
+            return JSONResponse(status_code=404, content={"success": False, "message": "Audio file not found."})
+        path = USER_AUDIO_DIR / safe_name
+        if not path.exists() or not path.is_file():
+            return JSONResponse(status_code=404, content={"success": False, "message": "Audio file not found."})
+        media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        return FileResponse(path, media_type=media_type)
+
     @app.get("/api/config")
     async def get_config():
         return {
@@ -1003,6 +1103,9 @@ def create_app(
                 "max_station_age": config.tracking.max_station_age,
                 "cleanup_interval": config.tracking.cleanup_interval,
             },
+            "messaging": {
+                "message_retention_days": config.messaging.message_retention_days,
+            },
             "alerts": {
                 "enabled": config.alerts.enabled,
                 "anomaly_alert_enabled": config.alerts.anomaly_alert_enabled,
@@ -1018,6 +1121,22 @@ def create_app(
                 "msg_discord_enabled": config.alerts.msg_discord_enabled,
                 "msg_email_enabled": config.alerts.msg_email_enabled,
                 "msg_sms_enabled": config.alerts.msg_sms_enabled,
+                "audio_output_device_id": config.alerts.audio_output_device_id,
+                "audio_my_station_opening_file": config.alerts.audio_my_station_opening_file,
+                "audio_regional_watch_file": config.alerts.audio_regional_watch_file,
+                "audio_first_heard_file": config.alerts.audio_first_heard_file,
+                "audio_anomaly_file": config.alerts.audio_anomaly_file,
+                "audio_sporadic_e_file": config.alerts.audio_sporadic_e_file,
+                "audio_message_received_file": config.alerts.audio_message_received_file,
+                "audio_weather_warning_file": config.alerts.audio_weather_warning_file,
+                "audio_weather_watch_file": config.alerts.audio_weather_watch_file,
+                "audio_files": {
+                    key: {
+                        "filename": getattr(config.alerts, attr, ""),
+                        "url": _alert_audio_url(getattr(config.alerts, attr, "")),
+                    }
+                    for key, attr in ALERT_AUDIO_KEYS.items()
+                },
                 "discord_enabled": config.alerts.discord_enabled,
                 "discord_webhook_url": config.alerts.discord_webhook_url,
                 "email_enabled": config.alerts.email_enabled,
@@ -1250,6 +1369,12 @@ def create_app(
                 config.tracking.cleanup_interval = int(t.get("cleanup_interval", config.tracking.cleanup_interval))
                 live_applied.append("tracking")
 
+            if "messaging" in body:
+                m = body["messaging"]
+                config.messaging.message_retention_days = max(1, int(m.get("message_retention_days", config.messaging.message_retention_days)))
+                await handler.cleanup_messages()
+                live_applied.append("messaging")
+
             # Update alerts config
             if "alerts" in body:
                 al = body["alerts"]
@@ -1267,6 +1392,10 @@ def create_app(
                 config.alerts.msg_discord_enabled = bool(al.get("msg_discord_enabled", config.alerts.msg_discord_enabled))
                 config.alerts.msg_email_enabled = bool(al.get("msg_email_enabled", config.alerts.msg_email_enabled))
                 config.alerts.msg_sms_enabled = bool(al.get("msg_sms_enabled", config.alerts.msg_sms_enabled))
+                config.alerts.audio_output_device_id = (al.get("audio_output_device_id", config.alerts.audio_output_device_id) or "").strip()
+                for alert_key, attr in ALERT_AUDIO_KEYS.items():
+                    value = al.get(attr, getattr(config.alerts, attr))
+                    setattr(config.alerts, attr, _safe_alert_audio_filename(value) if value else "")
                 config.alerts.discord_enabled = bool(al.get("discord_enabled", config.alerts.discord_enabled))
                 config.alerts.discord_webhook_url = al.get("discord_webhook_url", config.alerts.discord_webhook_url)
                 config.alerts.email_enabled = bool(al.get("email_enabled", config.alerts.email_enabled))

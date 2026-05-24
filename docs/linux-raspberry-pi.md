@@ -192,6 +192,15 @@ not for APRS transport. Enable it when you want APRS PropView status available
 to a broker such as Mosquitto, Home Assistant, Node-RED, EMQX, or another
 monitoring stack.
 
+The source install uses `requirements.txt`, which includes `paho-mqtt`. If an
+older virtualenv reports that `paho-mqtt` is missing, reinstall requirements
+inside the service virtualenv:
+
+```bash
+source /opt/aprs-propview/.venv/bin/activate
+pip install -r /opt/aprs-propview/requirements.txt
+```
+
 Common uses:
 
 - Show propagation level or score on a shack dashboard.
@@ -217,6 +226,14 @@ topic_prefix = "aprs/propview"
 username = ""
 password = ""
 ```
+
+With the default prefix, APRS PropView publishes:
+
+- `aprs/propview/propagation` - retained JSON propagation metrics.
+- `aprs/propview/score` - retained regional propagation score.
+- `aprs/propview/level` - retained regional propagation level.
+- `aprs/propview/alert` - alert events such as band openings, anomalies,
+  Sporadic-E, and first-heard direct RF alerts.
 
 Restart APRS PropView after changing MQTT settings in `config.toml`.
 

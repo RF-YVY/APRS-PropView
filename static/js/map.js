@@ -15,6 +15,7 @@ class PropViewMap {
         this.showLines = true;
         this.showRF = true;
         this.showIS = true;
+        this.showDirectRFOnly = false;
         this.lineTimeFilter = 24; // hours, 0 = all time
         this.rfLayer = null;
         this.isLayer = null;
@@ -306,6 +307,7 @@ class PropViewMap {
 
         const source = station.source;
         const call = station.callsign;
+        const safeCall = this._escapeHtml(call);
         const lat = station.latitude;
         const lng = station.longitude;
         const dist = station.distance_km;
@@ -314,7 +316,7 @@ class PropViewMap {
 
         // Build popup content
         const distStr = dist ? window.formatDist(dist) : 'N/A';
-        const headingStr = station.heading ? `${station.heading.toFixed(0)}°` : '';
+        const headingStr = this._formatBearing(station.heading);
         const timeStr = station.last_heard
             ? new Date(station.last_heard * 1000).toLocaleTimeString()
             : '';
@@ -330,18 +332,21 @@ class PropViewMap {
         const category = (typeof getAPRSCategory === 'function') ? getAPRSCategory(symTable, symCode) : 'other';
         const spriteHtml = (typeof getAPRSSpriteHTML === 'function') ? getAPRSSpriteHTML(symTable, symCode, 28) : emoji;
 
-        // Store metadata for type filtering
-        this.stationMeta[call] = { source, symbol_table: symTable, symbol_code: symCode, category, last_heard: station.last_heard || 0 };
-
         const popupSprite = (typeof getAPRSSpriteHTML === 'function') ? getAPRSSpriteHTML(symTable, symCode, 32) : emoji;
 
         // Determine direct-heard vs via-digi for RF stations
         const isDirect = source === 'rf' ? this._isDirectPath(station.last_path) : null;
+        // Store metadata for type and path filtering
+        this.stationMeta[call] = { source, symbol_table: symTable, symbol_code: symCode, category, last_heard: station.last_heard || 0, is_direct: isDirect };
+
         const heardViaHtml = isDirect === true
             ? '<span style="color:#3fb950;font-weight:600;">Direct</span>'
             : isDirect === false
                 ? '<span style="color:#d29922;font-weight:600;">Via Digipeater</span>'
                 : '';
+        const weatherRows = this._weatherRowsHTML(station, category);
+        const commentHtml = station.last_comment ? this._escapeHtml(station.last_comment) : '';
+        const pathHtml = station.last_path ? this._escapeHtml(station.last_path) : '';
 
         // Time ago string
         let agoStr = '';
@@ -355,16 +360,17 @@ class PropViewMap {
         const popup = `
             <div class="popup-header">
                 <span class="popup-sym-inline">${popupSprite}</span>
-                <span class="popup-call ${sourceClass}">${call}</span>
+                <span class="popup-call ${sourceClass}">${safeCall}</span>
                 <span class="popup-source-tag popup-tag-${source}">${sourceLabel}</span>
             </div>
             <table class="popup-table">
-                <tr><td class="popup-lbl">Type</td><td>${symName || 'Unknown'}</td></tr>
+                <tr><td class="popup-lbl">Type</td><td>${this._escapeHtml(symName || 'Unknown')}</td></tr>
                 <tr><td class="popup-lbl">Distance</td><td>${distStr}${headingStr ? ' · ' + headingStr : ''}</td></tr>
                 <tr><td class="popup-lbl">Heard</td><td>${timeStr}${agoStr ? ' (' + agoStr + ')' : ''}</td></tr>
                 <tr><td class="popup-lbl">Packets</td><td>${countStr}</td></tr>
-                ${station.last_comment ? `<tr><td class="popup-lbl">Comment</td><td>${station.last_comment}</td></tr>` : ''}
-                ${station.last_path ? `<tr><td class="popup-lbl">Path</td><td class="popup-path">${station.last_path}</td></tr>` : ''}
+                ${weatherRows}
+                ${commentHtml && !weatherRows ? `<tr><td class="popup-lbl">Comment</td><td>${commentHtml}</td></tr>` : ''}
+                ${pathHtml ? `<tr><td class="popup-lbl">Path</td><td class="popup-path">${pathHtml}</td></tr>` : ''}
                 ${heardViaHtml ? `<tr><td class="popup-lbl">Via</td><td>${heardViaHtml}</td></tr>` : ''}
                 <tr><td class="popup-lbl">Position</td><td>${lat.toFixed(4)}, ${lng.toFixed(4)}</td></tr>
             </table>
@@ -389,7 +395,7 @@ class PropViewMap {
         } else {
             markers[call] = L.marker([lat, lng], { icon: aprsIcon })
                 .bindPopup(popup)
-                .bindTooltip(call, {
+                .bindTooltip(safeCall, {
                     permanent: true,
                     direction: 'top',
                     offset: [0, -14],
@@ -616,6 +622,77 @@ class PropViewMap {
         return true;
     }
 
+    _formatBearing(heading) {
+        if (heading == null || Number.isNaN(Number(heading))) return '';
+        const sectors = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+        const normalized = ((Number(heading) % 360) + 360) % 360;
+        return sectors[Math.floor((normalized + 22.5) / 45) % 8];
+    }
+
+    _weatherRowsHTML(station, category) {
+        const symCode = station.symbol_code || '';
+        const isWeather = category === 'weather' || symCode === '_' || station.packet_type === 'weather';
+        if (!isWeather) return '';
+
+        const wx = this._parseWeatherTelemetry(station.last_comment || station.last_raw || '');
+        if (!wx) return '';
+
+        const rows = [];
+        if (wx.temp_f !== undefined) rows.push(['Temp', `${wx.temp_f}&deg;F`]);
+        if (wx.wind_mph !== undefined) {
+            const dir = wx.wind_dir_deg !== undefined ? `${wx.wind_dir_deg}&deg; ` : '';
+            rows.push(['Wind', `${dir}${wx.wind_mph} mph`]);
+        }
+        if (wx.gust_mph !== undefined) rows.push(['Gust', `${wx.gust_mph} mph`]);
+        if (wx.humidity !== undefined) rows.push(['Humidity', `${wx.humidity}%`]);
+        if (wx.pressure_mb !== undefined) rows.push(['Pressure', `${wx.pressure_mb.toFixed(1)} mb`]);
+        if (wx.rain_1h_in !== undefined) rows.push(['Rain 1h', `${wx.rain_1h_in.toFixed(2)} in`]);
+        if (wx.rain_24h_in !== undefined) rows.push(['Rain 24h', `${wx.rain_24h_in.toFixed(2)} in`]);
+        if (wx.rain_midnight_in !== undefined) rows.push(['Rain Today', `${wx.rain_midnight_in.toFixed(2)} in`]);
+        if (wx.luminosity !== undefined) rows.push(['Luminosity', `${wx.luminosity}`]);
+        if (wx.snow_24h_in !== undefined) rows.push(['Snow 24h', `${wx.snow_24h_in.toFixed(1)} in`]);
+
+        if (!rows.length) return '';
+        return rows
+            .map(([label, value]) => `<tr class="popup-weather-row"><td class="popup-lbl">${label}</td><td>${value}</td></tr>`)
+            .join('');
+    }
+
+    _parseWeatherTelemetry(text) {
+        if (!text) return null;
+        const raw = String(text);
+        const wx = {};
+        const read = (token, width) => {
+            const match = raw.match(new RegExp(`${token}(-?\\d{${width}})`));
+            return match ? parseInt(match[1], 10) : undefined;
+        };
+
+        const windDir = read('c', 3);
+        if (windDir !== undefined && windDir <= 360) wx.wind_dir_deg = windDir;
+        const wind = read('s', 3);
+        if (wind !== undefined) wx.wind_mph = wind;
+        const gust = read('g', 3);
+        if (gust !== undefined) wx.gust_mph = gust;
+        const temp = read('t', 3);
+        if (temp !== undefined) wx.temp_f = temp;
+        const rain1h = read('r', 3);
+        if (rain1h !== undefined) wx.rain_1h_in = rain1h / 100;
+        const rain24h = read('p', 3);
+        if (rain24h !== undefined) wx.rain_24h_in = rain24h / 100;
+        const rainMidnight = read('P', 3);
+        if (rainMidnight !== undefined) wx.rain_midnight_in = rainMidnight / 100;
+        const humidity = read('h', 2);
+        if (humidity !== undefined) wx.humidity = humidity === 0 ? 100 : humidity;
+        const pressure = read('b', 5);
+        if (pressure !== undefined) wx.pressure_mb = pressure / 10;
+        const luminosity = read('L', 3) ?? read('l', 3);
+        if (luminosity !== undefined) wx.luminosity = luminosity;
+        const snow = read('S', 3) ?? read('s', 3);
+        if (snow !== undefined && raw.includes('S')) wx.snow_24h_in = snow / 10;
+
+        return Object.keys(wx).length ? wx : null;
+    }
+
     /**
      * Calculate bearing in degrees from point A to point B.
      * Returns degrees clockwise from north (CSS: 0° = up).
@@ -682,6 +759,7 @@ class PropViewMap {
         const line = this.rfLines[callsign];
         const data = this.rfLineData[callsign];
         if (!line || !data) return;
+        const meta = this.stationMeta[callsign];
 
         const hops = this.hopMarkers[callsign] || [];
         const arrows = this.rfArrows[callsign] || [];
@@ -691,6 +769,9 @@ class PropViewMap {
             const now = Date.now() / 1000;
             const cutoff = now - (this.lineTimeFilter * 3600);
             visible = data.last_heard >= cutoff;
+        }
+        if (meta && !this._stationPassesMapFilters(meta)) {
+            visible = false;
         }
 
         if (visible) {
@@ -736,7 +817,7 @@ class PropViewMap {
         const marker = markers[callsign];
         if (!marker) return;
 
-        const visible = this.typeFilters.size === 0 || this.typeFilters.has(meta.category);
+        const visible = this._stationPassesMapFilters(meta);
 
         if (visible) {
             if (!layer.hasLayer(marker)) layer.addLayer(marker);
@@ -758,6 +839,13 @@ class PropViewMap {
                 arrows.forEach(m => { if (this.lineLayer.hasLayer(m)) this.lineLayer.removeLayer(m); });
             }
         }
+    }
+
+    _stationPassesMapFilters(meta) {
+        const typeVisible = this.typeFilters.size === 0 || this.typeFilters.has(meta.category);
+        const pathVisible = !this.showDirectRFOnly
+            || (meta.source === 'rf' && meta.is_direct !== false);
+        return typeVisible && pathVisible;
     }
 
     /**
@@ -994,6 +1082,7 @@ class PropViewMap {
             showLines: this.showLines,
             showRF: this.showRF,
             showIS: this.showIS,
+            showDirectRFOnly: this.showDirectRFOnly,
             showLabels: this.showLabels,
             autoFit: this.autoFit,
             darkMode: this.darkMode,
@@ -1028,6 +1117,12 @@ class PropViewMap {
             this.map.removeLayer(this.isLayer);
             const btn = document.getElementById('btn-toggle-is');
             if (btn) btn.classList.remove('active');
+        }
+        if (state.showDirectRFOnly === true) {
+            this.showDirectRFOnly = true;
+            const btn = document.getElementById('btn-toggle-direct-rf');
+            if (btn) btn.classList.add('active');
+            this.applyAllTypeFilters();
         }
 
         // Restore dark/light theme
@@ -1114,6 +1209,13 @@ class PropViewMap {
         return this.showIS;
     }
 
+    toggleDirectRFOnly() {
+        this.showDirectRFOnly = !this.showDirectRFOnly;
+        this.applyAllTypeFilters();
+        this._saveUIState();
+        return this.showDirectRFOnly;
+    }
+
     _bindControls() {
         document.getElementById('btn-center-map')?.addEventListener('click', () => {
             this.centerOnStation();
@@ -1131,6 +1233,11 @@ class PropViewMap {
 
         document.getElementById('btn-toggle-is')?.addEventListener('click', (e) => {
             const active = this.toggleIS();
+            e.target.classList.toggle('active', active);
+        });
+
+        document.getElementById('btn-toggle-direct-rf')?.addEventListener('click', (e) => {
+            const active = this.toggleDirectRFOnly();
             e.target.classList.toggle('active', active);
         });
 

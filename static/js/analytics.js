@@ -31,6 +31,7 @@
         document.getElementById('besttime-days')?.addEventListener('change', () => loadBestTimes());
         document.getElementById('bearing-hours')?.addEventListener('change', () => loadBearingSectors());
         document.getElementById('first-heard-hours')?.addEventListener('change', () => loadFirstHeard());
+        document.getElementById('first-heard-direct-only')?.addEventListener('change', () => loadFirstHeard());
 
         const savedSection = localStorage.getItem(ANALYTICS_SECTION_KEY);
         if (savedSection && document.getElementById(savedSection)) {
@@ -742,28 +743,34 @@
 
     async function loadFirstHeard() {
         const hours = document.getElementById('first-heard-hours')?.value || 24;
+        const directOnly = document.getElementById('first-heard-direct-only')?.checked || false;
         const container = document.getElementById('first-heard-list');
         if (!container) return;
 
         try {
-            const resp = await fetch(`/api/first-heard?hours=${hours}`);
+            const resp = await fetch(`/api/first-heard?hours=${hours}&direct_only=${directOnly ? 'true' : 'false'}`);
             const data = await resp.json();
 
             if (!data.log || data.log.length === 0) {
-                container.innerHTML = '<div class="analytics-empty">No new stations heard in this time window.</div>';
+                container.innerHTML = `<div class="analytics-empty">${directOnly ? 'No new direct RF stations heard in this time window.' : 'No new stations heard in this time window.'}</div>`;
                 return;
             }
 
             let html = '<div class="first-heard-table">';
-            html += '<div class="fh-header"><span class="fh-time">Time</span><span class="fh-call">Station</span><span class="fh-dist">Distance</span></div>';
+            html += '<div class="fh-header"><span class="fh-time">Time</span><span class="fh-call">Station</span><span class="fh-dist">Distance</span><span class="fh-path">Path</span></div>';
 
             data.log.forEach(entry => {
                 const time = new Date(entry.timestamp * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
                 const dist = entry.distance_km ? window.formatDist(entry.distance_km) : '—';
+                const pathLabel = entry.source === 'rf'
+                    ? (entry.is_direct ? 'Direct RF' : (_esc(entry.path || 'Digipeated RF')))
+                    : 'APRS-IS';
+                const pathClass = entry.source === 'rf' && entry.is_direct ? 'direct' : 'relayed';
                 html += `<div class="fh-row">`;
                 html += `<span class="fh-time">${time}</span>`;
                 html += `<span class="fh-call">${_esc(entry.callsign)}</span>`;
                 html += `<span class="fh-dist">${dist}</span>`;
+                html += `<span class="fh-path ${pathClass}" title="${_esc(entry.path || '')}">${pathLabel}</span>`;
                 html += `</div>`;
             });
 

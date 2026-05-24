@@ -9,6 +9,9 @@ from server.analytics import AnalyticsEngine
 from server.alerts import AlertConfig, AlertManager
 from server.config import Config
 from server.database import Database
+from server.packet_handler import PacketHandler
+from server.station_tracker import StationTracker
+from server.websocket_manager import WebSocketManager
 from server.gps import GPSManager, parse_nmea_position
 
 
@@ -88,9 +91,9 @@ class APRSISComplianceTests(unittest.TestCase):
         config = Config()
         config.station.callsign = "K5ABC"
         config.aprs_is.passcode = "12345"
-        client = APRSISClient(config, lambda packet: None, app_version="1.4.4")
+        client = APRSISClient(config, lambda packet: None, app_version="1.5.0")
 
-        self.assertIn("vers APRSPropView 1.4.4", client._build_login())
+        self.assertIn("vers APRSPropView 1.5.0", client._build_login())
 
 
 class MessageAddresseeValidationTests(unittest.TestCase):
@@ -110,6 +113,156 @@ class MessageAddresseeValidationTests(unittest.TestCase):
     def test_rejects_malformed_addressees(self):
         for addressee in ("", "-KJ5GOV", "KJ5GOV-", "TOO-LONG10", "BAD/CALL", "BAD CALL"):
             self.assertFalse(_is_valid_message_addressee(addressee))
+
+
+class MessagePersistenceTests(unittest.TestCase):
+    def test_messages_persist_and_dedupe_by_message_key(self):
+        async def run_test():
+            with tempfile.TemporaryDirectory() as tmp:
+                db = Database(f"{tmp}/test.db")
+                await db.initialize()
+                try:
+                    first = await db.add_message(
+                        direction="rx",
+                        from_call="KK7PZE-7",
+                        to_call="KK7PZE",
+                        text="Reply 1",
+                        message_id="12",
+                        source="rf",
+                        dedupe_key="id:KK7PZE-7|KK7PZE|12",
+                    )
+                    duplicate = await db.add_message(
+                        direction="rx",
+                        from_call="KK7PZE-7",
+                        to_call="KK7PZE",
+                        text="Reply 1",
+                        message_id="12",
+                        source="aprs_is",
+                        dedupe_key="id:KK7PZE-7|KK7PZE|12",
+                    )
+                    messages = await db.get_recent_messages()
+                finally:
+                    await db.close()
+
+            self.assertIsNotNone(first)
+            self.assertIsNone(duplicate)
+            self.assertEqual(len(messages), 1)
+            self.assertEqual(messages[0]["from"], "KK7PZE-7")
+            self.assertEqual(messages[0]["to"], "KK7PZE")
+
+        asyncio.run(run_test())
+
+    def test_message_contacts_can_be_deleted(self):
+        async def run_test():
+            with tempfile.TemporaryDirectory() as tmp:
+                db = Database(f"{tmp}/test.db")
+                await db.initialize()
+                try:
+                    await db.upsert_message_contact("KK7PZE-7")
+                    before = await db.get_message_contacts()
+                    deleted = await db.delete_message_contact("KK7PZE-7")
+                    after = await db.get_message_contacts()
+                finally:
+                    await db.close()
+
+            self.assertEqual([c["callsign"] for c in before], ["KK7PZE-7"])
+            self.assertTrue(deleted)
+            self.assertEqual(after, [])
+
+        asyncio.run(run_test())
+
+    def test_self_echoed_message_is_not_stored_as_received(self):
+        async def run_test():
+            with tempfile.TemporaryDirectory() as tmp:
+                config = Config()
+                config.station.callsign = "K5YVY"
+                config.station.ssid = 1
+                db = Database(f"{tmp}/test.db")
+                await db.initialize()
+                try:
+                    ws = WebSocketManager()
+                    tracker = StationTracker(db, config, ws)
+                    handler = PacketHandler(config, tracker, None, None, ws)
+                    packet = parse_packet(
+                        "K5YVY-1>APPRPV,WIDE1-1::KK7PZE   :Hello Joe{1",
+                        source="rf",
+                    )
+
+                    await handler._check_incoming_message(packet, source="rf")
+                    messages = await db.get_recent_messages()
+                finally:
+                    await db.close()
+
+            self.assertEqual(messages, [])
+
+        asyncio.run(run_test())
+
+    def test_self_message_packet_is_not_tracked_as_rf_station(self):
+        async def run_test():
+            with tempfile.TemporaryDirectory() as tmp:
+                config = Config()
+                config.station.callsign = "K5YVY"
+                config.station.ssid = 1
+                db = Database(f"{tmp}/test.db")
+                await db.initialize()
+                try:
+                    ws = WebSocketManager()
+                    tracker = StationTracker(db, config, ws)
+                    packet = parse_packet(
+                        "K5YVY-1>APPRPV,WIDE1-1::KK7PZE   :Hello Joe{1",
+                        source="rf",
+                    )
+
+                    await tracker.track_packet(packet)
+                    station = await db.get_station("K5YVY-1", "rf")
+                    packets = await db.get_recent_packets(limit=10)
+                finally:
+                    await db.close()
+
+            self.assertIsNone(station)
+            self.assertEqual(len(packets), 1)
+            self.assertEqual(packets[0]["packet_type"], "message")
+
+        asyncio.run(run_test())
+
+
+class FirstHeardLogTests(unittest.TestCase):
+    def test_first_heard_direct_only_filter(self):
+        async def run_test():
+            with tempfile.TemporaryDirectory() as tmp:
+                db = Database(f"{tmp}/test.db")
+                await db.initialize()
+                try:
+                    await db.log_first_heard(
+                        "DIRECT",
+                        "rf",
+                        25.0,
+                        90.0,
+                        35.0,
+                        -97.0,
+                        path="WIDE1-1",
+                        is_direct=True,
+                    )
+                    await db.log_first_heard(
+                        "DIGI",
+                        "rf",
+                        125.0,
+                        180.0,
+                        36.0,
+                        -98.0,
+                        path="WIDE1-1,DIGI*",
+                        hop_count=1,
+                        is_direct=False,
+                    )
+                    direct = await db.get_first_heard_log(hours=1, direct_only=True)
+                    all_rows = await db.get_first_heard_log(hours=1)
+                finally:
+                    await db.close()
+
+            self.assertEqual([row["callsign"] for row in direct], ["DIRECT"])
+            self.assertEqual(len(all_rows), 2)
+
+        asyncio.run(run_test())
 
 
 class StationCallsignValidationTests(unittest.TestCase):
@@ -301,7 +454,7 @@ class BandOpeningAlertTests(unittest.TestCase):
 
         self.assertEqual(len(alerts), 1)
         alert = alerts[0]
-        self.assertIn("Top Direct Station: K1ABC bearing NW (315°)", alert["message"])
+        self.assertIn("Top Direct Station: K1ABC bearing NW", alert["message"])
         self.assertIn("Direct/1-Hop RF Stations:\n- K1ABC 120.0 km", alert["message"])
         self.assertIn("- N5ONE 80.0 km (49.7 mi) E 1 hop via W9EN-10", alert["message"])
         self.assertEqual(alert["top_station"], "K1ABC")
@@ -337,6 +490,52 @@ class BandOpeningAlertTests(unittest.TestCase):
                 "candidates": [{"callsign": "K1ABC", "distance_km": 900}],
             })
             self.assertEqual(manager.get_alert_history(), [])
+
+        asyncio.run(run_test())
+
+
+class MQTTIntegrationTests(unittest.TestCase):
+    def test_tracker_publishes_propagation_payload_and_score_topics(self):
+        class FakeMQTTPublisher:
+            def __init__(self):
+                self.propagation = []
+                self.scores = []
+
+            async def publish_propagation(self, prop_data):
+                self.propagation.append(prop_data)
+
+            async def publish_prop_score(self, score, level):
+                self.scores.append((score, level))
+
+        async def run_test():
+            tracker = StationTracker(None, Config(), WebSocketManager())
+            publisher = FakeMQTTPublisher()
+            tracker.set_mqtt_publisher(publisher)
+
+            await tracker._publish_mqtt_propagation({"score": 42.5, "level": "fair"})
+
+            self.assertEqual(publisher.propagation, [{"score": 42.5, "level": "fair"}])
+            self.assertEqual(publisher.scores, [(42.5, "fair")])
+
+        asyncio.run(run_test())
+
+    def test_tracker_publishes_alert_payload(self):
+        class FakeMQTTPublisher:
+            def __init__(self):
+                self.alerts = []
+
+            async def publish_alert(self, alert):
+                self.alerts.append(alert)
+
+        async def run_test():
+            tracker = StationTracker(None, Config(), WebSocketManager())
+            publisher = FakeMQTTPublisher()
+            tracker.set_mqtt_publisher(publisher)
+            alert = {"type": "regional_watch", "score": 50}
+
+            await tracker._publish_mqtt_alert(alert)
+
+            self.assertEqual(publisher.alerts, [alert])
 
         asyncio.run(run_test())
 

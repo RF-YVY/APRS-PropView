@@ -12,6 +12,26 @@
     const UI_STATE_KEY = 'pvDesktopUIState';
     const UPDATE_BANNER_DISMISS_KEY = 'pvUpdateBannerDismissed';
     const DEFAULT_UI_THEME = 'dark';
+    const ALERT_AUDIO_SLOTS = [
+        ['my_station_opening', 'My Station Band Opening'],
+        ['regional_watch', 'Regional Band Watch'],
+        ['first_heard', 'First-Heard Station'],
+        ['anomaly', 'Propagation Anomaly'],
+        ['sporadic_e', 'Sporadic-E'],
+        ['message_received', 'APRS Message Received'],
+        ['weather_warning', 'Weather Warning'],
+        ['weather_watch', 'Weather Watch'],
+    ];
+    const ALERT_AUDIO_FIELD_BY_KEY = {
+        my_station_opening: 'audio_my_station_opening_file',
+        regional_watch: 'audio_regional_watch_file',
+        first_heard: 'audio_first_heard_file',
+        anomaly: 'audio_anomaly_file',
+        sporadic_e: 'audio_sporadic_e_file',
+        message_received: 'audio_message_received_file',
+        weather_warning: 'audio_weather_warning_file',
+        weather_watch: 'audio_weather_watch_file',
+    };
     let lastStatus = null;
     let manualBeaconPending = false;
     let liveSyncPending = false;
@@ -62,6 +82,14 @@
         if (km == null || km === 0) return 'N/A';
         const val = window.pvDistUnit === 'mi' ? km * KM_TO_MI : km;
         return `${val.toFixed(decimals)} ${window.pvDistUnit}`;
+    };
+
+    /** Format a numeric bearing as an 8-point compass label. */
+    window.formatBearing = function (heading) {
+        if (heading == null || Number.isNaN(Number(heading))) return '';
+        const sectors = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+        const normalized = ((Number(heading) % 360) + 360) % 360;
+        return sectors[Math.floor((normalized + 22.5) / 45) % 8];
     };
 
     /** Return the current unit label ('mi' or 'km'). */
@@ -122,6 +150,7 @@
         document.querySelector('.tab-btn.active')?.dispatchEvent(new Event('click'));
 
         // Organize settings UI before control bindings are attached
+        initAlertAudioControls();
         initSettingsOrganizer();
 
         // Init station manager
@@ -208,7 +237,7 @@
         const btn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
         if (!btn) return;
 
-        if (tabId !== 'tab-settings') {
+        if (tabId !== 'tab-settings' && tabId !== 'tab-messages') {
             lastNonSettingsTab = tabId;
         }
 
@@ -238,6 +267,11 @@
         _activateDesktopTab(lastNonSettingsTab || 'tab-rf');
     }
     window.pvCloseSettingsPane = closeSettingsPane;
+
+    function closeMessagesPane() {
+        _activateDesktopTab(lastNonSettingsTab || 'tab-rf');
+    }
+    window.pvCloseMessagesPane = closeMessagesPane;
 
     function initTabs() {
         window.pvActivateTab = _activateDesktopTab;
@@ -555,6 +589,132 @@
         return div.innerHTML;
     }
 
+    function getAlertAudioUrl(alertKey) {
+        const file = serverConfig?.alerts?.[ALERT_AUDIO_FIELD_BY_KEY[alertKey]];
+        return file ? `/api/alert-audio/file/${encodeURIComponent(file)}` : '';
+    }
+
+    async function playAlertAudio(alertKey) {
+        const url = getAlertAudioUrl(alertKey);
+        if (!url) return;
+        try {
+            const audio = new Audio(`${url}?t=${Date.now()}`);
+            const deviceId = serverConfig?.alerts?.audio_output_device_id || '';
+            if (deviceId && typeof audio.setSinkId === 'function') {
+                await audio.setSinkId(deviceId);
+            }
+            audio.volume = 1;
+            await audio.play();
+        } catch (e) {
+            console.warn(`Unable to play ${alertKey} alert audio:`, e);
+        }
+    }
+
+    window.pvAlertAudio = {
+        play: playAlertAudio,
+    };
+
+    function initAlertAudioControls() {
+        const container = document.getElementById('cfg-alerts-audio-slots');
+        if (!container) return;
+        container.innerHTML = ALERT_AUDIO_SLOTS.map(([key, label]) => `
+            <div class="alert-audio-row" data-alert-audio-key="${key}">
+                <div class="alert-audio-name">${_escapeHTML(label)}</div>
+                <div class="alert-audio-file" id="cfg-alerts-audio-file-${key}">Silent</div>
+                <input type="hidden" id="cfg-alerts-audio-value-${key}">
+                <input type="file" id="cfg-alerts-audio-pick-${key}" accept=".wav,.mp3,audio/wav,audio/mpeg">
+                <button type="button" class="settings-toolbar-btn" id="cfg-alerts-audio-clear-${key}">Clear</button>
+            </div>
+        `).join('');
+
+        ALERT_AUDIO_SLOTS.forEach(([key]) => {
+            document.getElementById(`cfg-alerts-audio-pick-${key}`)?.addEventListener('change', (e) => {
+                const file = e.target.files?.[0];
+                if (file) uploadAlertAudio(key, file);
+                e.target.value = '';
+            });
+            document.getElementById(`cfg-alerts-audio-clear-${key}`)?.addEventListener('click', () => {
+                setAlertAudioSlot(key, '');
+                markSettingsDirty('Unsaved audio setting. Save Configuration to keep this change.');
+            });
+        });
+    }
+
+    function setAlertAudioSlot(key, filename) {
+        setVal(`cfg-alerts-audio-value-${key}`, filename || '');
+        const label = document.getElementById(`cfg-alerts-audio-file-${key}`);
+        if (label) {
+            label.textContent = filename || 'Silent';
+            label.title = filename || 'No audio file selected';
+        }
+    }
+
+    async function uploadAlertAudio(key, file) {
+        const statusEl = document.getElementById('settings-status');
+        if (!/\.(wav|mp3)$/i.test(file.name || '')) {
+            showSystemNotification('Select a .wav or .mp3 alert sound.', 'error');
+            return;
+        }
+        try {
+            if (statusEl) {
+                statusEl.style.display = 'block';
+                statusEl.className = 'settings-status warning';
+                statusEl.textContent = `Uploading ${file.name}...`;
+            }
+            const data = await readFileAsDataUrl(file);
+            const resp = await fetch('/api/alert-audio/upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ alert_key: key, filename: file.name, data }),
+            });
+            const result = await resp.json();
+            if (!resp.ok || !result.success) {
+                throw new Error(result.message || 'Unable to upload alert audio.');
+            }
+            setAlertAudioSlot(key, result.filename || '');
+            markSettingsDirty('Unsaved audio setting. Save Configuration to keep this change.');
+            if (statusEl) {
+                statusEl.className = 'settings-status success';
+                statusEl.textContent = 'Audio uploaded. Save Configuration to keep this alert sound.';
+            }
+        } catch (e) {
+            console.error('Alert audio upload failed:', e);
+            if (statusEl) {
+                statusEl.style.display = 'block';
+                statusEl.className = 'settings-status error';
+                statusEl.textContent = e.message || 'Audio upload failed.';
+            }
+        }
+    }
+
+    function readFileAsDataUrl(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(reader.error || new Error('Unable to read file.'));
+            reader.readAsDataURL(file);
+        });
+    }
+
+    async function refreshAudioOutputDevices(selectedId) {
+        const select = document.getElementById('cfg-alerts-audio-device');
+        if (!select || !navigator.mediaDevices?.enumerateDevices) return;
+        try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const outputs = devices.filter((device) => device.kind === 'audiooutput');
+            const current = selectedId || select.value || '';
+            select.innerHTML = '<option value="">System default</option>' + outputs.map((device, index) => {
+                const label = device.label || `Audio output ${index + 1}`;
+                return `<option value="${_escapeHTML(device.deviceId)}">${_escapeHTML(label)}</option>`;
+            }).join('');
+            if (current && outputs.some((device) => device.deviceId === current)) {
+                select.value = current;
+            }
+        } catch (e) {
+            console.warn('Unable to enumerate audio output devices:', e);
+        }
+    }
+
     // ── WebSocket event wiring ─────────────────────────────────
 
     function wireWebSocket() {
@@ -604,6 +764,7 @@
 
         ws.on('alert', (msg) => {
             if (msg.data) {
+                playAlertAudio(msg.data.type);
                 if (msg.data.type === 'my_station_opening' || msg.data.type === 'regional_watch') {
                     showBandAlertNotification(msg.data);
                 } else if (msg.data.message) {
@@ -615,6 +776,7 @@
 
         ws.on('first_heard', (msg) => {
             if (msg.data) {
+                playAlertAudio('first_heard');
                 showSystemNotification(`New station heard: ${msg.data.callsign}`, 'info');
             }
         });
@@ -635,6 +797,11 @@
 
         ws.on('message', (msg) => {
             if (msg.data) {
+                const myCall = (document.getElementById('station-call')?.textContent || '').toUpperCase();
+                const toCall = (msg.data.to || '').toUpperCase();
+                if (msg.data.direction === 'rx' && toCall === myCall) {
+                    playAlertAudio('message_received');
+                }
                 window.pvMessages.addMessage(msg.data);
             }
         });
@@ -1265,7 +1432,7 @@
 
     function renderUpdateStatus(data, els) {
         const { messageEl, detailEl, linkEl, footerEl } = els;
-        const currentVersion = data?.current_version || '1.4.4';
+        const currentVersion = data?.current_version || '1.5.0';
         const latestVersion = data?.latest_version || currentVersion;
         const releaseUrl = data?.release_url || 'https://github.com/RF-YVY/APRS-PropView/releases';
         const publishedAt = data?.published_at ? formatReleaseDate(data.published_at) : '';
@@ -1597,6 +1764,7 @@
             // Tracking
             setVal('cfg-track-age', Math.round((cfg.tracking?.max_station_age || 0) / 60));
             setVal('cfg-track-cleanup', Math.round((cfg.tracking?.cleanup_interval || 0) / 60));
+            setVal('cfg-msg-retention', cfg.messaging?.message_retention_days ?? 30);
 
             // Alerts
             setChk('cfg-alerts-enabled', cfg.alerts?.enabled);
@@ -1609,6 +1777,11 @@
             setVal('cfg-alerts-cooldown', Math.round((cfg.alerts?.cooldown_seconds || 0) / 60));
             setVal('cfg-alerts-quiet-start', cfg.alerts?.quiet_start || '');
             setVal('cfg-alerts-quiet-end', cfg.alerts?.quiet_end || '');
+            setVal('cfg-alerts-audio-device', cfg.alerts?.audio_output_device_id || '');
+            refreshAudioOutputDevices(cfg.alerts?.audio_output_device_id || '');
+            ALERT_AUDIO_SLOTS.forEach(([key]) => {
+                setAlertAudioSlot(key, cfg.alerts?.[ALERT_AUDIO_FIELD_BY_KEY[key]] || '');
+            });
 
             // Propagation meters
             setVal('cfg-prop-my-count', cfg.propagation?.my_station_full_count ?? 10);
@@ -1759,6 +1932,9 @@
                 max_station_age: (parseInt(getVal('cfg-track-age')) || 0) * 60,
                 cleanup_interval: (parseInt(getVal('cfg-track-cleanup')) || 0) * 60,
             },
+            messaging: {
+                message_retention_days: parseInt(getVal('cfg-msg-retention')) || 30,
+            },
             alerts: {
                 enabled: getChk('cfg-alerts-enabled'),
                 anomaly_alert_enabled: getChk('cfg-alerts-anomaly-enabled'),
@@ -1774,6 +1950,15 @@
                 msg_discord_enabled: getChk('cfg-alerts-msg-discord'),
                 msg_email_enabled: getChk('cfg-alerts-msg-email'),
                 msg_sms_enabled: getChk('cfg-alerts-msg-sms'),
+                audio_output_device_id: getVal('cfg-alerts-audio-device') || '',
+                audio_my_station_opening_file: getVal('cfg-alerts-audio-value-my_station_opening') || '',
+                audio_regional_watch_file: getVal('cfg-alerts-audio-value-regional_watch') || '',
+                audio_first_heard_file: getVal('cfg-alerts-audio-value-first_heard') || '',
+                audio_anomaly_file: getVal('cfg-alerts-audio-value-anomaly') || '',
+                audio_sporadic_e_file: getVal('cfg-alerts-audio-value-sporadic_e') || '',
+                audio_message_received_file: getVal('cfg-alerts-audio-value-message_received') || '',
+                audio_weather_warning_file: getVal('cfg-alerts-audio-value-weather_warning') || '',
+                audio_weather_watch_file: getVal('cfg-alerts-audio-value-weather_watch') || '',
                 discord_enabled: getChk('cfg-alerts-discord'),
                 discord_webhook_url: getVal('cfg-alerts-discord-url'),
                 email_enabled: getChk('cfg-alerts-email'),
@@ -1843,6 +2028,7 @@
             if (result.success) {
                 clearSettingsDirty();
                 window.pvConfigPromise = null;
+                serverConfig = { ...(serverConfig || {}), alerts: { ...body.alerts } };
                 const delay = result.needRestart ? 10000 : 5000;
                 setTimeout(() => {
                     if (!settingsDirty) statusEl.style.display = 'none';
@@ -2156,6 +2342,7 @@
         btn.addEventListener('click', saveSettings);
     });
     document.getElementById('btn-close-settings')?.addEventListener('click', closeSettingsPane);
+    document.getElementById('btn-close-messages')?.addEventListener('click', closeMessagesPane);
 
     // Live font preview when changed in settings
     document.getElementById('cfg-web-font')?.addEventListener('change', (e) => {

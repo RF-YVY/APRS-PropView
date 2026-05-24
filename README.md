@@ -1,6 +1,6 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.4.4** | May 23, 2026
+**Version 1.5.0** | May 24, 2026
 
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 
@@ -9,7 +9,7 @@
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
 
-Version 1.4.4 improves APRS message compliance, Sporadic-E and propagation alert accuracy, mobile uptime display, Linux/Pi install preservation, and release packaging.
+Version 1.5.0 adds persistent APRS messaging, contact management, message de-duplication, GPS and weather refinements, first-heard direct RF filtering, MQTT propagation/alert publishing, and Linux/Pi install updates.
 
 Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs/linux-raspberry-pi.md).
 
@@ -47,6 +47,7 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **Band Opening Detection** — Automatic alerts when propagation thresholds are exceeded
 - **Quiet Hours** — Configurable quiet time window (HH:MM 24h) to suppress notifications
 - **Message Notifications** — Get notified via Discord/Email/SMS when APRS messages are received
+- **MQTT Publishing** — Publish retained propagation metrics, score/level topics, and alert events to brokers such as Mosquitto, Home Assistant, Node-RED, or EMQX
 - **Discord Webhooks** — Push notifications to a Discord channel
 - **Email (SMTP)** — Email alerts via any SMTP server
 - **SMS Gateway** — Text alerts via carrier email-to-SMS gateways
@@ -153,10 +154,13 @@ All settings are in `config.toml` and can be edited from the web UI **Settings**
 | `[kiss_tcp]` | TCP KISS TNC host and port |
 | `[web]` | Web interface bind address, port, font, custom map tile source, ghost time, expire time |
 | `[tracking]` | Station age limits and cleanup intervals |
+| `[messaging]` | APRS message history retention |
 | `[database]` | SQLite database path |
 | `[propagation]` | Scoring thresholds for My Station and Regional propagation meters |
 | `[alerts]` | Band opening thresholds, Discord/email/SMS notification settings |
 | `[weather]` | Weather enabled, location code (zip/ICAO), alert range, radar overlay, alert polygons, alert scope, and adaptive polling |
+| `[gps]` | Browser, own-packet, serial, TCP, and UDP GPS ingestion |
+| `[mqtt]` | Optional broker settings for propagation and alert publishing |
 
 ## Architecture
 

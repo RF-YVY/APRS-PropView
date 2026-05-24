@@ -23,7 +23,7 @@
     </script>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css" />
-    <link rel="stylesheet" href="/static/css/style.css?v=weather-settings-pane-4" />
+    <link rel="stylesheet" href="/static/css/style.css?v=messages-conversation-filter-1" />
     <!-- Leaflet JS -->
     <script defer src="/static/vendor/leaflet/leaflet.js"></script>
 </head>
@@ -137,6 +137,7 @@
                 <button id="btn-toggle-lines" title="Toggle propagation lines" class="active">📏</button>
                 <button id="btn-toggle-rf" title="Toggle RF stations" class="active">🔴</button>
                 <button id="btn-toggle-is" title="Toggle APRS-IS stations" class="active">🔵</button>
+                <button id="btn-toggle-direct-rf" class="map-wide-control" title="Show only RF stations heard directly, excluding digipeaters and APRS-IS">Direct RF</button>
                 <div class="map-control-divider"></div>
                 <button id="btn-toggle-theme" title="Toggle light/dark map" class="active">🌙</button>
                 <button id="btn-toggle-labels" title="Toggle station callsign labels">🏷️</button>
@@ -246,10 +247,20 @@
 
             <!-- ── Messages Tab ──────────────────────────────── -->
             <div id="tab-messages" class="tab-content">
+                <div class="message-panel">
+                    <div class="message-pane-header">
+                        <div>
+                            <h2>Messages</h2>
+                            <p>APRS message history, replies, and contacts.</p>
+                        </div>
+                        <button id="btn-close-messages" class="settings-pane-close" type="button" title="Close messages">&times;</button>
+                    </div>
                 <div class="msg-compose-bar">
-                    <input type="text" id="msg-to-call" class="msg-input-call" placeholder="TO CALL" maxlength="9" title="Recipient station, APRS addressee, or bot such as WXBOT">
+                    <input type="text" id="msg-to-call" class="msg-input-call" placeholder="TO CALL" maxlength="9" list="msg-contact-options" title="Recipient station, APRS addressee, or bot such as WXBOT">
+                    <datalist id="msg-contact-options"></datalist>
                     <input type="text" id="msg-text" class="msg-input-text" placeholder="Type message... (max 67 chars)" maxlength="67">
                     <button id="btn-send-msg" class="btn-primary btn-send-msg" title="Send APRS Message">📨 Send</button>
+                    <button id="btn-save-contact" class="btn-small" title="Save recipient to contacts">Save Contact</button>
                 </div>
                 <div class="msg-filter-bar">
                     <label>Show:
@@ -263,7 +274,14 @@
                     <span id="msg-count" class="filter-count">0 messages</span>
                     <button id="btn-clear-msgs" class="btn-small" title="Clear message list">Clear</button>
                 </div>
-                <div id="msg-list" class="msg-list"></div>
+                <div class="msg-workspace">
+                    <aside class="msg-contacts-panel">
+                        <div class="msg-contacts-title">Contacts</div>
+                        <div id="msg-contact-list" class="msg-contact-list"></div>
+                    </aside>
+                    <div id="msg-list" class="msg-list"></div>
+                </div>
+                </div>
             </div>
 
             <!-- ── Propagation Tab ───────────────────────────── -->
@@ -479,6 +497,10 @@
                     <div id="sec-first-heard" class="analytics-section">
                         <div class="analytics-header">
                             <h3>🆕 First Heard Stations</h3>
+                            <label class="analytics-toggle">
+                                <input type="checkbox" id="first-heard-direct-only">
+                                <span>Direct RF only</span>
+                            </label>
                             <select id="first-heard-hours">
                                 <option value="6">6h</option>
                                 <option value="12">12h</option>
@@ -907,6 +929,14 @@
                         </div>
                     </div>
 
+                    <div class="settings-section" data-settings-key="messaging" data-summary="Message history retention and contact directory behavior.">
+                        <h3>Messaging</h3>
+                        <div class="settings-row">
+                            <label for="cfg-msg-retention">Message Retention (days)</label>
+                            <input type="number" id="cfg-msg-retention" min="1" step="1" value="30">
+                        </div>
+                    </div>
+
                     <!-- Weather -->
                     <div class="settings-section" data-settings-key="weather" data-summary="Weather banner, radar overlay, alert polygons, and refresh interval.">
                         <h3>🌤️ Weather</h3>
@@ -1117,6 +1147,16 @@
                             <input type="time" id="cfg-alerts-quiet-end" placeholder="08:00">
                         </div>
 
+                        <h4 style="color:var(--accent-green);margin:10px 0 6px;">Local Audio Alerts</h4>
+                        <div class="settings-row">
+                            <label for="cfg-alerts-audio-device">Audio Output Device</label>
+                            <select id="cfg-alerts-audio-device">
+                                <option value="">System default</option>
+                            </select>
+                        </div>
+                        <p class="settings-help">Choose a .wav or .mp3 for each alert type. Empty slots are silent.</p>
+                        <div id="cfg-alerts-audio-slots" class="alert-audio-slots"></div>
+
                         <h4 style="color:var(--accent-purple);margin:10px 0 6px;">Band Opening Channels</h4>
                         <div class="settings-row">
                             <label for="cfg-alerts-discord">Discord</label>
@@ -1219,7 +1259,7 @@
                 <div class="about-panel">
                     <div class="about-header">
                         <h2>APRS PropView</h2>
-                        <span id="about-version" class="about-version">v1.4.4</span>
+                        <span id="about-version" class="about-version">v1.5.0</span>
                     </div>
                     <div class="about-section">
                         <p>A real-time APRS digipeater and IGate focused on VHF propagation, live mapping, APRS messaging, analytics, and weather-aware situational awareness.</p>
@@ -1235,9 +1275,9 @@
                     </div>
                     <div class="about-section">
                         <h3>Build Info</h3>
-                        <p>Version: <span id="about-version-detail">1.4.4</span></p>
-                        <p>Release Date: <span id="about-date">May 23, 2026</span></p>
-                        <p>Highlights: APRS message compliance, refined propagation and Sporadic-E alerts, mobile uptime fix, and safer Linux/Pi install updates.</p>
+                        <p>Version: <span id="about-version-detail">1.5.0</span></p>
+                        <p>Release Date: <span id="about-date">May 24, 2026</span></p>
+                        <p>Highlights: persistent APRS messaging, GPS and weather refinements, direct-first-heard filtering, MQTT propagation/alert publishing, and refreshed Linux/Pi source installs.</p>
                     </div>
                     <div class="about-section">
                         <h3>Video Guide</h3>
@@ -1349,6 +1389,7 @@
                         <tr><td>📍</td><td><b>Center Map</b> — Re-center on your station.</td></tr>
                         <tr><td>📏</td><td><b>Toggle Lines</b> — Show/hide propagation path lines.</td></tr>
                         <tr><td>🔴</td><td><b>Toggle RF</b> — Show/hide RF station markers.</td></tr>
+                        <tr><td>Direct RF</td><td><b>Direct RF Only</b> — Show only RF stations heard directly, hiding digipeated RF and APRS-IS stations.</td></tr>
                         <tr><td>🔵</td><td><b>Toggle APRS-IS</b> — Show/hide Internet-heard stations.</td></tr>
                         <tr><td>🌙 / ☀️</td><td><b>Theme</b> — Toggle dark/light map tiles.</td></tr>
                         <tr><td>🏷️</td><td><b>Callsign Labels</b> — Show/hide callsign text above each station icon.</td></tr>
@@ -1440,7 +1481,7 @@
                     <h4>MQTT Integration</h4>
                     <p>MQTT is for sending APRS PropView events and propagation status to other systems. It is not needed for normal APRS, digipeater, IGate, mapping, or messaging operation; enable it when you have an MQTT broker such as Mosquitto, Home Assistant, Node-RED, EMQX, or another dashboard/automation system that should receive PropView data.</p>
                     <p>Common use cases include showing current propagation level on a wall dashboard, triggering Home Assistant or Node-RED automations when a band opening alert fires, logging propagation metrics into another time-series system, or bridging PropView status to a shack display without scraping the web UI.</p>
-                    <p>Configure the broker host, port, topic prefix, and optional username/password. The default topic prefix is <code>aprs/propview</code>; integrations should subscribe under that prefix for propagation, score, level, and alert-style messages.</p>
+                    <p>Configure the broker host, port, topic prefix, and optional username/password. The default topic prefix is <code>aprs/propview</code>. APRS PropView publishes retained propagation metrics on <code>aprs/propview/propagation</code>, retained summary values on <code>aprs/propview/score</code> and <code>aprs/propview/level</code>, and alert events on <code>aprs/propview/alert</code>.</p>
                 </section>
 
                 <section class="help-section">
@@ -1468,12 +1509,12 @@
 
     <!-- ── Scripts ────────────────────────────────────────────── -->
     <script defer src="/static/js/websocket.js"></script>
-    <script defer src="/static/js/map.js"></script>
-    <script defer src="/static/js/stations.js"></script>
+    <script defer src="/static/js/map.js?v=bearing-labels-1"></script>
+    <script defer src="/static/js/stations.js?v=bearing-labels-1"></script>
     <script defer src="/static/js/icons.js"></script>
     <script defer src="/static/js/analytics.js"></script>
-    <script defer src="/static/js/messages.js"></script>
+    <script defer src="/static/js/messages.js?v=messages-conversation-filter-1"></script>
     <script defer src="/static/js/weather.js"></script>
-    <script defer src="/static/js/app.js?v=weather-settings-pane-4"></script>
+    <script defer src="/static/js/app.js?v=bearing-labels-1"></script>
 </body>
 </html>

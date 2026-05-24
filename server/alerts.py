@@ -113,11 +113,7 @@ class AlertManager:
         my_top_bearing = self._bearing_label(my_top_heading)
         my_top_line = ""
         if my_top_call:
-            bearing_detail = (
-                f"{my_top_bearing} ({my_top_heading:.0f}\u00b0)"
-                if my_top_heading is not None
-                else my_top_bearing
-            )
+            bearing_detail = my_top_bearing
             my_top_line = f"Top Direct Station: {my_top_call} bearing {bearing_detail}\n"
         near_hop_stations = prop_data.get("my_near_hop_stations") or []
         near_hop_lines = []
@@ -235,7 +231,7 @@ class AlertManager:
 
         self._last_first_heard_alert_time = now
 
-        bearing_str = f"{heading:.0f}°" if heading else "?"
+        bearing_str = self._bearing_label(heading)
         alert = {
             "type": "first_heard",
             "timestamp": now,
@@ -256,11 +252,12 @@ class AlertManager:
             self._alert_history = self._alert_history[-100:]
 
         await self.send_alert(alert)
+        return alert
 
     async def check_anomaly(self, anomaly_data: Dict[str, Any]):
         """Alert when propagation anomaly is detected (conditions significantly above baseline)."""
         if not self.config.enabled or not self.config.anomaly_alert_enabled or self._is_quiet_time():
-            return
+            return None
 
         now = time.time()
         anomaly_score = anomaly_data.get("anomaly_score", 0)
@@ -268,10 +265,10 @@ class AlertManager:
 
         # Only alert on significant+ anomalies
         if anomaly_score < 1.5:
-            return
+            return None
 
         if now - self._last_anomaly_alert_time < self.config.cooldown_seconds:
-            return
+            return None
 
         self._last_anomaly_alert_time = now
 
@@ -297,20 +294,21 @@ class AlertManager:
             self._alert_history = self._alert_history[-100:]
 
         await self.send_alert(alert)
+        return alert
 
     async def check_sporadic_e(self, es_data: Dict[str, Any]):
         """Alert when sporadic-E conditions are detected."""
         if not self.config.enabled or not self.config.sporadic_e_alert_enabled or self._is_quiet_time():
-            return
+            return None
 
         now = time.time()
         es_level = es_data.get("es_level", "none")
 
         if es_level not in ("likely", "possible"):
-            return
+            return None
 
         if now - self._last_es_alert_time < self.config.cooldown_seconds:
-            return
+            return None
 
         self._last_es_alert_time = now
 
@@ -339,6 +337,7 @@ class AlertManager:
             self._alert_history = self._alert_history[-100:]
 
         await self.send_alert(alert)
+        return alert
 
     async def send_alert(self, alert: Dict[str, Any]):
         """Send alert via all configured channels."""

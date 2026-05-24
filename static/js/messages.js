@@ -6,11 +6,17 @@ window.pvMessages = (function () {
     'use strict';
 
     let messages = [];
+    let contacts = [];
     let myCallsign = '';
     let hasLoadedInitialMessages = false;
     let replyContext = null;
+    let selectedConversation = '';
+    let readTimestamps = {};
+    const READ_STORAGE_KEY = 'aprsPropViewMessageReadTimestamps';
 
     function init() {
+        loadReadTimestamps();
+
         // Send button
         document.getElementById('btn-send-msg')?.addEventListener('click', sendMessage);
 
@@ -35,6 +41,23 @@ window.pvMessages = (function () {
 
         // Filter change
         document.getElementById('msg-filter')?.addEventListener('change', renderMessages);
+        document.getElementById('btn-save-contact')?.addEventListener('click', saveCurrentContact);
+
+        document.getElementById('msg-contact-list')?.addEventListener('click', (e) => {
+            const item = e.target.closest('.msg-contact-item');
+            if (!item) return;
+            const callsign = item.dataset.callsign || '';
+            if (e.target.closest('.msg-contact-delete')) {
+                e.stopPropagation();
+                deleteContact(callsign);
+                return;
+            }
+            const toEl = document.getElementById('msg-to-call');
+            const textEl = document.getElementById('msg-text');
+            selectConversation(callsign);
+            if (toEl) toEl.value = callsign;
+            if (textEl) textEl.focus();
+        });
 
         // Clear button — clear on server and locally
         document.getElementById('btn-clear-msgs')?.addEventListener('click', async () => {
@@ -45,6 +68,10 @@ window.pvMessages = (function () {
             }
             messages = [];
             hasLoadedInitialMessages = true;
+            selectedConversation = '';
+            readTimestamps = {};
+            saveReadTimestamps();
+            renderContacts();
             renderMessages();
         });
 
@@ -103,13 +130,20 @@ window.pvMessages = (function () {
 
     async function loadMessages() {
         try {
-            const resp = await fetch('/api/messages?limit=500');
+            loadReadTimestamps();
+            const [resp, contactResp] = await Promise.all([
+                fetch('/api/messages?limit=500'),
+                fetch('/api/messages/contacts'),
+            ]);
             const data = await resp.json();
+            const contactData = await contactResp.json();
             if (data.messages) {
                 messages = data.messages;
                 hasLoadedInitialMessages = true;
-                renderMessages();
             }
+            contacts = contactData.contacts || [];
+            renderContacts();
+            renderMessages();
         } catch (e) {
             console.error('Failed to load messages:', e);
             hasLoadedInitialMessages = true;
@@ -120,12 +154,14 @@ window.pvMessages = (function () {
     function addMessage(msg) {
         if (!msg) return;
 
-        // Update my callsign from statusbar
-        const callEl = document.getElementById('station-call');
-        if (callEl) myCallsign = callEl.textContent.toUpperCase();
+        refreshMyCallsign();
 
-        messages.unshift(msg);
+        const isNew = upsertLocalMessage(msg);
         hasLoadedInitialMessages = true;
+        if (selectedConversation && conversationCall(msg) === selectedConversation) {
+            markConversationRead(selectedConversation);
+        }
+        if (isNew) refreshContacts();
 
         // Show alert banner for messages addressed to us
         if (
@@ -136,7 +172,100 @@ window.pvMessages = (function () {
             showBanner(msg.from, msg.text);
         }
 
+    }
+
+    function normalizeCall(value) {
+        return (value || '').trim().toUpperCase();
+    }
+
+    function refreshMyCallsign() {
+        const callEl = document.getElementById('station-call');
+        if (callEl) myCallsign = normalizeCall(callEl.textContent);
+    }
+
+    function loadReadTimestamps() {
+        try {
+            const raw = localStorage.getItem(READ_STORAGE_KEY);
+            readTimestamps = raw ? JSON.parse(raw) : {};
+        } catch (e) {
+            readTimestamps = {};
+        }
+    }
+
+    function saveReadTimestamps() {
+        try {
+            localStorage.setItem(READ_STORAGE_KEY, JSON.stringify(readTimestamps));
+        } catch (e) {
+            // Non-critical; unread badges can fall back to the current session.
+        }
+    }
+
+    function conversationCall(msg) {
+        const from = normalizeCall(msg.from);
+        const to = normalizeCall(msg.to);
+        if (msg.direction === 'tx') return to;
+        if (from && from !== myCallsign) return from;
+        return to === myCallsign ? from : to;
+    }
+
+    function getConversationMessages(callsign) {
+        const call = normalizeCall(callsign);
+        if (!call) return [];
+        return messages.filter(msg => conversationCall(msg) === call);
+    }
+
+    function hasUnread(callsign) {
+        const call = normalizeCall(callsign);
+        if (!call) return false;
+        const readAt = Number(readTimestamps[call] || 0);
+        return messages.some(msg =>
+            msg.direction === 'rx' &&
+            conversationCall(msg) === call &&
+            normalizeCall(msg.to) === myCallsign &&
+            Number(msg.timestamp || 0) > readAt
+        );
+    }
+
+    function markConversationRead(callsign) {
+        const call = normalizeCall(callsign);
+        if (!call) return;
+        const newest = getConversationMessages(call).reduce(
+            (maxTs, msg) => Math.max(maxTs, Number(msg.timestamp || 0)),
+            Math.floor(Date.now() / 1000)
+        );
+        readTimestamps[call] = newest;
+        saveReadTimestamps();
+    }
+
+    function selectConversation(callsign) {
+        selectedConversation = normalizeCall(callsign);
+        if (!selectedConversation) return;
+        const toEl = document.getElementById('msg-to-call');
+        if (toEl) toEl.value = selectedConversation;
+        markConversationRead(selectedConversation);
+        renderContacts();
         renderMessages();
+    }
+
+    function messageKey(msg) {
+        const from = (msg.from || '').toUpperCase();
+        const to = (msg.to || '').toUpperCase();
+        if (msg.direction === 'tx' && msg.message_id) return `tx:${from}|${to}|${msg.message_id}`;
+        if (msg.message_id) return `rx:${from}|${to}|${msg.message_id}`;
+        return `${msg.direction || 'rx'}:${from}|${to}|${msg.text || ''}`;
+    }
+
+    function upsertLocalMessage(msg) {
+        const key = messageKey(msg);
+        const index = messages.findIndex(existing => messageKey(existing) === key);
+        if (index >= 0) {
+            messages[index] = { ...messages[index], ...msg };
+            renderMessages();
+            return false;
+        }
+        messages.unshift(msg);
+        renderMessages();
+        return true;
     }
 
     function handleAck(data) {
@@ -195,6 +324,7 @@ window.pvMessages = (function () {
             if (result.success) {
                 textEl.value = '';
                 replyContext = null;
+                selectConversation(to);
                 textEl.focus();
             } else {
                 alert(result.message || 'Failed to send message.');
@@ -207,27 +337,102 @@ window.pvMessages = (function () {
         }
     }
 
+    async function saveCurrentContact() {
+        const toEl = document.getElementById('msg-to-call');
+        const callsign = (toEl?.value || '').trim().toUpperCase();
+        if (!callsign) {
+            toEl?.focus();
+            return;
+        }
+        try {
+            const resp = await fetch('/api/messages/contacts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ callsign }),
+            });
+            const result = await resp.json();
+            if (!result.success) {
+                alert(result.message || 'Unable to save contact.');
+                return;
+            }
+            await refreshContacts();
+        } catch (e) {
+            console.error('Failed to save contact:', e);
+            alert('Network error saving contact.');
+        }
+    }
+
+    async function deleteContact(callsign) {
+        if (!callsign) return;
+        try {
+            await fetch(`/api/messages/contacts/${encodeURIComponent(callsign)}`, { method: 'DELETE' });
+            contacts = contacts.filter(c => c.callsign !== callsign);
+            if (selectedConversation === normalizeCall(callsign)) {
+                selectedConversation = contacts.length ? normalizeCall(contacts[0].callsign) : '';
+                markConversationRead(selectedConversation);
+            }
+            renderContacts();
+            renderMessages();
+        } catch (e) {
+            console.error('Failed to delete contact:', e);
+            alert('Network error deleting contact.');
+        }
+    }
+
+    async function refreshContacts() {
+        try {
+            const resp = await fetch('/api/messages/contacts');
+            const data = await resp.json();
+            contacts = data.contacts || [];
+            renderContacts();
+        } catch (e) {
+            console.error('Failed to refresh contacts:', e);
+        }
+    }
+
+    function renderContacts() {
+        refreshMyCallsign();
+        const list = document.getElementById('msg-contact-list');
+        const options = document.getElementById('msg-contact-options');
+        if (options) {
+            options.innerHTML = contacts.map(c => `<option value="${escHtml(c.callsign)}">${escHtml(c.display_name || '')}</option>`).join('');
+        }
+        if (!list) return;
+        if (!contacts.length) {
+            list.innerHTML = '<div class="msg-contact-empty">No contacts</div>';
+            return;
+        }
+        list.innerHTML = contacts.map(c => `
+            <div class="msg-contact-item ${normalizeCall(c.callsign) === selectedConversation ? 'active' : ''}" data-callsign="${escHtml(c.callsign)}">
+                <button class="msg-contact-call" title="Message ${escHtml(c.callsign)}">
+                    <span class="msg-contact-name">${escHtml(c.callsign)}</span>
+                    ${hasUnread(c.callsign) ? '<span class="msg-unread-badge" title="Unread message">New</span>' : ''}
+                </button>
+                <button class="msg-contact-delete" title="Delete contact" aria-label="Delete ${escHtml(c.callsign)}">x</button>
+            </div>
+        `).join('');
+    }
+
     function renderMessages() {
         const list = document.getElementById('msg-list');
         const countEl = document.getElementById('msg-count');
         if (!list) return;
 
-        // Update my callsign
-        const callEl = document.getElementById('station-call');
-        if (callEl) myCallsign = callEl.textContent.toUpperCase();
+        refreshMyCallsign();
 
         const filter = document.getElementById('msg-filter')?.value || 'all';
-        let filtered = messages;
+        const conversation = selectedConversation;
+        let filtered = getConversationMessages(conversation);
 
         if (filter === 'mine') {
-            filtered = messages.filter(m =>
+            filtered = filtered.filter(m =>
                 m.from?.toUpperCase() === myCallsign ||
                 m.to?.toUpperCase() === myCallsign
             );
         } else if (filter === 'rx') {
-            filtered = messages.filter(m => m.direction === 'rx');
+            filtered = filtered.filter(m => m.direction === 'rx');
         } else if (filter === 'tx') {
-            filtered = messages.filter(m => m.direction === 'tx');
+            filtered = filtered.filter(m => m.direction === 'tx');
         }
 
         if (countEl) countEl.textContent = `${filtered.length} messages`;
@@ -237,9 +442,13 @@ window.pvMessages = (function () {
                 list.innerHTML = '<div class="empty-state loading"><div class="empty-state-title">Loading messages</div><div class="empty-state-copy">Checking recent APRS message history and waiting for live traffic.</div></div>';
                 return;
             }
+            if (!conversation) {
+                list.innerHTML = '<div class="empty-state"><div class="empty-state-title">Select a station</div><div class="empty-state-copy">Choose a contact to view only that conversation.</div></div>';
+                return;
+            }
             const connected = !!window.pvWebSocket?.isConnected;
             const copy = connected
-                ? 'Send a message or wait for incoming APRS traffic.'
+                ? `No messages with ${escHtml(conversation)} yet.`
                 : 'The live connection is offline. Your message history will refresh when the app reconnects.';
             list.innerHTML = `<div class="empty-state"><div class="empty-state-title">No messages yet</div><div class="empty-state-copy">${copy}</div></div>`;
             return;

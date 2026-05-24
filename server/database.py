@@ -41,6 +41,28 @@ CREATE TABLE IF NOT EXISTS packets (
     longitude REAL
 );
 
+CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp REAL NOT NULL,
+    direction TEXT NOT NULL CHECK(direction IN ('rx', 'tx')),
+    from_call TEXT NOT NULL,
+    to_call TEXT NOT NULL,
+    text TEXT DEFAULT '',
+    message_id TEXT DEFAULT '',
+    source TEXT DEFAULT '',
+    acked INTEGER DEFAULT 0,
+    rejected INTEGER DEFAULT 0,
+    dedupe_key TEXT DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS message_contacts (
+    callsign TEXT PRIMARY KEY,
+    display_name TEXT DEFAULT '',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    last_used REAL
+);
+
 CREATE TABLE IF NOT EXISTS propagation_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp REAL NOT NULL,
@@ -82,13 +104,20 @@ CREATE TABLE IF NOT EXISTS first_heard_log (
     distance_km REAL,
     heading REAL,
     latitude REAL,
-    longitude REAL
+    longitude REAL,
+    path TEXT DEFAULT '',
+    hop_count INTEGER DEFAULT 0,
+    is_direct INTEGER DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_stations_source ON stations(source);
 CREATE INDEX IF NOT EXISTS idx_stations_last_heard ON stations(last_heard);
 CREATE INDEX IF NOT EXISTS idx_packets_timestamp ON packets(timestamp);
 CREATE INDEX IF NOT EXISTS idx_packets_source ON packets(source);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_dedupe ON messages(dedupe_key) WHERE dedupe_key != '';
+CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
+CREATE INDEX IF NOT EXISTS idx_messages_contact ON messages(from_call, to_call);
+CREATE INDEX IF NOT EXISTS idx_message_contacts_last_used ON message_contacts(last_used);
 CREATE INDEX IF NOT EXISTS idx_propagation_timestamp ON propagation_log(timestamp);
 CREATE INDEX IF NOT EXISTS idx_ducting_timestamp ON ducting_log(timestamp);
 CREATE INDEX IF NOT EXISTS idx_path_history_callsign ON path_history(callsign);
@@ -107,8 +136,22 @@ class Database:
         self.db = await aiosqlite.connect(self.db_path)
         self.db.row_factory = aiosqlite.Row
         await self.db.executescript(SCHEMA)
+        await self._migrate_schema()
         await self.db.commit()
         logger.info(f"Database initialized at {self.db_path}")
+
+    async def _migrate_schema(self):
+        """Add columns introduced after earlier database versions."""
+        cursor = await self.db.execute("PRAGMA table_info(first_heard_log)")
+        columns = {row["name"] for row in await cursor.fetchall()}
+        additions = {
+            "path": "ALTER TABLE first_heard_log ADD COLUMN path TEXT DEFAULT ''",
+            "hop_count": "ALTER TABLE first_heard_log ADD COLUMN hop_count INTEGER DEFAULT 0",
+            "is_direct": "ALTER TABLE first_heard_log ADD COLUMN is_direct INTEGER DEFAULT 0",
+        }
+        for name, statement in additions.items():
+            if name not in columns:
+                await self.db.execute(statement)
 
     async def close(self):
         if self.db:
@@ -298,6 +341,137 @@ class Database:
 
     # ── Propagation log ─────────────────────────────────────────────
 
+    async def add_message(
+        self,
+        direction: str,
+        from_call: str,
+        to_call: str,
+        text: str = "",
+        message_id: str = "",
+        source: str = "",
+        acked: bool = False,
+        rejected: bool = False,
+        dedupe_key: str = "",
+        timestamp: Optional[float] = None,
+        commit: bool = True,
+    ) -> Optional[Dict[str, Any]]:
+        """Persist a message. Returns None if a dedupe key already exists."""
+        now = timestamp or time.time()
+        cursor = await self.db.execute(
+            """INSERT OR IGNORE INTO messages
+               (timestamp, direction, from_call, to_call, text, message_id, source, acked, rejected, dedupe_key)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                now,
+                direction,
+                from_call,
+                to_call,
+                text,
+                message_id,
+                source,
+                1 if acked else 0,
+                1 if rejected else 0,
+                dedupe_key,
+            ),
+        )
+        if commit:
+            await self.db.commit()
+        if cursor.rowcount == 0:
+            return None
+
+        row = await self.db.execute("SELECT * FROM messages WHERE id = ?", (cursor.lastrowid,))
+        result = await row.fetchone()
+        return self._message_row_to_dict(result) if result else None
+
+    async def get_recent_messages(self, limit: int = 100) -> List[Dict[str, Any]]:
+        cursor = await self.db.execute(
+            "SELECT * FROM messages ORDER BY timestamp DESC, id DESC LIMIT ?",
+            (limit,),
+        )
+        rows = await cursor.fetchall()
+        return [self._message_row_to_dict(r) for r in rows]
+
+    async def update_message_status(
+        self,
+        to_call: str,
+        message_id: str,
+        acked: bool = False,
+        rejected: bool = False,
+    ):
+        field = "acked" if acked else "rejected"
+        await self.db.execute(
+            f"""UPDATE messages SET {field} = 1
+                WHERE direction = 'tx'
+                  AND UPPER(to_call) = ?
+                  AND message_id = ?""",
+            ((to_call or "").upper(), message_id),
+        )
+        await self.db.commit()
+
+    async def clear_messages(self):
+        await self.db.execute("DELETE FROM messages")
+        await self.db.commit()
+
+    async def delete_old_messages(self, max_age: float):
+        cutoff = time.time() - max_age
+        await self.db.execute("DELETE FROM messages WHERE timestamp < ?", (cutoff,))
+        await self.db.commit()
+
+    @staticmethod
+    def _message_row_to_dict(row: aiosqlite.Row) -> Dict[str, Any]:
+        data = dict(row)
+        data["from"] = data.pop("from_call")
+        data["to"] = data.pop("to_call")
+        data["acked"] = bool(data.get("acked"))
+        data["rejected"] = bool(data.get("rejected"))
+        return data
+
+    async def upsert_message_contact(
+        self,
+        callsign: str,
+        display_name: str = "",
+        last_used: Optional[float] = None,
+    ) -> Optional[Dict[str, Any]]:
+        call = (callsign or "").strip().upper()
+        if not call:
+            return None
+        now = time.time()
+        await self.db.execute(
+            """INSERT INTO message_contacts (callsign, display_name, created_at, updated_at, last_used)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(callsign) DO UPDATE SET
+                   display_name = COALESCE(NULLIF(excluded.display_name, ''), message_contacts.display_name),
+                   updated_at = excluded.updated_at,
+                   last_used = COALESCE(excluded.last_used, message_contacts.last_used)""",
+            (call, display_name, now, now, last_used),
+        )
+        await self.db.commit()
+        return await self.get_message_contact(call)
+
+    async def get_message_contacts(self) -> List[Dict[str, Any]]:
+        cursor = await self.db.execute(
+            """SELECT * FROM message_contacts
+               ORDER BY COALESCE(last_used, updated_at, created_at) DESC, callsign ASC"""
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+    async def get_message_contact(self, callsign: str) -> Optional[Dict[str, Any]]:
+        cursor = await self.db.execute(
+            "SELECT * FROM message_contacts WHERE callsign = ?",
+            ((callsign or "").strip().upper(),),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def delete_message_contact(self, callsign: str) -> bool:
+        cursor = await self.db.execute(
+            "DELETE FROM message_contacts WHERE callsign = ?",
+            ((callsign or "").strip().upper(),),
+        )
+        await self.db.commit()
+        return cursor.rowcount > 0
+
     async def log_propagation(
         self,
         rf_count: int,
@@ -448,26 +622,39 @@ class Database:
         heading: Optional[float],
         latitude: Optional[float],
         longitude: Optional[float],
+        path: str = "",
+        hop_count: int = 0,
+        is_direct: bool = False,
         commit: bool = True,
     ):
         now = time.time()
         await self.db.execute(
             """INSERT INTO first_heard_log
-               (timestamp, callsign, source, distance_km, heading, latitude, longitude)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (now, callsign, source, distance_km, heading, latitude, longitude),
+               (timestamp, callsign, source, distance_km, heading, latitude, longitude, path, hop_count, is_direct)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (now, callsign, source, distance_km, heading, latitude, longitude, path, hop_count, 1 if is_direct else 0),
         )
         if commit:
             await self.db.commit()
 
-    async def get_first_heard_log(self, hours: int = 24) -> List[Dict[str, Any]]:
+    async def get_first_heard_log(self, hours: int = 24, direct_only: bool = False) -> List[Dict[str, Any]]:
         cutoff = time.time() - (hours * 3600)
+        query = "SELECT * FROM first_heard_log WHERE timestamp >= ?"
+        params = [cutoff]
+        if direct_only:
+            query += " AND source = 'rf' AND is_direct = 1"
+        query += " ORDER BY timestamp DESC"
         cursor = await self.db.execute(
-            "SELECT * FROM first_heard_log WHERE timestamp >= ? ORDER BY timestamp DESC",
-            (cutoff,),
+            query,
+            params,
         )
         rows = await cursor.fetchall()
-        return [dict(r) for r in rows]
+        result = []
+        for row in rows:
+            item = dict(row)
+            item["is_direct"] = bool(item.get("is_direct"))
+            result.append(item)
+        return result
 
     async def is_station_known(self, callsign: str, source: str) -> bool:
         """Check if a station has ever been seen before."""

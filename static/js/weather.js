@@ -7,6 +7,7 @@ window.pvWeather = (function () {
 
     let refreshTimer = null;
     let lastAlertCount = 0;
+    let hasRenderedAlerts = false;
 
     function init() {
         // Refresh button
@@ -138,12 +139,17 @@ window.pvWeather = (function () {
         if (!alerts || alerts.length === 0) {
             container.innerHTML = '';
             lastAlertCount = 0;
+            hasRenderedAlerts = true;
             return;
         }
-
         // Flash effect when new alerts appear
         const isNew = alerts.length > lastAlertCount;
         lastAlertCount = alerts.length;
+        if (hasRenderedAlerts && isNew) {
+            const firstAlertType = alerts[0]?.alert_type === 'warning' ? 'weather_warning' : 'weather_watch';
+            window.pvAlertAudio?.play(firstAlertType);
+        }
+        hasRenderedAlerts = true;
 
         container.innerHTML = alerts.map((alert, i) => {
             const isWarning = alert.alert_type === 'warning';

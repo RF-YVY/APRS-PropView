@@ -4,6 +4,7 @@ propview.db
 *.db
 *.sqlite
 *.sqlite3
+user_audio/
 
 # Build output
 build/

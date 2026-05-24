@@ -53,6 +53,7 @@ class PacketHandler:
         self._msg_id_counter = 1
         # Track acked message IDs to avoid duplicate ack display
         self._acked_ids: dict[str, float] = {}
+        self._recent_message_keys: dict[str, float] = {}
 
         # Statistics
         self.stats = {
@@ -67,6 +68,20 @@ class PacketHandler:
             "messages_tx": 0,
             "start_time": time.time(),
         }
+
+    async def load_message_history(self):
+        """Warm the in-memory message cache from the persistent database."""
+        messages = await self.tracker.db.get_recent_messages(MAX_MESSAGE_HISTORY)
+        self._messages.clear()
+        for msg in reversed(messages):
+            self._messages.appendleft(msg)
+        sent_ids = [
+            int(m["message_id"])
+            for m in messages
+            if m.get("direction") == "tx" and str(m.get("message_id", "")).isdigit()
+        ]
+        if sent_ids:
+            self._msg_id_counter = max(sent_ids) + 1
 
     def _find_recent_rx_source(self, callsign: str) -> Optional[str]:
         """Return the most recent inbound transport seen for a station."""
@@ -113,6 +128,21 @@ class PacketHandler:
             return inferred_source
 
         return "both"
+
+    def _message_dedupe_key(self, packet: APRSPacket) -> str:
+        msg_id = (packet.message_id or "").strip()
+        from_call = (packet.from_call or "").strip().upper()
+        addressee = (packet.addressee or "").strip().upper()
+        if msg_id:
+            return f"id:{from_call}|{addressee}|{msg_id}"
+        text = (packet.message_text or "").strip()
+        return f"body:{from_call}|{addressee}|{text}"
+
+    def _prune_recent_message_keys(self):
+        cutoff = time.time() - 120
+        for key, seen_at in list(self._recent_message_keys.items()):
+            if seen_at < cutoff:
+                self._recent_message_keys.pop(key, None)
 
     def set_alert_manager(self, alert_manager):
         """Inject the AlertManager for message notifications."""
@@ -269,13 +299,17 @@ class PacketHandler:
             self._handle_rej(from_call, rej_id)
             return
 
+        # Ignore our own outbound messages when they are heard back from RF or
+        # echoed by APRS-IS. They were already recorded as tx when sent.
+        if from_call == my_call:
+            return
+
         # Only store messages involving our station (from us or to us)
         # This filters out telemetry and other station-to-station traffic
-        if addressee != my_call and from_call != my_call:
+        if addressee != my_call:
             return
 
         msg_record = {
-            "id": len(self._messages) + 1,
             "timestamp": time.time(),
             "from": packet.from_call,
             "to": packet.addressee.strip(),
@@ -286,10 +320,15 @@ class PacketHandler:
             "acked": False,
         }
 
+        dedupe_key = self._message_dedupe_key(packet)
+        self._prune_recent_message_keys()
+        if dedupe_key in self._recent_message_keys:
+            if addressee == my_call and packet.message_id:
+                await self._send_ack(packet.from_call, packet.message_id, source)
+            return
+
         # If message is addressed to us, send auto-ack and count it
         if addressee == my_call:
-            self.stats["messages_rx"] += 1
-
             # Send ACK if message has an ID
             if packet.message_id:
                 await self._send_ack(packet.from_call, packet.message_id, source)
@@ -300,13 +339,29 @@ class PacketHandler:
                 f"{packet.message_text}"
             )
 
-            # Send message notification via configured channels
+        persisted = await self.tracker.db.add_message(
+            direction="rx",
+            from_call=msg_record["from"],
+            to_call=msg_record["to"],
+            text=msg_record["text"],
+            message_id=msg_record["message_id"],
+            source=source,
+            acked=msg_record["acked"],
+            dedupe_key=dedupe_key,
+        )
+        self._recent_message_keys[dedupe_key] = time.time()
+        if not persisted:
+            return
+
+        msg_record = persisted
+        self._messages.appendleft(msg_record)
+        if addressee == my_call:
+            self.stats["messages_rx"] += 1
             if self._alert_manager:
                 asyncio.ensure_future(
                     self._alert_manager.send_message_notification(msg_record)
                 )
-
-        self._messages.appendleft(msg_record)
+        await self.tracker.db.upsert_message_contact(from_call, last_used=msg_record["timestamp"])
 
         # Broadcast to web clients
         await self.ws.broadcast({
@@ -326,6 +381,7 @@ class PacketHandler:
             ):
                 msg["acked"] = True
                 break
+        asyncio.ensure_future(self.tracker.db.update_message_status(from_call, ack_id, acked=True))
         logger.info(f"ACK received from {from_call} for message #{ack_id}")
         # Notify frontend
         asyncio.ensure_future(self.ws.broadcast({
@@ -343,6 +399,7 @@ class PacketHandler:
             ):
                 msg["rejected"] = True
                 break
+        asyncio.ensure_future(self.tracker.db.update_message_status(from_call, rej_id, rejected=True))
         logger.info(f"REJ received from {from_call} for message #{rej_id}")
         asyncio.ensure_future(self.ws.broadcast({
             "type": "message_rej",
@@ -368,7 +425,6 @@ class PacketHandler:
         resolved_source = self._resolve_message_source(to_call, preferred_source)
 
         msg_record = {
-            "id": len(self._messages) + 1,
             "timestamp": time.time(),
             "from": self.config.station.full_callsign,
             "to": to_call.strip(),
@@ -379,6 +435,18 @@ class PacketHandler:
             "acked": False,
         }
 
+        persisted = await self.tracker.db.add_message(
+            direction="tx",
+            from_call=msg_record["from"],
+            to_call=msg_record["to"],
+            text=msg_record["text"],
+            message_id=msg_record["message_id"],
+            source=resolved_source,
+            dedupe_key=f"tx:{msg_record['from'].upper()}|{msg_record['to'].upper()}|{msg_id}",
+        )
+        if persisted:
+            msg_record = persisted
+        await self.tracker.db.upsert_message_contact(to_call, last_used=msg_record["timestamp"])
         self._messages.appendleft(msg_record)
         self.stats["messages_tx"] += 1
 
@@ -429,10 +497,17 @@ class PacketHandler:
         """Return recent messages (newest first)."""
         return list(self._messages)[:limit]
 
-    def clear_messages(self):
+    async def clear_messages(self):
         """Clear all stored messages."""
         self._messages.clear()
         self._acked_ids.clear()
+        self._recent_message_keys.clear()
+        await self.tracker.db.clear_messages()
+
+    async def cleanup_messages(self):
+        days = max(1, int(getattr(self.config.messaging, "message_retention_days", 30)))
+        await self.tracker.db.delete_old_messages(days * 86400)
+        await self.load_message_history()
 
     async def _transmit_rf(self, frame: AX25Frame):
         """Transmit an AX.25 frame on all RF interfaces."""

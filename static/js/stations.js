@@ -161,7 +161,7 @@ class StationManager {
         const call = this._escapeHTML(station.callsign || '???');
         const source = station.source === 'rf' ? 'rf' : 'aprs_is';
         const dist = station.distance_km ? window.formatDist(station.distance_km) : '';
-        const heading = station.heading ? `${station.heading.toFixed(0)}&deg;` : '';
+        const heading = this._formatBearing(station.heading);
         const elapsed = this._timeAgo(station.last_heard);
         const count = station.packet_count || 1;
         const comment = this._escapeHTML(station.last_comment || '');
@@ -417,6 +417,13 @@ class StationManager {
             current[station.callsign] = station;
             window.pvMap?.addOrUpdateStation(station);
         });
+    }
+
+    _formatBearing(heading) {
+        if (heading == null || Number.isNaN(Number(heading))) return '';
+        const sectors = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+        const normalized = ((Number(heading) % 360) + 360) % 360;
+        return sectors[Math.floor((normalized + 22.5) / 45) % 8];
     }
 }
 
