@@ -32,6 +32,10 @@
         weather_warning: 'audio_weather_warning_file',
         weather_watch: 'audio_weather_watch_file',
     };
+    const RF_PORT_TYPES = {
+        serial: 'Serial KISS/TNC2',
+        tcp: 'TCP KISS',
+    };
     let lastStatus = null;
     let manualBeaconPending = false;
     let liveSyncPending = false;
@@ -171,6 +175,9 @@
         // Init weather module
         window.pvWeather.init();
         initWeatherSettingsUi();
+        initWxNowControls();
+        initStatusDxControls();
+        initRfPortsControls();
         initTncProfileSettings();
         initUpdateCheckerUi();
         initGpsControls();
@@ -1432,7 +1439,7 @@
 
     function renderUpdateStatus(data, els) {
         const { messageEl, detailEl, linkEl, footerEl } = els;
-        const currentVersion = data?.current_version || '1.5.0';
+        const currentVersion = data?.current_version || '1.5.1';
         const latestVersion = data?.latest_version || currentVersion;
         const releaseUrl = data?.release_url || 'https://github.com/RF-YVY/APRS-PropView/releases';
         const publishedAt = data?.published_at ? formatReleaseDate(data.published_at) : '';
@@ -1603,6 +1610,226 @@
         }
     }
 
+    function defaultRfPort(type) {
+        const normalized = type === 'tcp' ? 'tcp' : 'serial';
+        if (normalized === 'tcp') {
+            return {
+                name: 'KISS TCP 127.0.0.1:8001',
+                enabled: true,
+                type: 'tcp',
+                host: '127.0.0.1',
+                tcp_port: 8001,
+                mode: 'kiss',
+            };
+        }
+        return {
+            name: 'KISS Serial COM3',
+            enabled: true,
+            type: 'serial',
+            port: 'COM3',
+            baudrate: 9600,
+            mode: 'kiss',
+            flow_control: 'none',
+            init_profile: 'none',
+            init_commands: '',
+        };
+    }
+
+    function rfPortsFromConfig(cfg) {
+        if (Array.isArray(cfg?.rf_ports) && cfg.rf_ports.length) {
+            return cfg.rf_ports.map((port) => ({ ...defaultRfPort(port.type), ...port }));
+        }
+
+        const ports = [];
+        if (cfg?.kiss_serial?.enabled) {
+            ports.push({
+                ...defaultRfPort('serial'),
+                name: `KISS Serial ${cfg.kiss_serial.port || 'COM3'}`,
+                port: cfg.kiss_serial.port || 'COM3',
+                baudrate: cfg.kiss_serial.baudrate || 9600,
+                mode: cfg.kiss_serial.mode || 'kiss',
+                flow_control: cfg.kiss_serial.flow_control || 'none',
+                init_profile: cfg.kiss_serial.init_profile || 'none',
+                init_commands: cfg.kiss_serial.init_commands || '',
+            });
+        }
+        if (cfg?.kiss_tcp?.enabled) {
+            ports.push({
+                ...defaultRfPort('tcp'),
+                name: `KISS TCP ${cfg.kiss_tcp.host || '127.0.0.1'}:${cfg.kiss_tcp.port || 8001}`,
+                host: cfg.kiss_tcp.host || '127.0.0.1',
+                tcp_port: cfg.kiss_tcp.port || 8001,
+            });
+        }
+        return ports;
+    }
+
+    function initRfPortsControls() {
+        const list = document.getElementById('cfg-rf-ports-list');
+        list?.addEventListener('input', (e) => {
+            if (e.target?.classList?.contains('rf-port-field')) markSettingsDirty();
+        });
+        list?.addEventListener('change', (e) => {
+            if (e.target?.classList?.contains('rf-port-field')) markSettingsDirty();
+        });
+        document.getElementById('btn-rf-port-add-serial')?.addEventListener('click', () => {
+            const ports = collectRfPorts();
+            ports.push(defaultRfPort('serial'));
+            renderRfPorts(ports);
+            markSettingsDirty();
+        });
+        document.getElementById('btn-rf-port-add-tcp')?.addEventListener('click', () => {
+            const ports = collectRfPorts();
+            ports.push(defaultRfPort('tcp'));
+            renderRfPorts(ports);
+            markSettingsDirty();
+        });
+    }
+
+    function renderRfPorts(ports) {
+        const list = document.getElementById('cfg-rf-ports-list');
+        if (!list) return;
+        const items = Array.isArray(ports) ? ports : [];
+        if (!items.length) {
+            list.innerHTML = '<div class="rf-ports-empty">No RF ports configured.</div>';
+            return;
+        }
+
+        list.innerHTML = items.map((rawPort, index) => {
+            const port = { ...defaultRfPort(rawPort.type), ...rawPort };
+            const type = port.type === 'tcp' ? 'tcp' : 'serial';
+            const name = port.name || (type === 'tcp' ? `KISS TCP ${port.host}:${port.tcp_port}` : `KISS Serial ${port.port}`);
+            return `
+                <div class="rf-port-card" data-rf-port-index="${index}">
+                    <div class="rf-port-card-header">
+                        <label class="rf-port-enabled">
+                            <input type="checkbox" class="rf-port-field" data-field="enabled" ${port.enabled ? 'checked' : ''}>
+                            <span>${_escapeHTML(name)}</span>
+                        </label>
+                        <button type="button" class="settings-toolbar-btn rf-port-remove">Remove</button>
+                    </div>
+                    <div class="rf-port-fields">
+                        <div class="settings-row">
+                            <label>Name</label>
+                            <input type="text" class="rf-port-field" data-field="name" value="${_escapeHTML(name)}" maxlength="40">
+                        </div>
+                        <div class="settings-row">
+                            <label>Type</label>
+                            <select class="rf-port-field" data-field="type">
+                                <option value="serial" ${type === 'serial' ? 'selected' : ''}>${RF_PORT_TYPES.serial}</option>
+                                <option value="tcp" ${type === 'tcp' ? 'selected' : ''}>${RF_PORT_TYPES.tcp}</option>
+                            </select>
+                        </div>
+                        ${type === 'tcp' ? rfPortTcpFields(port) : rfPortSerialFields(port)}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        list.querySelectorAll('.rf-port-remove').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const card = btn.closest('.rf-port-card');
+                const index = parseInt(card?.dataset.rfPortIndex || '-1', 10);
+                const ports = collectRfPorts();
+                ports.splice(index, 1);
+                renderRfPorts(ports);
+                markSettingsDirty();
+            });
+        });
+        list.querySelectorAll('[data-field="type"]').forEach((select) => {
+            select.addEventListener('change', () => {
+                const ports = collectRfPorts();
+                renderRfPorts(ports.map((port) => ({ ...defaultRfPort(port.type), ...port })));
+                markSettingsDirty();
+            });
+        });
+    }
+
+    function rfPortSerialFields(port) {
+        return `
+            <div class="settings-row">
+                <label>Serial Port</label>
+                <input type="text" class="rf-port-field" data-field="port" value="${_escapeHTML(port.port || 'COM3')}">
+            </div>
+            <div class="settings-row">
+                <label>Baudrate</label>
+                <input type="number" class="rf-port-field" data-field="baudrate" value="${parseInt(port.baudrate, 10) || 9600}" min="300" max="921600">
+            </div>
+            <div class="settings-row">
+                <label>Mode</label>
+                <select class="rf-port-field" data-field="mode">
+                    <option value="kiss" ${(port.mode || 'kiss') === 'kiss' ? 'selected' : ''}>KISS frames</option>
+                    <option value="tnc2_monitor" ${port.mode === 'tnc2_monitor' ? 'selected' : ''}>TNC2 monitor text</option>
+                </select>
+            </div>
+            <div class="settings-row">
+                <label>Flow control</label>
+                <select class="rf-port-field" data-field="flow_control">
+                    <option value="none" ${(port.flow_control || 'none') === 'none' ? 'selected' : ''}>None</option>
+                    <option value="xonxoff" ${port.flow_control === 'xonxoff' ? 'selected' : ''}>Xon/Xoff</option>
+                    <option value="rtscts" ${port.flow_control === 'rtscts' ? 'selected' : ''}>RTS/CTS</option>
+                    <option value="dsrdtr" ${port.flow_control === 'dsrdtr' ? 'selected' : ''}>DSR/DTR</option>
+                </select>
+            </div>
+            <div class="settings-row">
+                <label>Radio/TNC profile</label>
+                <select class="rf-port-field" data-field="init_profile">
+                    <option value="none" ${(port.init_profile || 'none') === 'none' ? 'selected' : ''}>Generic / already configured</option>
+                    <option value="kenwood_thd7" ${port.init_profile === 'kenwood_thd7' ? 'selected' : ''}>Kenwood TH-D7 / TH-D7E</option>
+                    <option value="kenwood_tmd700" ${port.init_profile === 'kenwood_tmd700' ? 'selected' : ''}>Kenwood TM-D700</option>
+                    <option value="kenwood_thd72" ${port.init_profile === 'kenwood_thd72' ? 'selected' : ''}>Kenwood TH-D72</option>
+                    <option value="generic_tnc2_kiss" ${port.init_profile === 'generic_tnc2_kiss' ? 'selected' : ''}>Generic TNC2 KISS startup</option>
+                </select>
+            </div>
+            <div class="settings-row settings-row-stacked rf-port-init-row">
+                <label>Extra init commands</label>
+                <textarea class="rf-port-field" data-field="init_commands" rows="3">${_escapeHTML(port.init_commands || '')}</textarea>
+            </div>
+        `;
+    }
+
+    function rfPortTcpFields(port) {
+        return `
+            <div class="settings-row">
+                <label>Host</label>
+                <input type="text" class="rf-port-field" data-field="host" value="${_escapeHTML(port.host || '127.0.0.1')}">
+            </div>
+            <div class="settings-row">
+                <label>TCP Port</label>
+                <input type="number" class="rf-port-field" data-field="tcp_port" value="${parseInt(port.tcp_port, 10) || 8001}" min="1" max="65535">
+            </div>
+        `;
+    }
+
+    function collectRfPorts() {
+        return Array.from(document.querySelectorAll('#cfg-rf-ports-list .rf-port-card')).map((card) => {
+            const field = (name) => card.querySelector(`.rf-port-field[data-field="${name}"]`);
+            const type = field('type')?.value === 'tcp' ? 'tcp' : 'serial';
+            const enabled = !!field('enabled')?.checked;
+            const name = (field('name')?.value || '').trim();
+            if (type === 'tcp') {
+                return {
+                    name,
+                    enabled,
+                    type,
+                    host: (field('host')?.value || '127.0.0.1').trim(),
+                    tcp_port: parseInt(field('tcp_port')?.value, 10) || 8001,
+                };
+            }
+            return {
+                name,
+                enabled,
+                type,
+                port: (field('port')?.value || 'COM3').trim(),
+                baudrate: parseInt(field('baudrate')?.value, 10) || 9600,
+                mode: field('mode')?.value || 'kiss',
+                flow_control: field('flow_control')?.value || 'none',
+                init_profile: field('init_profile')?.value || 'none',
+                init_commands: field('init_commands')?.value || '',
+            };
+        });
+    }
+
     function clearSettingsDirty() {
         settingsDirty = false;
         document.querySelectorAll('.btn-save-settings').forEach((btn) => btn.classList.remove('dirty'));
@@ -1739,6 +1966,7 @@
             setChk('cfg-kt-enabled', cfg.kiss_tcp?.enabled);
             setVal('cfg-kt-host', cfg.kiss_tcp?.host);
             setVal('cfg-kt-port', cfg.kiss_tcp?.port);
+            renderRfPorts(rfPortsFromConfig(cfg));
 
             // Web
             setVal('cfg-web-host', cfg.web?.host);
@@ -1765,6 +1993,24 @@
             setVal('cfg-track-age', Math.round((cfg.tracking?.max_station_age || 0) / 60));
             setVal('cfg-track-cleanup', Math.round((cfg.tracking?.cleanup_interval || 0) / 60));
             setVal('cfg-msg-retention', cfg.messaging?.message_retention_days ?? 30);
+
+            setChk('cfg-status-enabled', cfg.status?.enabled);
+            setVal('cfg-status-interval', Math.round((cfg.status?.beacon_interval || 1800) / 60));
+            setVal('cfg-status-window', cfg.status?.report_window_minutes ?? 60);
+            setVal('cfg-status-max-length', cfg.status?.max_length ?? 67);
+            setVal('cfg-status-mode', cfg.status?.mode || 'both');
+            setVal('cfg-status-path', cfg.status?.path || 'WIDE1-1');
+            refreshStatusDxPreview();
+
+            setChk('cfg-wxnow-enabled', cfg.wxnow?.enabled);
+            setVal('cfg-wxnow-file', cfg.wxnow?.file_path || '');
+            setVal('cfg-wxnow-ssid', cfg.wxnow?.ssid ?? 13);
+            setVal('cfg-wxnow-interval', Math.round((cfg.wxnow?.beacon_interval || 600) / 60));
+            setVal('cfg-wxnow-max-age', cfg.wxnow?.max_age_minutes ?? 15);
+            setVal('cfg-wxnow-mode', cfg.wxnow?.mode || 'both');
+            setVal('cfg-wxnow-path', cfg.wxnow?.path || 'WIDE1-1');
+            setVal('cfg-wxnow-position', String(cfg.wxnow?.include_position ?? true));
+            refreshWxNowStatus();
 
             // Alerts
             setChk('cfg-alerts-enabled', cfg.alerts?.enabled);
@@ -1901,6 +2147,7 @@
                 host: getVal('cfg-kt-host'),
                 port: getVal('cfg-kt-port'),
             },
+            rf_ports: collectRfPorts(),
             gps: {
                 enabled: getChk('cfg-gps-enabled'),
                 source: getVal('cfg-gps-source') || 'browser',
@@ -1934,6 +2181,26 @@
             },
             messaging: {
                 message_retention_days: parseInt(getVal('cfg-msg-retention')) || 30,
+            },
+            status: {
+                enabled: getChk('cfg-status-enabled'),
+                beacon_interval: (parseInt(getVal('cfg-status-interval')) || 30) * 60,
+                mode: getVal('cfg-status-mode') || 'both',
+                path: getVal('cfg-status-path') || '',
+                report_window_minutes: parseInt(getVal('cfg-status-window')) || 60,
+                max_length: parseInt(getVal('cfg-status-max-length')) || 67,
+            },
+            wxnow: {
+                enabled: getChk('cfg-wxnow-enabled'),
+                file_path: getVal('cfg-wxnow-file') || '',
+                ssid: parseInt(getVal('cfg-wxnow-ssid')) || 13,
+                beacon_interval: (parseInt(getVal('cfg-wxnow-interval')) || 10) * 60,
+                max_age_minutes: parseInt(getVal('cfg-wxnow-max-age')) || 15,
+                include_position: getVal('cfg-wxnow-position') !== 'false',
+                mode: getVal('cfg-wxnow-mode') || 'both',
+                path: getVal('cfg-wxnow-path') || '',
+                symbol_table: '/',
+                symbol_code: '_',
             },
             alerts: {
                 enabled: getChk('cfg-alerts-enabled'),
@@ -2070,6 +2337,112 @@
     function getChk(id) {
         const el = document.getElementById(id);
         return el ? el.checked : false;
+    }
+
+    function initWxNowControls() {
+        document.getElementById('btn-wxnow-browse')?.addEventListener('click', selectWxNowFile);
+        document.getElementById('btn-wxnow-test')?.addEventListener('click', transmitWxNowNow);
+    }
+
+    function initStatusDxControls() {
+        document.getElementById('btn-status-test')?.addEventListener('click', transmitStatusDxNow);
+        ['cfg-status-window', 'cfg-status-max-length'].forEach((id) => {
+            document.getElementById(id)?.addEventListener('change', refreshStatusDxPreview);
+        });
+    }
+
+    async function refreshStatusDxPreview() {
+        const preview = document.getElementById('cfg-status-preview');
+        if (!preview) return;
+        try {
+            const resp = await fetch('/api/status-dx/status');
+            const data = await resp.json();
+            const text = data.preview_text || data.last_text || 'No RF stations heard';
+            preview.textContent = `>${text}`;
+            if (data.last_error) preview.title = data.last_error;
+        } catch (e) {
+            preview.textContent = 'Preview unavailable';
+        }
+    }
+
+    async function transmitStatusDxNow() {
+        const preview = document.getElementById('cfg-status-preview');
+        const button = document.getElementById('btn-status-test');
+        if (button) button.disabled = true;
+        if (preview) preview.textContent = 'Transmitting...';
+        try {
+            const resp = await fetch('/api/status-dx/transmit', { method: 'POST' });
+            const result = await resp.json();
+            if (preview) {
+                preview.textContent = result.text ? `>${result.text}` : (result.message || 'Transmit failed');
+                preview.title = result.message || '';
+            }
+        } catch (e) {
+            console.error('Failed to transmit Status/DX packet:', e);
+            if (preview) preview.textContent = 'Transmit failed';
+        } finally {
+            if (button) button.disabled = false;
+            setTimeout(refreshStatusDxPreview, 2500);
+        }
+    }
+
+    async function selectWxNowFile() {
+        const status = document.getElementById('cfg-wxnow-status');
+        if (status) status.textContent = 'Opening file picker...';
+        try {
+            const resp = await fetch('/api/wxnow/select-file', { method: 'POST' });
+            const result = await resp.json();
+            if (result.success && result.file_path) {
+                setVal('cfg-wxnow-file', result.file_path);
+                markSettingsDirty();
+                if (status) status.textContent = 'Selected';
+            } else if (status) {
+                status.textContent = result.message || 'No file selected';
+            }
+        } catch (e) {
+            console.error('Failed to select WXnow file:', e);
+            if (status) status.textContent = 'File picker failed';
+        }
+    }
+
+    async function refreshWxNowStatus() {
+        const status = document.getElementById('cfg-wxnow-status');
+        if (!status) return;
+        try {
+            const resp = await fetch('/api/wxnow/status');
+            const data = await resp.json();
+            if (!data.configured) {
+                status.textContent = 'No file selected';
+            } else if (!data.file_exists) {
+                status.textContent = 'File not found';
+            } else if (data.stale) {
+                const mins = Math.floor((data.age_seconds || 0) / 60);
+                status.textContent = `Stale (${mins} min old)`;
+            } else {
+                const mins = Math.floor((data.age_seconds || 0) / 60);
+                status.textContent = data.enabled ? `Ready (${mins} min old)` : `Disabled (${mins} min old)`;
+            }
+        } catch (e) {
+            status.textContent = 'Status unavailable';
+        }
+    }
+
+    async function transmitWxNowNow() {
+        const status = document.getElementById('cfg-wxnow-status');
+        const button = document.getElementById('btn-wxnow-test');
+        if (button) button.disabled = true;
+        if (status) status.textContent = 'Transmitting...';
+        try {
+            const resp = await fetch('/api/wxnow/transmit', { method: 'POST' });
+            const result = await resp.json();
+            if (status) status.textContent = result.message || (result.success ? 'Transmitted' : 'Transmit failed');
+        } catch (e) {
+            console.error('Failed to transmit WXnow packet:', e);
+            if (status) status.textContent = 'Transmit failed';
+        } finally {
+            if (button) button.disabled = false;
+            setTimeout(refreshWxNowStatus, 2500);
+        }
     }
 
     function setCheckboxGroupValues(name, values) {

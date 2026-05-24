@@ -126,6 +126,14 @@ my_station_full_dist_km = 200.0
 regional_full_count = 10
 regional_full_dist_km = 200.0
 
+[status]
+enabled = false
+beacon_interval = 1800
+mode = "both"
+path = "WIDE1-1"
+report_window_minutes = 60
+max_length = 67
+
 [weather]
 enabled = false
 location_code = ""
@@ -147,6 +155,18 @@ elevated_alert_polling_enabled = false
 elevated_alert_polling_seconds = 60
 elevated_alert_cooldown_minutes = 15
 elevated_trigger_events = ["Tornado Watch", "Severe Thunderstorm Watch"]
+
+[wxnow]
+enabled = false
+file_path = ""
+ssid = 13
+beacon_interval = 600
+max_age_minutes = 15
+include_position = true
+mode = "both"
+path = "WIDE1-1"
+symbol_table = "/"
+symbol_code = "_"
 
 [gps]
 enabled = false
@@ -234,6 +254,21 @@ class KISSTCPConfig:
 
 
 @dataclass
+class RFPortConfig:
+    name: str = ""
+    enabled: bool = False
+    type: str = "serial"  # serial or tcp
+    port: str = "COM3"
+    baudrate: int = 9600
+    host: str = "127.0.0.1"
+    tcp_port: int = 8001
+    mode: str = "kiss"
+    flow_control: str = "none"
+    init_profile: str = "none"
+    init_commands: str = ""
+
+
+@dataclass
 class WebConfig:
     host: str = "127.0.0.1"
     port: int = 14501
@@ -311,6 +346,16 @@ class PropagationConfig:
 
 
 @dataclass
+class StatusConfig:
+    enabled: bool = False
+    beacon_interval: int = 1800
+    mode: str = "both"
+    path: str = "WIDE1-1"
+    report_window_minutes: int = 60
+    max_length: int = 67
+
+
+@dataclass
 class WeatherConfig:
     enabled: bool = False
     location_code: str = ""       # US zip code or ICAO code
@@ -336,6 +381,20 @@ class WeatherConfig:
     elevated_trigger_events: List[str] = field(default_factory=lambda: [
         "Tornado Watch", "Severe Thunderstorm Watch",
     ])
+
+
+@dataclass
+class WxNowConfig:
+    enabled: bool = False
+    file_path: str = ""
+    ssid: int = 13
+    beacon_interval: int = 600
+    max_age_minutes: int = 15
+    include_position: bool = True
+    mode: str = "both"
+    path: str = "WIDE1-1"
+    symbol_table: str = "/"
+    symbol_code: str = "_"
 
 
 @dataclass
@@ -371,13 +430,16 @@ class Config:
     aprs_is: APRSISConfig = field(default_factory=APRSISConfig)
     kiss_serial: KISSSerialConfig = field(default_factory=KISSSerialConfig)
     kiss_tcp: KISSTCPConfig = field(default_factory=KISSTCPConfig)
+    rf_ports: List[RFPortConfig] = field(default_factory=list)
     web: WebConfig = field(default_factory=WebConfig)
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     tracking: TrackingConfig = field(default_factory=TrackingConfig)
     messaging: MessagingConfig = field(default_factory=MessagingConfig)
     alerts: AlertsConfig = field(default_factory=AlertsConfig)
     propagation: PropagationConfig = field(default_factory=PropagationConfig)
+    status: StatusConfig = field(default_factory=StatusConfig)
     weather: WeatherConfig = field(default_factory=WeatherConfig)
+    wxnow: WxNowConfig = field(default_factory=WxNowConfig)
     gps: GPSConfig = field(default_factory=GPSConfig)
     mqtt: MQTTConfig = field(default_factory=MQTTConfig)
 
@@ -405,7 +467,9 @@ class Config:
             "messaging": (MessagingConfig, "messaging"),
             "alerts": (AlertsConfig, "alerts"),
             "propagation": (PropagationConfig, "propagation"),
+            "status": (StatusConfig, "status"),
             "weather": (WeatherConfig, "weather"),
+            "wxnow": (WxNowConfig, "wxnow"),
             "gps": (GPSConfig, "gps"),
             "mqtt": (MQTTConfig, "mqtt"),
         }
@@ -413,6 +477,14 @@ class Config:
         for key, (cls, attr) in section_map.items():
             if key in data:
                 setattr(config, attr, cls(**data[key]))
+
+        if "rf_ports" in data and isinstance(data["rf_ports"], list):
+            ports = []
+            for item in data["rf_ports"]:
+                if isinstance(item, dict):
+                    allowed = RFPortConfig.__dataclass_fields__.keys()
+                    ports.append(RFPortConfig(**{k: v for k, v in item.items() if k in allowed}))
+            config.rf_ports = ports
 
         return config
 
@@ -477,6 +549,37 @@ class Config:
             f'host = "{esc(self.kiss_tcp.host)}"',
             f"port = {int(self.kiss_tcp.port)}",
             "",
+            "# Modern multi-port RF configuration. If any entries are present here,",
+            "# APRS PropView uses them instead of the legacy [kiss_serial]/[kiss_tcp] blocks.",
+            "# type = \"serial\" supports KISS frames or receive-only TNC2 monitor text.",
+            "# type = \"tcp\" supports KISS-over-TCP.",
+            "",
+        ]
+        for port in self.rf_ports:
+            port_type = (port.type or "serial").strip().lower()
+            port_lines = [
+                "[[rf_ports]]",
+                f'name = "{esc(port.name)}"',
+                f"enabled = {'true' if port.enabled else 'false'}",
+                f'type = "{esc(port_type)}"',
+            ]
+            if port_type == "tcp":
+                port_lines.extend([
+                    f'host = "{esc(port.host)}"',
+                    f"tcp_port = {int(port.tcp_port)}",
+                ])
+            else:
+                port_lines.extend([
+                    f'port = "{esc(port.port)}"',
+                    f"baudrate = {int(port.baudrate)}",
+                    f'mode = "{esc(port.mode)}"',
+                    f'flow_control = "{esc(port.flow_control)}"',
+                    f'init_profile = "{esc(port.init_profile)}"',
+                    f'init_commands = "{esc(port.init_commands)}"',
+                ])
+            port_lines.append("")
+            lines.extend(port_lines)
+        lines.extend([
             "[web]",
             f'host = "{esc(self.web.host)}"',
             f"port = {int(self.web.port)}",
@@ -542,6 +645,14 @@ class Config:
             f"regional_full_count = {int(self.propagation.regional_full_count)}",
             f"regional_full_dist_km = {float(self.propagation.regional_full_dist_km)}",
             "",
+            "[status]",
+            f"enabled = {'true' if self.status.enabled else 'false'}",
+            f"beacon_interval = {int(self.status.beacon_interval)}",
+            f'mode = "{esc(self.status.mode)}"',
+            f'path = "{esc(self.status.path)}"',
+            f"report_window_minutes = {int(self.status.report_window_minutes)}",
+            f"max_length = {int(self.status.max_length)}",
+            "",
             "[weather]",
             f"enabled = {'true' if self.weather.enabled else 'false'}",
             f'location_code = "{esc(self.weather.location_code)}"',
@@ -564,6 +675,18 @@ class Config:
             f"elevated_alert_cooldown_minutes = {int(self.weather.elevated_alert_cooldown_minutes)}",
             'elevated_trigger_events = [' + ', '.join('"' + self._toml_escape(v) + '"' for v in self.weather.elevated_trigger_events) + ']',
             "",
+            "[wxnow]",
+            f"enabled = {'true' if self.wxnow.enabled else 'false'}",
+            f'file_path = "{esc(self.wxnow.file_path)}"',
+            f"ssid = {int(self.wxnow.ssid)}",
+            f"beacon_interval = {int(self.wxnow.beacon_interval)}",
+            f"max_age_minutes = {int(self.wxnow.max_age_minutes)}",
+            f"include_position = {'true' if self.wxnow.include_position else 'false'}",
+            f'mode = "{esc(self.wxnow.mode)}"',
+            f'path = "{esc(self.wxnow.path)}"',
+            f'symbol_table = "{esc(self.wxnow.symbol_table)}"',
+            f'symbol_code = "{esc(self.wxnow.symbol_code)}"',
+            "",
             "[gps]",
             f"enabled = {'true' if self.gps.enabled else 'false'}",
             f'source = "{esc(self.gps.source)}"',
@@ -584,5 +707,5 @@ class Config:
             f'topic_prefix = "{esc(self.mqtt.topic_prefix)}"',
             f'username = "{esc(self.mqtt.username)}"',
             f'password = "{esc(self.mqtt.password)}"',
-        ]
+        ])
         path.write_text("\n".join(lines) + "\n")

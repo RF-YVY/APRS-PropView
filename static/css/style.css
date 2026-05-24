@@ -930,6 +930,11 @@ html.ui-theme-light #tab-messages.active {
     color: #d29922;
     border: 1px solid rgba(210, 153, 34, 0.4);
 }
+.heard-badge.port {
+    background: rgba(88, 166, 255, 0.16);
+    color: #8bcbff;
+    border: 1px solid rgba(88, 166, 255, 0.32);
+}
 
 /* Arrow markers on map lines */
 .arrow-icon {
@@ -1013,6 +1018,14 @@ html.ui-theme-light #tab-messages.active {
 
 .packet-item .pkt-source.rf { color: var(--rf-color); }
 .packet-item .pkt-source.aprs_is { color: var(--is-color); }
+.packet-item .pkt-source.rf {
+    max-width: 150px;
+    display: inline-block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+    white-space: nowrap;
+}
 
 .packet-item .pkt-raw {
     color: var(--text-secondary);
@@ -2035,6 +2048,82 @@ canvas {
     cursor: pointer;
 }
 
+.rf-ports-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.rf-ports-empty {
+    color: var(--text-secondary);
+    font-size: 12px;
+    padding: 8px 0;
+}
+
+.rf-port-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+}
+
+.rf-port-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.rf-port-enabled {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    color: var(--text-primary);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.rf-port-enabled span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.rf-port-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 10px;
+}
+
+.rf-port-fields .settings-row {
+    margin-bottom: 0;
+}
+
+.rf-port-fields .settings-row label {
+    min-width: 92px;
+}
+
+.rf-port-fields .settings-row input[type="text"],
+.rf-port-fields .settings-row input[type="number"],
+.rf-port-fields .settings-row select {
+    max-width: none;
+    min-width: 0;
+}
+
+.rf-port-init-row {
+    grid-column: 1 / -1;
+}
+
+.rf-ports-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
 .coord-lock-row {
     flex: 1;
     display: flex;
@@ -2058,6 +2147,33 @@ canvas {
     gap: 6px;
     color: var(--text-primary);
     font-size: 12px;
+}
+
+.file-picker-row {
+    flex: 1;
+    max-width: 260px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.file-picker-row input[type="text"] {
+    max-width: none;
+    min-width: 0;
+}
+
+.status-preview {
+    width: 100%;
+    min-height: 30px;
+    padding: 7px 9px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
 }
 
 .settings-row .lock-check {

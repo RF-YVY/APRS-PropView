@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from server.config import (
     Config, StationConfig, DigiConfig, IGateConfig, APRSISConfig,
-    KISSSerialConfig, KISSTCPConfig, WebConfig, DatabaseConfig, TrackingConfig,
+    KISSSerialConfig, KISSTCPConfig, RFPortConfig, WebConfig, DatabaseConfig, TrackingConfig,
     MessagingConfig, AlertsConfig, PropagationConfig, WeatherConfig, GPSConfig, MQTTConfig,
 )
 from server.database import Database
@@ -234,6 +234,54 @@ def _validate_config(body: Dict[str, Any]) -> Optional[str]:
         if profile not in {"none", "kenwood_thd7", "kenwood_tmd700", "kenwood_thd72", "generic_tnc2_kiss"}:
             return "Unknown KISS serial init profile."
 
+    if "rf_ports" in body:
+        ports = body["rf_ports"]
+        if not isinstance(ports, list):
+            return "RF ports must be a list."
+        if len(ports) > 16:
+            return "RF ports are limited to 16 entries."
+        names = set()
+        for idx, port_cfg in enumerate(ports, 1):
+            if not isinstance(port_cfg, dict):
+                return f"RF port {idx} is invalid."
+            name = (port_cfg.get("name", "") or "").strip()
+            if len(name) > 40:
+                return "RF port names must be 40 characters or less."
+            if name:
+                key = name.lower()
+                if key in names:
+                    return f"Duplicate RF port name: {name}."
+                names.add(key)
+            port_type = (port_cfg.get("type", "serial") or "serial").strip().lower()
+            if port_type not in {"serial", "tcp"}:
+                return "RF port type must be serial or tcp."
+            if port_type == "serial":
+                try:
+                    baudrate = int(port_cfg.get("baudrate", 9600))
+                    if baudrate < 300 or baudrate > 921600:
+                        return "RF serial baudrate must be 300-921600."
+                except (ValueError, TypeError):
+                    return "RF serial baudrate must be a number."
+                mode = (port_cfg.get("mode", "kiss") or "kiss").strip().lower()
+                if mode not in {"kiss", "tnc2_monitor"}:
+                    return "RF serial mode must be kiss or tnc2_monitor."
+                flow = (port_cfg.get("flow_control", "none") or "none").strip().lower()
+                if flow not in {"none", "xonxoff", "rtscts", "dsrdtr"}:
+                    return "RF serial flow control must be none, xonxoff, rtscts, or dsrdtr."
+                profile = (port_cfg.get("init_profile", "none") or "none").strip().lower()
+                if profile not in {"none", "kenwood_thd7", "kenwood_tmd700", "kenwood_thd72", "generic_tnc2_kiss"}:
+                    return "Unknown RF serial init profile."
+            if port_type == "tcp":
+                host = port_cfg.get("host", "")
+                if host and not _HOSTNAME_RE.match(host):
+                    return "Invalid RF TCP hostname."
+                try:
+                    tcp_port = int(port_cfg.get("tcp_port", 8001))
+                    if tcp_port < 1 or tcp_port > 65535:
+                        return "RF TCP port must be 1-65535."
+                except (ValueError, TypeError):
+                    return "RF TCP port must be a number."
+
     if "web" in body:
         w = body["web"]
         host = w.get("host", "")
@@ -265,6 +313,58 @@ def _validate_config(body: Dict[str, Any]) -> Optional[str]:
                     return "Map tile max zoom must be 1-22."
             except (ValueError, TypeError):
                 return "Map tile max zoom must be a number."
+
+    if "wxnow" in body:
+        wx = body["wxnow"]
+        try:
+            ssid = int(wx.get("ssid", 13))
+            if ssid < 0 or ssid > 15:
+                return "WX SSID must be 0-15."
+        except (ValueError, TypeError):
+            return "WX SSID must be a number 0-15."
+        try:
+            interval = int(wx.get("beacon_interval", 600))
+            if interval < 600 or interval > 86400:
+                return "WX beacon interval must be 10-1440 minutes."
+        except (ValueError, TypeError):
+            return "WX beacon interval must be a number."
+        try:
+            max_age = int(wx.get("max_age_minutes", 15))
+            if max_age < 1 or max_age > 1440:
+                return "WX stale cutoff must be 1-1440 minutes."
+        except (ValueError, TypeError):
+            return "WX stale cutoff must be a number."
+        mode = (wx.get("mode", "both") or "both").strip().lower()
+        if mode not in {"both", "rf", "aprs_is"}:
+            return "WX transmit mode must be RF, APRS-IS, or both."
+        for fld in ("symbol_table", "symbol_code"):
+            v = wx.get(fld, "")
+            if v and (len(v) != 1 or ord(v) < 32 or ord(v) > 126):
+                return f"WX {fld.replace('_', ' ')} must be a single printable ASCII character."
+
+    if "status" in body:
+        st = body["status"]
+        try:
+            interval = int(st.get("beacon_interval", 1800))
+            if interval < 600 or interval > 86400:
+                return "Status/DX beacon interval must be 10-1440 minutes."
+        except (ValueError, TypeError):
+            return "Status/DX beacon interval must be a number."
+        try:
+            window = int(st.get("report_window_minutes", 60))
+            if window < 15 or window > 1440:
+                return "Status/DX report window must be 15-1440 minutes."
+        except (ValueError, TypeError):
+            return "Status/DX report window must be a number."
+        try:
+            max_length = int(st.get("max_length", 67))
+            if max_length < 20 or max_length > 120:
+                return "Status/DX max length must be 20-120 characters."
+        except (ValueError, TypeError):
+            return "Status/DX max length must be a number."
+        mode = (st.get("mode", "both") or "both").strip().lower()
+        if mode not in {"both", "rf", "aprs_is"}:
+            return "Status/DX transmit mode must be RF, APRS-IS, or both."
 
     if "gps" in body:
         g = body["gps"]
@@ -336,6 +436,8 @@ def create_app(
     alert_manager: AlertManager = None,
     aprs_is: APRSISClient = None,
     weather_manager: WeatherManager = None,
+    wxnow_transmitter = None,
+    status_transmitter = None,
     update_checker: UpdateChecker = None,
     gps_manager = None,
     app_version: str = "1.0.0",
@@ -727,6 +829,91 @@ def create_app(
                 content={"success": False, "message": "Error transmitting beacon."},
             )
 
+    @app.get("/api/wxnow/status")
+    async def wxnow_status():
+        if not wxnow_transmitter:
+            return {"enabled": False, "configured": False, "message": "WXnow transmitter is not available."}
+        return wxnow_transmitter.get_status()
+
+    @app.post("/api/wxnow/transmit")
+    async def wxnow_transmit():
+        if not wxnow_transmitter:
+            return JSONResponse(
+                status_code=503,
+                content={"success": False, "message": "WXnow transmitter is not available."},
+            )
+        try:
+            result = await wxnow_transmitter.transmit_once(force=True)
+            return {"success": True, **result}
+        except ValueError as e:
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": str(e)},
+            )
+        except Exception as e:
+            logger.error("Failed to transmit WXnow packet: %s", e)
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "message": "Error transmitting WXnow packet."},
+            )
+
+    @app.post("/api/wxnow/select-file")
+    async def wxnow_select_file():
+        """Open a native file picker on the desktop host."""
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes("-topmost", True)
+            selected = filedialog.askopenfilename(
+                title="Select WXnow.txt",
+                filetypes=[("WXnow.txt", "WXnow.txt"), ("Text files", "*.txt"), ("All files", "*.*")],
+            )
+            root.destroy()
+            return {"success": True, "file_path": selected or ""}
+        except Exception as e:
+            logger.error("Failed to open WXnow file picker: %s", e)
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "message": "Could not open the file picker."},
+            )
+
+    @app.get("/api/status-dx/status")
+    async def status_dx_status():
+        if not status_transmitter:
+            return {"enabled": False, "message": "Status/DX transmitter is not available."}
+        status = status_transmitter.get_status()
+        try:
+            status["preview_text"] = await status_transmitter.build_text()
+        except Exception as e:
+            status["preview_text"] = ""
+            status["last_error"] = str(e)
+        return status
+
+    @app.post("/api/status-dx/transmit")
+    async def status_dx_transmit():
+        if not status_transmitter:
+            return JSONResponse(
+                status_code=503,
+                content={"success": False, "message": "Status/DX transmitter is not available."},
+            )
+        try:
+            result = await status_transmitter.transmit_once(force=True)
+            return {"success": True, **result}
+        except ValueError as e:
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": str(e)},
+            )
+        except Exception as e:
+            logger.error("Failed to transmit Status/DX packet: %s", e)
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "message": "Error transmitting Status/DX packet."},
+            )
+
     @app.get("/api/analytics/longest-paths")
     async def get_longest_paths(
         hours: int = Query(24, ge=1, le=168),
@@ -1082,6 +1269,22 @@ def create_app(
                 "host": config.kiss_tcp.host,
                 "port": config.kiss_tcp.port,
             },
+            "rf_ports": [
+                {
+                    "name": port.name,
+                    "enabled": port.enabled,
+                    "type": port.type,
+                    "port": port.port,
+                    "baudrate": port.baudrate,
+                    "host": port.host,
+                    "tcp_port": port.tcp_port,
+                    "mode": port.mode,
+                    "flow_control": port.flow_control,
+                    "init_profile": port.init_profile,
+                    "init_commands": port.init_commands,
+                }
+                for port in config.rf_ports
+            ],
             "web": {
                 "host": config.web.host,
                 "port": config.web.port,
@@ -1170,6 +1373,18 @@ def create_app(
                 "elevated_alert_cooldown_minutes": config.weather.elevated_alert_cooldown_minutes,
                 "elevated_trigger_events": config.weather.elevated_trigger_events,
             },
+            "wxnow": {
+                "enabled": config.wxnow.enabled,
+                "file_path": config.wxnow.file_path,
+                "ssid": config.wxnow.ssid,
+                "beacon_interval": config.wxnow.beacon_interval,
+                "max_age_minutes": config.wxnow.max_age_minutes,
+                "include_position": config.wxnow.include_position,
+                "mode": config.wxnow.mode,
+                "path": config.wxnow.path,
+                "symbol_table": config.wxnow.symbol_table,
+                "symbol_code": config.wxnow.symbol_code,
+            },
             "gps": {
                 "enabled": config.gps.enabled,
                 "source": config.gps.source,
@@ -1188,6 +1403,14 @@ def create_app(
                 "my_station_full_dist_km": config.propagation.my_station_full_dist_km,
                 "regional_full_count": config.propagation.regional_full_count,
                 "regional_full_dist_km": config.propagation.regional_full_dist_km,
+            },
+            "status": {
+                "enabled": config.status.enabled,
+                "beacon_interval": config.status.beacon_interval,
+                "mode": config.status.mode,
+                "path": config.status.path,
+                "report_window_minutes": config.status.report_window_minutes,
+                "max_length": config.status.max_length,
             },
             "mqtt": {
                 "enabled": config.mqtt.enabled,
@@ -1308,6 +1531,44 @@ def create_app(
                 config.kiss_tcp.host = kt.get("host", config.kiss_tcp.host)
                 config.kiss_tcp.port = int(kt.get("port", config.kiss_tcp.port))
                 need_restart.append("KISS TCP")
+
+            # Update multi RF port config. When this list is present it replaces
+            # the legacy single serial/TCP startup path on the next restart.
+            if "rf_ports" in body:
+                rf_ports = []
+                for idx, item in enumerate(body["rf_ports"], 1):
+                    port_type = (item.get("type", "serial") or "serial").strip().lower()
+                    enabled = bool(item.get("enabled", True))
+                    if port_type == "tcp":
+                        host = (item.get("host", "127.0.0.1") or "127.0.0.1").strip()
+                        tcp_port = int(item.get("tcp_port", 8001))
+                        default_name = f"KISS TCP {host}:{tcp_port}"
+                        rf_ports.append(RFPortConfig(
+                            name=(item.get("name") or default_name).strip(),
+                            enabled=enabled,
+                            type="tcp",
+                            host=host,
+                            tcp_port=tcp_port,
+                            mode="kiss",
+                        ))
+                    else:
+                        serial_port = (item.get("port", "COM3") or "COM3").strip()
+                        default_name = f"KISS Serial {serial_port}"
+                        rf_ports.append(RFPortConfig(
+                            name=(item.get("name") or default_name).strip(),
+                            enabled=enabled,
+                            type="serial",
+                            port=serial_port,
+                            baudrate=int(item.get("baudrate", 9600)),
+                            mode=(item.get("mode", "kiss") or "kiss").strip().lower(),
+                            flow_control=(item.get("flow_control", "none") or "none").strip().lower(),
+                            init_profile=(item.get("init_profile", "none") or "none").strip().lower(),
+                            init_commands=item.get("init_commands", "") or "",
+                        ))
+                config.rf_ports = rf_ports
+                config.kiss_serial.enabled = False
+                config.kiss_tcp.enabled = False
+                need_restart.append("RF ports")
 
             # Update web config
             if "web" in body:
@@ -1482,6 +1743,21 @@ def create_app(
                 ]
                 live_applied.append("weather")
 
+            if "wxnow" in body:
+                wx = body["wxnow"]
+                config.wxnow.enabled = bool(wx.get("enabled", config.wxnow.enabled))
+                config.wxnow.file_path = (wx.get("file_path", config.wxnow.file_path) or "").strip()
+                config.wxnow.ssid = max(0, min(15, int(wx.get("ssid", config.wxnow.ssid))))
+                config.wxnow.beacon_interval = max(600, int(wx.get("beacon_interval", config.wxnow.beacon_interval)))
+                config.wxnow.max_age_minutes = max(1, int(wx.get("max_age_minutes", config.wxnow.max_age_minutes)))
+                config.wxnow.include_position = bool(wx.get("include_position", config.wxnow.include_position))
+                mode = (wx.get("mode", config.wxnow.mode) or "both").strip().lower()
+                config.wxnow.mode = mode if mode in {"both", "rf", "aprs_is"} else "both"
+                config.wxnow.path = (wx.get("path", config.wxnow.path) or "").strip()
+                config.wxnow.symbol_table = (wx.get("symbol_table", config.wxnow.symbol_table) or "/")[:1]
+                config.wxnow.symbol_code = (wx.get("symbol_code", config.wxnow.symbol_code) or "_")[:1]
+                live_applied.append("WXnow transmit")
+
             # Update propagation config
             if "propagation" in body:
                 pc = body["propagation"]
@@ -1490,6 +1766,17 @@ def create_app(
                 config.propagation.regional_full_count = max(1, int(pc.get("regional_full_count", config.propagation.regional_full_count)))
                 config.propagation.regional_full_dist_km = max(1.0, float(pc.get("regional_full_dist_km", config.propagation.regional_full_dist_km)))
                 live_applied.append("propagation meters")
+
+            if "status" in body:
+                st = body["status"]
+                config.status.enabled = bool(st.get("enabled", config.status.enabled))
+                config.status.beacon_interval = max(600, int(st.get("beacon_interval", config.status.beacon_interval)))
+                mode = (st.get("mode", config.status.mode) or "both").strip().lower()
+                config.status.mode = mode if mode in {"both", "rf", "aprs_is"} else "both"
+                config.status.path = (st.get("path", config.status.path) or "").strip()
+                config.status.report_window_minutes = max(15, int(st.get("report_window_minutes", config.status.report_window_minutes)))
+                config.status.max_length = min(120, max(20, int(st.get("max_length", config.status.max_length))))
+                live_applied.append("Status/DX transmit")
 
             # Update MQTT config
             if "mqtt" in body:

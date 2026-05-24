@@ -323,6 +323,9 @@ class PropViewMap {
         const countStr = station.packet_count || 1;
         const sourceLabel = source === 'rf' ? 'RF' : 'APRS-IS';
         const sourceClass = source === 'rf' ? 'popup-rf' : 'popup-is';
+        const portName = source === 'rf' && station.last_port_name
+            ? this._escapeHtml(station.last_port_name)
+            : '';
 
         // Build icon from APRS symbol sprite sheet
         const symTable = station.symbol_table || '/';
@@ -368,6 +371,7 @@ class PropViewMap {
                 <tr><td class="popup-lbl">Distance</td><td>${distStr}${headingStr ? ' · ' + headingStr : ''}</td></tr>
                 <tr><td class="popup-lbl">Heard</td><td>${timeStr}${agoStr ? ' (' + agoStr + ')' : ''}</td></tr>
                 <tr><td class="popup-lbl">Packets</td><td>${countStr}</td></tr>
+                ${portName ? `<tr><td class="popup-lbl">Port</td><td>${portName}</td></tr>` : ''}
                 ${weatherRows}
                 ${commentHtml && !weatherRows ? `<tr><td class="popup-lbl">Comment</td><td>${commentHtml}</td></tr>` : ''}
                 ${pathHtml ? `<tr><td class="popup-lbl">Path</td><td class="popup-path">${pathHtml}</td></tr>` : ''}

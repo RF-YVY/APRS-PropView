@@ -1,18 +1,21 @@
 import unittest
 import asyncio
 import tempfile
+from pathlib import Path
 
 from server.aprs_is import APRSISClient
 from server.aprs_parser import make_message_packet, parse_packet
 from server.app import _is_valid_message_addressee, _is_valid_station_callsign, _validate_config
 from server.analytics import AnalyticsEngine
 from server.alerts import AlertConfig, AlertManager
-from server.config import Config
+from server.config import Config, RFPortConfig
 from server.database import Database
 from server.packet_handler import PacketHandler
 from server.station_tracker import StationTracker
 from server.websocket_manager import WebSocketManager
 from server.gps import GPSManager, parse_nmea_position
+from server.status_report import build_dx_status_text, trim_status_text
+from server.wxnow import build_wxnow_info, parse_wxnow_text
 
 
 class APRSParserComplianceTests(unittest.TestCase):
@@ -91,9 +94,110 @@ class APRSISComplianceTests(unittest.TestCase):
         config = Config()
         config.station.callsign = "K5ABC"
         config.aprs_is.passcode = "12345"
-        client = APRSISClient(config, lambda packet: None, app_version="1.5.0")
+        client = APRSISClient(config, lambda packet: None, app_version="1.5.1")
 
-        self.assertIn("vers APRSPropView 1.5.0", client._build_login())
+        self.assertIn("vers APRSPropView 1.5.1", client._build_login())
+
+
+class ConfigTests(unittest.TestCase):
+    def test_loads_and_saves_multiple_rf_ports(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text(
+                """
+[station]
+callsign = "K5ABC"
+
+[[rf_ports]]
+name = "Vertical"
+enabled = true
+type = "serial"
+port = "COM7"
+baudrate = 19200
+mode = "kiss"
+flow_control = "xonxoff"
+init_profile = "kenwood_thd7"
+init_commands = "MYCALL {callsign}"
+
+[[rf_ports]]
+name = "Yagi"
+enabled = false
+type = "tcp"
+host = "tnc.local"
+tcp_port = 8100
+""".strip(),
+                encoding="utf-8",
+            )
+
+            config = Config.load(path)
+
+            self.assertEqual(len(config.rf_ports), 2)
+            self.assertEqual(config.rf_ports[0].name, "Vertical")
+            self.assertEqual(config.rf_ports[0].port, "COM7")
+            self.assertEqual(config.rf_ports[0].flow_control, "xonxoff")
+            self.assertEqual(config.rf_ports[1].name, "Yagi")
+            self.assertEqual(config.rf_ports[1].host, "tnc.local")
+            self.assertEqual(config.rf_ports[1].tcp_port, 8100)
+
+            config.rf_ports.append(RFPortConfig(name="Backup", enabled=True, type="tcp", host="127.0.0.1", tcp_port=8002))
+            saved_path = Path(tmp) / "saved.toml"
+            config.save(saved_path)
+            reloaded = Config.load(saved_path)
+
+            self.assertEqual([port.name for port in reloaded.rf_ports], ["Vertical", "Yagi", "Backup"])
+            self.assertEqual(reloaded.rf_ports[2].tcp_port, 8002)
+
+
+class WxNowTests(unittest.TestCase):
+    def test_parse_wxnow_two_line_file(self):
+        reading = parse_wxnow_text("Jul 07 2012 14:00\n292/004g011t098h36b10139jDvs9\n")
+
+        self.assertEqual(reading.timestamp.year, 2012)
+        self.assertEqual(reading.weather_body, "292/004g011t098h36b10139jDvs9")
+
+    def test_build_positioned_wx_packet(self):
+        config = Config()
+        config.station.callsign = "K5ABC"
+        config.station.latitude = 35.5
+        config.station.longitude = -97.75
+        reading = parse_wxnow_text("Jul 07 2012 14:00\n292/004g011t098h36b10139jDvs9\n")
+
+        self.assertEqual(
+            build_wxnow_info(config, reading),
+            "@071400z3530.00N/09745.00W_292/004g011t098h36b10139jDvs9",
+        )
+
+    def test_build_positionless_wx_packet(self):
+        config = Config()
+        config.wxnow.include_position = False
+        reading = parse_wxnow_text("Jul 07 2012 14:00\n292/004g011t098h36b10139jDvs9\n")
+
+        self.assertEqual(
+            build_wxnow_info(config, reading),
+            "_07071400292/004g011t098h36b10139jDvs9",
+        )
+
+
+class StatusDxTests(unittest.TestCase):
+    def test_builds_compact_dx_status(self):
+        text = build_dx_status_text({
+            "my_top_station": {"callsign": "K1ABC", "distance_km": 321.9, "heading": 315},
+            "my_stations_1h": 4,
+            "regional_stations_1h": 9,
+            "my_level": "good",
+        })
+
+        self.assertEqual(text, "DX 60m: K1ABC 200mi NW 4D/9RF GOOD")
+
+    def test_status_falls_back_when_no_rf_heard(self):
+        self.assertEqual(
+            build_dx_status_text({"my_stations_1h": 0, "regional_stations_1h": 0}),
+            "DX 60m: no RF stations heard",
+        )
+
+    def test_status_text_is_printable_and_limited(self):
+        self.assertEqual(trim_status_text("DX\nbad\tchars", 8), "DX bad chars"[:20])
+        self.assertEqual(len(trim_status_text("x" * 200, 67)), 67)
 
 
 class MessageAddresseeValidationTests(unittest.TestCase):
@@ -222,6 +326,34 @@ class MessagePersistenceTests(unittest.TestCase):
             self.assertIsNone(station)
             self.assertEqual(len(packets), 1)
             self.assertEqual(packets[0]["packet_type"], "message")
+
+        asyncio.run(run_test())
+
+    def test_rf_packet_port_name_is_stored(self):
+        async def run_test():
+            with tempfile.TemporaryDirectory() as tmp:
+                config = Config()
+                config.station.latitude = 35.0
+                config.station.longitude = -97.0
+                db = Database(f"{tmp}/test.db")
+                await db.initialize()
+                try:
+                    ws = WebSocketManager()
+                    tracker = StationTracker(db, config, ws)
+                    packet = parse_packet(
+                        "K1ABC>APRS:!3600.00N/09800.00W-Test",
+                        source="rf",
+                    )
+                    packet.port_name = "KISS-Serial(COM7)"
+
+                    await tracker.track_packet(packet)
+                    station = await db.get_station("K1ABC", "rf")
+                    packets = await db.get_recent_packets(limit=1)
+                finally:
+                    await db.close()
+
+            self.assertEqual(station["last_port_name"], "KISS-Serial(COM7)")
+            self.assertEqual(packets[0]["port_name"], "KISS-Serial(COM7)")
 
         asyncio.run(run_test())
 

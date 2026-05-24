@@ -146,6 +146,7 @@ class KISSSerialClient:
         init_profile: str = "none",
         init_commands: str = "",
         callsign: str = "N0CALL",
+        name: str = "",
     ):
         self.port = port
         self.baudrate = baudrate
@@ -158,7 +159,7 @@ class KISSSerialClient:
         self.reader: Optional[asyncio.StreamReader] = None
         self.parser = KISSFrameParser()
         self.connected = False
-        self._name = f"KISS-Serial({port})"
+        self._name = name or f"KISS-Serial({port})"
 
     @property
     def name(self) -> str:
@@ -246,7 +247,7 @@ class KISSTCPClient:
 
     can_transmit = True
 
-    def __init__(self, host: str, port: int, on_frame: Callable):
+    def __init__(self, host: str, port: int, on_frame: Callable, name: str = ""):
         self.host = host
         self.port = port
         self.on_frame = on_frame
@@ -254,7 +255,7 @@ class KISSTCPClient:
         self.reader: Optional[asyncio.StreamReader] = None
         self.parser = KISSFrameParser()
         self.connected = False
-        self._name = f"KISS-TCP({host}:{port})"
+        self._name = name or f"KISS-TCP({host}:{port})"
         self._reconnect_delay = 5
 
     @property
@@ -328,6 +329,7 @@ class TNC2MonitorSerialClient:
         init_profile: str = "none",
         init_commands: str = "",
         callsign: str = "N0CALL",
+        name: str = "",
     ):
         self.port = port
         self.baudrate = baudrate
@@ -340,7 +342,7 @@ class TNC2MonitorSerialClient:
         self.reader: Optional[asyncio.StreamReader] = None
         self.connected = False
         self._buffer = bytearray()
-        self._name = f"TNC2-Monitor({port})"
+        self._name = name or f"TNC2-Monitor({port})"
 
     @property
     def name(self) -> str:

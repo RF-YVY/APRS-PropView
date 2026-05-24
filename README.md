@@ -1,6 +1,6 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.5.0** | May 24, 2026
+**Version 1.5.1** | May 24, 2026
 
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 
@@ -9,7 +9,7 @@
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
 
-Version 1.5.0 adds persistent APRS messaging, contact management, message de-duplication, GPS and weather refinements, first-heard direct RF filtering, MQTT propagation/alert publishing, and Linux/Pi install updates.
+Version 1.5.1 adds multiple named RF ports, WXnow.txt weather transmit, compact Status/DX beacons, and per-port origin display for packets and stations.
 
 Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs/linux-raspberry-pi.md).
 
@@ -45,6 +45,7 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 ### Alerts
 
 - **Band Opening Detection** — Automatic alerts when propagation thresholds are exceeded
+- **Status/DX Reports** — Optional compact APRS status beacons with the best direct DX station, bearing, counts, and propagation level
 - **Quiet Hours** — Configurable quiet time window (HH:MM 24h) to suppress notifications
 - **Message Notifications** — Get notified via Discord/Email/SMS when APRS messages are received
 - **MQTT Publishing** — Publish retained propagation metrics, score/level topics, and alert events to brokers such as Mosquitto, Home Assistant, Node-RED, or EMQX
@@ -55,6 +56,7 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 ### Weather
 
 - **Current Conditions Banner** - Live weather banner on the map view (temperature, wind, humidity, pressure, feels-like) powered by Open-Meteo
+- **WXnow.txt Transmit** - Beacon APRS weather packets from a local `WXnow.txt` file, with weather SSID, RF/APRS-IS routing, optional position, and stale-file cutoff
 - **US Zip Code & ICAO Location** - Set your weather location by entering a US zip code or worldwide ICAO airport code
 - **Severe Weather Alerts** - NWS active alerts displayed as color-coded banners (red for warnings, orange for watches/advisories)
 - **Configurable Alert Range** - Select how far from your location to monitor severe weather (default 50 miles)
@@ -152,13 +154,16 @@ All settings are in `config.toml` and can be edited from the web UI **Settings**
 | `[aprs_is]` | Server, port, passcode, filter string |
 | `[kiss_serial]` | Serial RF TNC port, baud rate, KISS/TNC2 monitor mode, flow control, and optional startup profile |
 | `[kiss_tcp]` | TCP KISS TNC host and port |
+| `[[rf_ports]]` | Optional named multi-port RF setup for multiple serial/TCP KISS ports; overrides the legacy single-port blocks when present |
 | `[web]` | Web interface bind address, port, font, custom map tile source, ghost time, expire time |
 | `[tracking]` | Station age limits and cleanup intervals |
 | `[messaging]` | APRS message history retention |
 | `[database]` | SQLite database path |
 | `[propagation]` | Scoring thresholds for My Station and Regional propagation meters |
+| `[status]` | Compact APRS Status/DX report transmit settings |
 | `[alerts]` | Band opening thresholds, Discord/email/SMS notification settings |
 | `[weather]` | Weather enabled, location code (zip/ICAO), alert range, radar overlay, alert polygons, alert scope, and adaptive polling |
+| `[wxnow]` | APRS weather transmit from `WXnow.txt`, including SSID, beacon interval, stale cutoff, position mode, path, and RF/APRS-IS route |
 | `[gps]` | Browser, own-packet, serial, TCP, and UDP GPS ingestion |
 | `[mqtt]` | Optional broker settings for propagation and alert publishing |
 

@@ -17,6 +17,7 @@ class APRSPacket:
     to_call: str = ""
     path: str = ""
     source: str = ""  # 'rf' or 'aprs_is'
+    port_name: str = ""
     packet_type: str = ""  # position, message, status, weather, object, item, mic_e, telemetry
     latitude: Optional[float] = None
     longitude: Optional[float] = None

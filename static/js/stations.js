@@ -166,12 +166,16 @@ class StationManager {
         const count = station.packet_count || 1;
         const comment = this._escapeHTML(station.last_comment || '');
         const path = this._escapeHTML(station.last_path || '');
+        const portName = source === 'rf' && station.last_port_name
+            ? this._escapeHTML(station.last_port_name)
+            : '';
         const icon = this._symbolToEmoji(station.symbol_table, station.symbol_code);
         const escapedCallAttr = this._escapeHTML(station.callsign || '');
         const direct = source === 'rf' ? this._isDirectHeard(station.last_path) : false;
         const directBadge = source === 'rf'
             ? `<span class="heard-badge ${direct ? 'direct' : 'via-digi'}">${direct ? 'DIRECT' : 'VIA DIGI'}</span>`
             : '';
+        const portBadge = portName ? `<span class="heard-badge port">${portName}</span>` : '';
         const deleteButton = source === 'rf'
             ? `<button class="station-delete" type="button" title="Delete RF station" aria-label="Delete ${call}">×</button>`
             : '';
@@ -180,7 +184,7 @@ class StationManager {
             <div class="station-item ${source}" data-callsign="${escapedCallAttr}" data-source="${source}" data-last-heard="${station.last_heard || 0}" data-packet-count="${count}">
                 <div class="station-icon">${icon}</div>
                 <div class="station-info">
-                    <div class="station-call">${call} ${directBadge}</div>
+                    <div class="station-call">${call} ${directBadge} ${portBadge}</div>
                     <div class="station-detail">${comment || path || '&mdash;'}</div>
                 </div>
                 <div class="station-meta">
@@ -202,7 +206,7 @@ class StationManager {
         const time = pkt.timestamp
             ? new Date(pkt.timestamp * 1000).toLocaleTimeString()
             : '';
-        const sourceLabel = pkt.source === 'rf' ? 'RF' : 'IS';
+        const sourceLabel = pkt.source === 'rf' ? (pkt.port_name || 'RF') : 'IS';
         const sourceClass = pkt.source || 'rf';
 
         const el = document.createElement('div');

@@ -63,6 +63,7 @@ class StationTracker:
         """Process a parsed packet and update station tracking."""
         source = packet.source  # 'rf' or 'aprs_is'
         callsign = packet.from_call
+        port_name = packet.port_name if source == "rf" else ""
         is_direct = source == "rf" and self._is_direct_path(packet.path)
 
         if not callsign:
@@ -78,6 +79,7 @@ class StationTracker:
                 packet_type=packet.packet_type,
                 latitude=packet.latitude,
                 longitude=packet.longitude,
+                port_name=port_name,
             )
             await self.ws.broadcast(
                 {
@@ -92,6 +94,7 @@ class StationTracker:
                         "packet_type": packet.packet_type,
                         "latitude": packet.latitude,
                         "longitude": packet.longitude,
+                        "port_name": port_name,
                         "distance_km": None,
                     },
                 }
@@ -123,6 +126,7 @@ class StationTracker:
                 packet_type=packet.packet_type,
                 latitude=packet.latitude,
                 longitude=packet.longitude,
+                port_name=port_name,
             )
             await self.ws.broadcast(
                 {
@@ -137,6 +141,7 @@ class StationTracker:
                         "packet_type": packet.packet_type,
                         "latitude": packet.latitude,
                         "longitude": packet.longitude,
+                        "port_name": port_name,
                         "distance_km": None,
                     },
                 }
@@ -174,6 +179,7 @@ class StationTracker:
             symbol_code=packet.symbol_code,
             comment=packet.comment,
             path=packet.path,
+            port_name=port_name,
             raw=packet.raw,
             distance_km=distance_km,
             heading=heading,
@@ -190,6 +196,7 @@ class StationTracker:
             packet_type=packet.packet_type,
             latitude=packet.latitude,
             longitude=packet.longitude,
+            port_name=port_name,
             commit=False,
         )
 
@@ -201,6 +208,7 @@ class StationTracker:
                 distance_km=distance_km,
                 heading=heading,
                 path=packet.path,
+                port_name=port_name,
                 hop_count=hop_count,
                 is_direct=is_direct,
                 commit=False,
@@ -216,6 +224,7 @@ class StationTracker:
                 latitude=packet.latitude,
                 longitude=packet.longitude,
                 path=packet.path,
+                port_name=port_name,
                 hop_count=self._count_hops(packet.path) if source == "rf" else 0,
                 is_direct=is_direct,
                 commit=False,
@@ -230,6 +239,7 @@ class StationTracker:
                     "timestamp": time.time(),
                     "is_direct": is_direct,
                     "path": packet.path,
+                    "port_name": port_name,
                 },
             })
             # Trigger first-heard alert if alert manager is available
@@ -269,6 +279,7 @@ class StationTracker:
                     "packet_type": packet.packet_type,
                     "latitude": packet.latitude,
                     "longitude": packet.longitude,
+                    "port_name": port_name,
                     "distance_km": distance_km,
                 },
             }

@@ -176,6 +176,7 @@ class PacketHandler:
 
         # Parse APRS content
         packet = parse_packet(raw_str, source="rf")
+        packet.port_name = getattr(interface, "name", "") if interface else ""
 
         # Track the station
         await self.tracker.track_packet(packet)
@@ -223,6 +224,7 @@ class PacketHandler:
 
         logger.debug(f"RF RX text: {raw_str}")
         packet = parse_packet(raw_str, source="rf")
+        packet.port_name = getattr(interface, "name", "") if interface else ""
         await self.tracker.track_packet(packet)
 
         if self.igate and not self.tracker._has_internet_path(packet.path):
@@ -522,6 +524,65 @@ class PacketHandler:
                 logger.debug(f"RF TX via {iface.name}: {frame.to_aprs_string()}")
             except Exception as e:
                 logger.error(f"RF TX error on {iface.name}: {e}")
+
+    async def transmit_aprs_info(
+        self,
+        source_call: str,
+        info: str,
+        mode: str = "both",
+        path: str = "",
+        destination: str = "APPRPV",
+    ) -> Dict[str, Any]:
+        """Transmit a prepared APRS information field on RF and/or APRS-IS."""
+        mode = (mode or "both").strip().lower()
+        if mode not in {"both", "rf", "aprs_is"}:
+            raise ValueError("Invalid transmit mode.")
+
+        send_rf = mode in {"rf", "both"}
+        send_is = mode in {"aprs_is", "both"}
+        rf_tx_available = self._rf_can_transmit()
+        aprs_is_available = bool(
+            self.aprs_is and self.aprs_is.connected and getattr(self.aprs_is, "verified", False)
+        )
+
+        if not ((send_rf and rf_tx_available) or (send_is and aprs_is_available)):
+            if send_is and self.aprs_is and self.aprs_is.connected and not getattr(self.aprs_is, "verified", False):
+                message = "APRS-IS is connected in read-only mode and no selected RF transmit path is available."
+            else:
+                message = "No selected RF or APRS-IS transmit path is available."
+            return {"can_transmit": False, "message": message}
+
+        if send_rf and rf_tx_available:
+            from server.ax25 import AX25Address
+
+            frame = AX25Frame()
+            frame.source = AX25Address.from_string(source_call)
+            frame.destination = AX25Address.from_string(destination)
+            frame.digipeaters = [
+                AX25Address.from_string(hop.strip())
+                for hop in (path or "").split(",")
+                if hop.strip()
+            ]
+            frame.info = info.encode("latin-1")
+            await self._transmit_rf(frame)
+
+        is_sent = False
+        if send_is and aprs_is_available:
+            is_sent = await self.aprs_is.send(f"{source_call}>{destination},TCPIP*:{info}")
+            if is_sent:
+                self.stats["is_tx"] += 1
+
+        await self._broadcast_stats()
+
+        transports = []
+        if send_rf and rf_tx_available:
+            transports.append("RF")
+        if is_sent:
+            transports.append("APRS-IS")
+        return {
+            "can_transmit": True,
+            "message": f"Transmitted on {' and '.join(transports)}.",
+        }
 
     def _rf_can_transmit(self) -> bool:
         return any(

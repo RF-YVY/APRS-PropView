@@ -776,6 +776,17 @@
                         <input type="hidden" id="cfg-is-filter">
                     </div>
 
+                    <!-- RF Ports -->
+                    <div class="settings-section" data-settings-key="rf-ports" data-summary="Multiple named serial and TCP KISS RF ports.">
+                        <h3>RF Ports</h3>
+                        <div id="cfg-rf-ports-list" class="rf-ports-list"></div>
+                        <div class="rf-ports-actions">
+                            <button type="button" class="settings-toolbar-btn" id="btn-rf-port-add-serial">Add Serial Port</button>
+                            <button type="button" class="settings-toolbar-btn" id="btn-rf-port-add-tcp">Add TCP Port</button>
+                        </div>
+                        <p class="settings-note">Named RF ports are shown on received packets and stations. KISS serial, KISS TCP, and serial TNC2 monitor receive-only ports can run at the same time after restart.</p>
+                    </div>
+
                     <!-- KISS Serial -->
                     <div class="settings-section" data-settings-key="kiss-serial" data-summary="Serial TNC connection settings.">
                         <h3>KISS Serial TNC</h3>
@@ -935,6 +946,112 @@
                             <label for="cfg-msg-retention">Message Retention (days)</label>
                             <input type="number" id="cfg-msg-retention" min="1" step="1" value="30">
                         </div>
+                    </div>
+
+                    <div class="settings-section" data-settings-key="status-dx" data-summary="Transmit compact APRS status packets with current DX/propagation information.">
+                        <h3>Status / DX Report</h3>
+                        <div class="settings-row">
+                            <label for="cfg-status-enabled">Enabled</label>
+                            <input type="checkbox" id="cfg-status-enabled">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-status-interval">Status Interval (min)</label>
+                            <input type="number" id="cfg-status-interval" min="10" max="1440" step="1" value="30">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-status-window">DX Window (min)</label>
+                            <input type="number" id="cfg-status-window" min="15" max="1440" step="5" value="60">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-status-max-length">Max Length</label>
+                            <input type="number" id="cfg-status-max-length" min="20" max="120" step="1" value="67">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-status-mode">Transmit Via</label>
+                            <select id="cfg-status-mode">
+                                <option value="both">RF + APRS-IS</option>
+                                <option value="rf">RF only</option>
+                                <option value="aprs_is">APRS-IS only</option>
+                            </select>
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-status-path">RF Path</label>
+                            <select id="cfg-status-path">
+                                <option value="">DIRECT (no path)</option>
+                                <option value="WIDE1-1">WIDE1-1</option>
+                                <option value="WIDE1-1,WIDE2-1">WIDE1-1,WIDE2-1</option>
+                                <option value="WIDE1-1,WIDE2-2">WIDE1-1,WIDE2-2</option>
+                            </select>
+                        </div>
+                        <div class="settings-row settings-row-stacked">
+                            <label>Status Preview</label>
+                            <div id="cfg-status-preview" class="status-preview">Not checked</div>
+                        </div>
+                        <div class="settings-row">
+                            <label></label>
+                            <button type="button" class="btn-small" id="btn-status-test">Transmit Status Now</button>
+                        </div>
+                        <p class="settings-note">The current report is a single compact status packet with the best direct DX station, bearing, direct count, RF count, and propagation level.</p>
+                    </div>
+
+                    <div class="settings-section" data-settings-key="wxnow" data-summary="Transmit APRS weather packets from a WXnow.txt file.">
+                        <h3>WXnow Transmit</h3>
+                        <div class="settings-row">
+                            <label for="cfg-wxnow-enabled">Enabled</label>
+                            <input type="checkbox" id="cfg-wxnow-enabled">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-wxnow-file">WXnow.txt File</label>
+                            <div class="file-picker-row">
+                                <input type="text" id="cfg-wxnow-file" placeholder="C:\Weather\WXnow.txt">
+                                <button type="button" class="btn-small" id="btn-wxnow-browse">Browse</button>
+                            </div>
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-wxnow-ssid">Weather SSID</label>
+                            <input type="number" id="cfg-wxnow-ssid" min="0" max="15" step="1" value="13">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-wxnow-interval">WX Beacon Interval (min)</label>
+                            <input type="number" id="cfg-wxnow-interval" min="10" max="1440" step="1" value="10">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-wxnow-max-age">Stale Cutoff (min)</label>
+                            <input type="number" id="cfg-wxnow-max-age" min="1" max="1440" step="1" value="15">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-wxnow-mode">Transmit Via</label>
+                            <select id="cfg-wxnow-mode">
+                                <option value="both">RF + APRS-IS</option>
+                                <option value="rf">RF only</option>
+                                <option value="aprs_is">APRS-IS only</option>
+                            </select>
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-wxnow-path">RF Path</label>
+                            <select id="cfg-wxnow-path">
+                                <option value="">DIRECT (no path)</option>
+                                <option value="WIDE1-1">WIDE1-1</option>
+                                <option value="WIDE1-1,WIDE2-1">WIDE1-1,WIDE2-1</option>
+                                <option value="WIDE1-1,WIDE2-2">WIDE1-1,WIDE2-2</option>
+                            </select>
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-wxnow-position">Packet Position</label>
+                            <select id="cfg-wxnow-position">
+                                <option value="true">Include station position</option>
+                                <option value="false">Positionless weather</option>
+                            </select>
+                        </div>
+                        <div class="settings-row">
+                            <label>Status</label>
+                            <span id="cfg-wxnow-status" class="filter-preview">Not checked</span>
+                        </div>
+                        <div class="settings-row">
+                            <label></label>
+                            <button type="button" class="btn-small" id="btn-wxnow-test">Transmit WX Now</button>
+                        </div>
+                        <p class="settings-note">WXnow.txt uses a local-time timestamp on line 1 and the APRS complete weather body on line 2. Unchanged files are not retransmitted by the automatic loop.</p>
                     </div>
 
                     <!-- Weather -->
@@ -1259,7 +1376,7 @@
                 <div class="about-panel">
                     <div class="about-header">
                         <h2>APRS PropView</h2>
-                        <span id="about-version" class="about-version">v1.5.0</span>
+                        <span id="about-version" class="about-version">v1.5.1</span>
                     </div>
                     <div class="about-section">
                         <p>A real-time APRS digipeater and IGate focused on VHF propagation, live mapping, APRS messaging, analytics, and weather-aware situational awareness.</p>
@@ -1275,9 +1392,9 @@
                     </div>
                     <div class="about-section">
                         <h3>Build Info</h3>
-                        <p>Version: <span id="about-version-detail">1.5.0</span></p>
+                        <p>Version: <span id="about-version-detail">1.5.1</span></p>
                         <p>Release Date: <span id="about-date">May 24, 2026</span></p>
-                        <p>Highlights: persistent APRS messaging, GPS and weather refinements, direct-first-heard filtering, MQTT propagation/alert publishing, and refreshed Linux/Pi source installs.</p>
+                        <p>Highlights: multiple named RF ports, WXnow.txt weather transmit, compact Status/DX beacons, and per-port packet/station origin display.</p>
                     </div>
                     <div class="about-section">
                         <h3>Video Guide</h3>
@@ -1408,7 +1525,7 @@
 
                 <section class="help-section">
                     <h3>📦 Packets Tab</h3>
-                    <p>A live feed of decoded APRS packets. Each entry shows the source (RF or IS), timestamp, raw packet contents, and decoded fields. Use the source filter dropdown or the Clear button to manage the list.</p>
+                    <p>A live feed of decoded APRS packets. Each entry shows the source (RF port or IS), timestamp, raw packet contents, and decoded fields. Use the source filter dropdown or the Clear button to manage the list.</p>
                 </section>
 
                 <section class="help-section">

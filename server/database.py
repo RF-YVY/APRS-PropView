@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS stations (
     symbol_code TEXT DEFAULT '-',
     last_comment TEXT DEFAULT '',
     last_path TEXT DEFAULT '',
+    last_port_name TEXT DEFAULT '',
     last_raw TEXT DEFAULT '',
     distance_km REAL,
     heading REAL,
@@ -38,7 +39,8 @@ CREATE TABLE IF NOT EXISTS packets (
     raw TEXT NOT NULL,
     packet_type TEXT DEFAULT '',
     latitude REAL,
-    longitude REAL
+    longitude REAL,
+    port_name TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -92,6 +94,7 @@ CREATE TABLE IF NOT EXISTS path_history (
     distance_km REAL,
     heading REAL,
     path TEXT DEFAULT '',
+    port_name TEXT DEFAULT '',
     hop_count INTEGER DEFAULT 0,
     is_direct INTEGER DEFAULT 0
 );
@@ -106,6 +109,7 @@ CREATE TABLE IF NOT EXISTS first_heard_log (
     latitude REAL,
     longitude REAL,
     path TEXT DEFAULT '',
+    port_name TEXT DEFAULT '',
     hop_count INTEGER DEFAULT 0,
     is_direct INTEGER DEFAULT 0
 );
@@ -146,12 +150,29 @@ class Database:
         columns = {row["name"] for row in await cursor.fetchall()}
         additions = {
             "path": "ALTER TABLE first_heard_log ADD COLUMN path TEXT DEFAULT ''",
+            "port_name": "ALTER TABLE first_heard_log ADD COLUMN port_name TEXT DEFAULT ''",
             "hop_count": "ALTER TABLE first_heard_log ADD COLUMN hop_count INTEGER DEFAULT 0",
             "is_direct": "ALTER TABLE first_heard_log ADD COLUMN is_direct INTEGER DEFAULT 0",
         }
         for name, statement in additions.items():
             if name not in columns:
                 await self.db.execute(statement)
+        for table, table_additions in {
+            "stations": {
+                "last_port_name": "ALTER TABLE stations ADD COLUMN last_port_name TEXT DEFAULT ''",
+            },
+            "packets": {
+                "port_name": "ALTER TABLE packets ADD COLUMN port_name TEXT DEFAULT ''",
+            },
+            "path_history": {
+                "port_name": "ALTER TABLE path_history ADD COLUMN port_name TEXT DEFAULT ''",
+            },
+        }.items():
+            cursor = await self.db.execute(f"PRAGMA table_info({table})")
+            table_columns = {row["name"] for row in await cursor.fetchall()}
+            for name, statement in table_additions.items():
+                if name not in table_columns:
+                    await self.db.execute(statement)
 
     async def close(self):
         if self.db:
@@ -173,6 +194,7 @@ class Database:
         symbol_code: str = "-",
         comment: str = "",
         path: str = "",
+        port_name: str = "",
         raw: str = "",
         distance_km: Optional[float] = None,
         heading: Optional[float] = None,
@@ -191,6 +213,7 @@ class Database:
                 "last_heard": now,
                 "packet_count": row["packet_count"] + 1,
                 "last_path": path,
+                "last_port_name": port_name,
                 "last_raw": raw,
                 "last_comment": comment or row["last_comment"],
             }
@@ -215,13 +238,13 @@ class Database:
                 """INSERT INTO stations
                    (callsign, source, first_heard, last_heard, packet_count,
                     latitude, longitude, symbol_table, symbol_code,
-                    last_comment, last_path, last_raw, distance_km, heading)
-                   VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    last_comment, last_path, last_port_name, last_raw, distance_km, heading)
+                   VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     callsign, source, now, now,
                     latitude, longitude,
                     symbol_table, symbol_code,
-                    comment, path, raw,
+                    comment, path, port_name, raw,
                     distance_km, heading,
                 ),
             )
@@ -307,14 +330,15 @@ class Database:
         packet_type: str = "",
         latitude: Optional[float] = None,
         longitude: Optional[float] = None,
+        port_name: str = "",
         commit: bool = True,
     ):
         now = time.time()
         await self.db.execute(
             """INSERT INTO packets
-               (timestamp, source, from_call, to_call, path, raw, packet_type, latitude, longitude)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (now, source, from_call, to_call, path, raw, packet_type, latitude, longitude),
+               (timestamp, source, from_call, to_call, path, raw, packet_type, latitude, longitude, port_name)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (now, source, from_call, to_call, path, raw, packet_type, latitude, longitude, port_name),
         )
         if commit:
             await self.db.commit()
@@ -578,6 +602,7 @@ class Database:
         distance_km: Optional[float],
         heading: Optional[float],
         path: str = "",
+        port_name: str = "",
         hop_count: int = 0,
         is_direct: bool = False,
         commit: bool = True,
@@ -585,9 +610,9 @@ class Database:
         now = time.time()
         await self.db.execute(
             """INSERT INTO path_history
-               (timestamp, callsign, distance_km, heading, path, hop_count, is_direct)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (now, callsign, distance_km, heading, path, hop_count, 1 if is_direct else 0),
+               (timestamp, callsign, distance_km, heading, path, port_name, hop_count, is_direct)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (now, callsign, distance_km, heading, path, port_name, hop_count, 1 if is_direct else 0),
         )
         if commit:
             await self.db.commit()
@@ -623,6 +648,7 @@ class Database:
         latitude: Optional[float],
         longitude: Optional[float],
         path: str = "",
+        port_name: str = "",
         hop_count: int = 0,
         is_direct: bool = False,
         commit: bool = True,
@@ -630,9 +656,9 @@ class Database:
         now = time.time()
         await self.db.execute(
             """INSERT INTO first_heard_log
-               (timestamp, callsign, source, distance_km, heading, latitude, longitude, path, hop_count, is_direct)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (now, callsign, source, distance_km, heading, latitude, longitude, path, hop_count, 1 if is_direct else 0),
+               (timestamp, callsign, source, distance_km, heading, latitude, longitude, path, port_name, hop_count, is_direct)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (now, callsign, source, distance_km, heading, latitude, longitude, path, port_name, hop_count, 1 if is_direct else 0),
         )
         if commit:
             await self.db.commit()

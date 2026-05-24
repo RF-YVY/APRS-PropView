@@ -4,7 +4,7 @@
 Launch this to start the application. The web interface opens automatically.
 """
 
-APP_VERSION = "1.5.0"
+APP_VERSION = "1.5.1"
 
 import asyncio
 import sys
@@ -41,6 +41,8 @@ from server.alerts import AlertManager, AlertConfig
 from server.weather import WeatherManager
 from server.update_checker import UpdateChecker
 from server.gps import GPSManager
+from server.wxnow import WxNowTransmitter
+from server.status_report import StatusReportTransmitter
 
 # Configure logging
 logging.basicConfig(
@@ -179,37 +181,94 @@ async def main():
 
     # ── Connect RF interfaces ───────────────────────────────────────
 
-    if config.kiss_serial.enabled:
-        serial_mode = (config.kiss_serial.mode or "kiss").strip().lower()
-        serial_cls = TNC2MonitorSerialClient if serial_mode == "tnc2_monitor" else KISSSerialClient
-        frame_handler = handler.handle_rf_aprs_packet if serial_mode == "tnc2_monitor" else handler.handle_rf_packet
-        serial_client = serial_cls(
-            config.kiss_serial.port,
-            config.kiss_serial.baudrate,
-            frame_handler,
-            flow_control=config.kiss_serial.flow_control,
-            init_profile=config.kiss_serial.init_profile,
-            init_commands=config.kiss_serial.init_commands,
-            callsign=config.station.full_callsign,
-        )
-        handler.add_rf_interface(serial_client)
-        logger.info(
-            "Serial RF: %s @ %s mode=%s flow=%s profile=%s",
-            config.kiss_serial.port,
-            config.kiss_serial.baudrate,
-            serial_mode,
-            config.kiss_serial.flow_control,
-            config.kiss_serial.init_profile,
-        )
+    def _legacy_rf_ports():
+        ports = []
+        if config.kiss_serial.enabled:
+            ports.append({
+                "name": f"KISS Serial {config.kiss_serial.port}",
+                "enabled": True,
+                "type": "serial",
+                "port": config.kiss_serial.port,
+                "baudrate": config.kiss_serial.baudrate,
+                "mode": config.kiss_serial.mode,
+                "flow_control": config.kiss_serial.flow_control,
+                "init_profile": config.kiss_serial.init_profile,
+                "init_commands": config.kiss_serial.init_commands,
+                "host": "",
+                "tcp_port": 0,
+            })
+        if config.kiss_tcp.enabled:
+            ports.append({
+                "name": f"KISS TCP {config.kiss_tcp.host}:{config.kiss_tcp.port}",
+                "enabled": True,
+                "type": "tcp",
+                "host": config.kiss_tcp.host,
+                "tcp_port": config.kiss_tcp.port,
+                "port": "",
+                "baudrate": 0,
+                "mode": "kiss",
+                "flow_control": "none",
+                "init_profile": "none",
+                "init_commands": "",
+            })
+        return ports
 
-    if config.kiss_tcp.enabled:
-        tcp_client = KISSTCPClient(
-            config.kiss_tcp.host,
-            config.kiss_tcp.port,
-            handler.handle_rf_packet,
-        )
-        handler.add_rf_interface(tcp_client)
-        logger.info(f"KISS TCP: {config.kiss_tcp.host}:{config.kiss_tcp.port}")
+    rf_port_configs = config.rf_ports if config.rf_ports else _legacy_rf_ports()
+
+    def _port_value(port_cfg, key, default=None):
+        if hasattr(port_cfg, key):
+            return getattr(port_cfg, key)
+        return port_cfg.get(key, default)
+
+    for idx, port_cfg in enumerate(rf_port_configs, 1):
+        if not _port_value(port_cfg, "enabled", False):
+            continue
+        port_type = (_port_value(port_cfg, "type", "serial") or "serial").strip().lower()
+        port_name = (_port_value(port_cfg, "name", "") or "").strip()
+        if not port_name:
+            port_name = f"RF Port {idx}"
+        if port_type == "serial":
+            serial_mode = (_port_value(port_cfg, "mode", "kiss") or "kiss").strip().lower()
+            serial_port = _port_value(port_cfg, "port", "COM3")
+            baudrate = int(_port_value(port_cfg, "baudrate", 9600) or 9600)
+            flow_control = _port_value(port_cfg, "flow_control", "none")
+            init_profile = _port_value(port_cfg, "init_profile", "none")
+            init_commands = _port_value(port_cfg, "init_commands", "")
+            serial_cls = TNC2MonitorSerialClient if serial_mode == "tnc2_monitor" else KISSSerialClient
+            frame_handler = handler.handle_rf_aprs_packet if serial_mode == "tnc2_monitor" else handler.handle_rf_packet
+            serial_client = serial_cls(
+                serial_port,
+                baudrate,
+                frame_handler,
+                flow_control=flow_control,
+                init_profile=init_profile,
+                init_commands=init_commands,
+                callsign=config.station.full_callsign,
+                name=port_name,
+            )
+            handler.add_rf_interface(serial_client)
+            logger.info(
+                "RF port %s: serial %s @ %s mode=%s flow=%s profile=%s",
+                port_name,
+                serial_port,
+                baudrate,
+                serial_mode,
+                flow_control,
+                init_profile,
+            )
+        elif port_type == "tcp":
+            host = _port_value(port_cfg, "host", "127.0.0.1")
+            tcp_port = int(_port_value(port_cfg, "tcp_port", 8001) or 8001)
+            tcp_client = KISSTCPClient(
+                host,
+                tcp_port,
+                handler.handle_rf_packet,
+                name=port_name,
+            )
+            handler.add_rf_interface(tcp_client)
+            logger.info("RF port %s: KISS TCP %s:%s", port_name, host, tcp_port)
+        else:
+            logger.warning("Skipping RF port %s with unknown type %s", port_name, port_type)
 
     # ── APRS-IS client ──────────────────────────────────────────────
 
@@ -226,6 +285,15 @@ async def main():
         logger.info(f"Weather: enabled, location={config.weather.location_code}")
     else:
         logger.info("Weather: disabled or no location set")
+
+    wxnow_transmitter = WxNowTransmitter(config, handler)
+    logger.info(
+        "WXnow transmit: %s",
+        "enabled" if config.wxnow.enabled and config.wxnow.file_path else "disabled or no file set",
+    )
+
+    status_transmitter = StatusReportTransmitter(config, handler, tracker)
+    logger.info("Status/DX transmit: %s", "enabled" if config.status.enabled else "disabled")
 
     update_checker = UpdateChecker(APP_VERSION)
     update_checker.configure(
@@ -265,6 +333,8 @@ async def main():
         alert_manager,
         aprs_is,
         weather_manager,
+        wxnow_transmitter=wxnow_transmitter,
+        status_transmitter=status_transmitter,
         update_checker=update_checker,
         gps_manager=gps_manager,
         app_version=APP_VERSION,
@@ -290,6 +360,8 @@ async def main():
     # Beacon loop always runs — it re-reads interval from config each iteration
     # so changes via the web UI apply live (interval=0 means disabled, loop sleeps)
     tasks.append(asyncio.create_task(handler.beacon_loop()))
+    tasks.append(asyncio.create_task(wxnow_transmitter.loop()))
+    tasks.append(asyncio.create_task(status_transmitter.loop()))
 
     # ── Start web server ────────────────────────────────────────────
 
