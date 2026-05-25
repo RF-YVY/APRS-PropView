@@ -18,6 +18,7 @@ WXNOW_TIMESTAMP_FORMATS = (
     "%B %d %Y %H:%M",
 )
 WEATHER_BODY_RE = re.compile(r"^[0-9. ]{3}/[0-9. ]{3}(?:[A-Za-z0-9.+\-/ ]*)$")
+WEATHER_BODY_WITH_IMPLIED_TEMP_RE = re.compile(r"^([0-9. ]{3}/[0-9. ]{3}(?:g\d{3})?)(-?\d{3})(?=[A-Za-z]|$)")
 
 
 @dataclass
@@ -26,6 +27,11 @@ class WxNowReading:
     weather_body: str
     file_mtime: float
     signature: str
+
+
+def normalize_weather_body(weather_body: str) -> str:
+    """Normalize common WXnow variants into APRS weather body syntax."""
+    return WEATHER_BODY_WITH_IMPLIED_TEMP_RE.sub(r"\1t\2", weather_body, count=1)
 
 
 def parse_wxnow_text(text: str, file_mtime: Optional[float] = None) -> WxNowReading:
@@ -45,7 +51,7 @@ def parse_wxnow_text(text: str, file_mtime: Optional[float] = None) -> WxNowRead
     if parsed_time is None:
         raise ValueError("WXnow.txt timestamp must look like 'Jul 07 2012 14:00'.")
 
-    weather_body = lines[1]
+    weather_body = normalize_weather_body(lines[1])
     if any(ord(ch) < 32 or ord(ch) > 126 for ch in weather_body):
         raise ValueError("WXnow.txt weather data must use printable ASCII characters.")
     if len(weather_body) > 100:

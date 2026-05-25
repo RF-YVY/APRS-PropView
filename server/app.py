@@ -25,7 +25,7 @@ from server.station_tracker import StationTracker
 from server.websocket_manager import WebSocketManager
 from server.packet_handler import PacketHandler
 from server.analytics import AnalyticsEngine
-from server.alerts import AlertManager
+from server.alerts import AlertConfig, AlertManager
 from server.aprs_is import APRSISClient
 from server.weather import WeatherManager
 from server.update_checker import UpdateChecker
@@ -1071,6 +1071,49 @@ def create_app(
         if not alert_manager:
             return {"alerts": []}
         return {"alerts": alert_manager.get_alert_history()}
+
+    @app.post("/api/alerts/test")
+    async def test_alert_destinations(request: Request):
+        """Send a test alert to the selected alert notification destinations."""
+        body = await request.json()
+        al = body.get("alerts", body) if isinstance(body, dict) else {}
+        if not isinstance(al, dict):
+            return JSONResponse(status_code=400, content={"success": False, "message": "Invalid alert settings."})
+
+        selected = {
+            "discord": bool(al.get("discord_enabled", False)),
+            "email": bool(al.get("email_enabled", False)),
+            "sms": bool(al.get("sms_enabled", False)),
+        }
+        if not any(selected.values()):
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": "Select at least one alert destination to test."},
+            )
+
+        email_password = al.get("email_password", "")
+        if not email_password or "*" in str(email_password):
+            email_password = config.alerts.email_password
+
+        test_config = AlertConfig(
+            enabled=True,
+            discord_enabled=selected["discord"],
+            discord_webhook_url=(al.get("discord_webhook_url", config.alerts.discord_webhook_url) or "").strip(),
+            email_enabled=selected["email"],
+            email_smtp_server=(al.get("email_smtp_server", config.alerts.email_smtp_server) or "").strip(),
+            email_smtp_port=int(al.get("email_smtp_port", config.alerts.email_smtp_port) or 587),
+            email_from=(al.get("email_from", config.alerts.email_from) or "").strip(),
+            email_to=(al.get("email_to", config.alerts.email_to) or "").strip(),
+            email_password=email_password,
+            sms_enabled=selected["sms"],
+            sms_gateway_address=(al.get("sms_gateway_address", config.alerts.sms_gateway_address) or "").strip(),
+        )
+
+        manager = AlertManager(test_config, station_callsign=config.station.full_callsign)
+        result = await manager.send_test_alert()
+        status_code = 200 if result.get("success") else 400
+        message = "Test alert sent." if result.get("success") else "One or more test destinations failed."
+        return JSONResponse(status_code=status_code, content={**result, "message": message})
 
     # ── Weather API ─────────────────────────────────────────────
 

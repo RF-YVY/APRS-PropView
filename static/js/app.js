@@ -177,6 +177,7 @@
         initWeatherSettingsUi();
         initWxNowControls();
         initStatusDxControls();
+        initAlertTestControls();
         initRfPortsControls();
         initTncProfileSettings();
         initUpdateCheckerUi();
@@ -1439,7 +1440,7 @@
 
     function renderUpdateStatus(data, els) {
         const { messageEl, detailEl, linkEl, footerEl } = els;
-        const currentVersion = data?.current_version || '1.5.2';
+        const currentVersion = data?.current_version || '1.5.2.1';
         const latestVersion = data?.latest_version || currentVersion;
         const releaseUrl = data?.release_url || 'https://github.com/RF-YVY/APRS-PropView/releases';
         const publishedAt = data?.published_at ? formatReleaseDate(data.published_at) : '';
@@ -2097,6 +2098,44 @@
         window.pvIconPicker.updatePreviewFromConfig();
     }
 
+    function collectAlertSettings() {
+        return {
+            enabled: getChk('cfg-alerts-enabled'),
+            anomaly_alert_enabled: getChk('cfg-alerts-anomaly-enabled'),
+            sporadic_e_alert_enabled: getChk('cfg-alerts-es-enabled'),
+            my_min_stations: getVal('cfg-alerts-my-min-stations'),
+            my_min_distance_km: Math.round(window.displayToDist(parseFloat(getVal('cfg-alerts-my-min-dist')) || 0)),
+            regional_min_stations: getVal('cfg-alerts-reg-min-stations'),
+            regional_min_distance_km: Math.round(window.displayToDist(parseFloat(getVal('cfg-alerts-reg-min-dist')) || 0)),
+            cooldown_seconds: (parseInt(getVal('cfg-alerts-cooldown')) || 0) * 60,
+            quiet_start: getVal('cfg-alerts-quiet-start') || '',
+            quiet_end: getVal('cfg-alerts-quiet-end') || '',
+            msg_notify_enabled: getChk('cfg-alerts-msg-discord') || getChk('cfg-alerts-msg-email') || getChk('cfg-alerts-msg-sms'),
+            msg_discord_enabled: getChk('cfg-alerts-msg-discord'),
+            msg_email_enabled: getChk('cfg-alerts-msg-email'),
+            msg_sms_enabled: getChk('cfg-alerts-msg-sms'),
+            audio_output_device_id: getVal('cfg-alerts-audio-device') || '',
+            audio_my_station_opening_file: getVal('cfg-alerts-audio-value-my_station_opening') || '',
+            audio_regional_watch_file: getVal('cfg-alerts-audio-value-regional_watch') || '',
+            audio_first_heard_file: getVal('cfg-alerts-audio-value-first_heard') || '',
+            audio_anomaly_file: getVal('cfg-alerts-audio-value-anomaly') || '',
+            audio_sporadic_e_file: getVal('cfg-alerts-audio-value-sporadic_e') || '',
+            audio_message_received_file: getVal('cfg-alerts-audio-value-message_received') || '',
+            audio_weather_warning_file: getVal('cfg-alerts-audio-value-weather_warning') || '',
+            audio_weather_watch_file: getVal('cfg-alerts-audio-value-weather_watch') || '',
+            discord_enabled: getChk('cfg-alerts-discord'),
+            discord_webhook_url: getVal('cfg-alerts-discord-url'),
+            email_enabled: getChk('cfg-alerts-email'),
+            email_smtp_server: getVal('cfg-alerts-smtp'),
+            email_smtp_port: getVal('cfg-alerts-smtp-port'),
+            email_from: getVal('cfg-alerts-email-from'),
+            email_to: getVal('cfg-alerts-email-to'),
+            email_password: getVal('cfg-alerts-email-pw'),
+            sms_enabled: getChk('cfg-alerts-sms'),
+            sms_gateway_address: getVal('cfg-alerts-sms-addr'),
+        };
+    }
+
     async function saveSettings() {
         const buttons = Array.from(document.querySelectorAll('.btn-save-settings'));
         const statusEl = document.getElementById('settings-status');
@@ -2202,41 +2241,7 @@
                 symbol_table: '/',
                 symbol_code: '_',
             },
-            alerts: {
-                enabled: getChk('cfg-alerts-enabled'),
-                anomaly_alert_enabled: getChk('cfg-alerts-anomaly-enabled'),
-                sporadic_e_alert_enabled: getChk('cfg-alerts-es-enabled'),
-                my_min_stations: getVal('cfg-alerts-my-min-stations'),
-                my_min_distance_km: Math.round(window.displayToDist(parseFloat(getVal('cfg-alerts-my-min-dist')) || 0)),
-                regional_min_stations: getVal('cfg-alerts-reg-min-stations'),
-                regional_min_distance_km: Math.round(window.displayToDist(parseFloat(getVal('cfg-alerts-reg-min-dist')) || 0)),
-                cooldown_seconds: (parseInt(getVal('cfg-alerts-cooldown')) || 0) * 60,
-                quiet_start: getVal('cfg-alerts-quiet-start') || '',
-                quiet_end: getVal('cfg-alerts-quiet-end') || '',
-                msg_notify_enabled: getChk('cfg-alerts-msg-discord') || getChk('cfg-alerts-msg-email') || getChk('cfg-alerts-msg-sms'),
-                msg_discord_enabled: getChk('cfg-alerts-msg-discord'),
-                msg_email_enabled: getChk('cfg-alerts-msg-email'),
-                msg_sms_enabled: getChk('cfg-alerts-msg-sms'),
-                audio_output_device_id: getVal('cfg-alerts-audio-device') || '',
-                audio_my_station_opening_file: getVal('cfg-alerts-audio-value-my_station_opening') || '',
-                audio_regional_watch_file: getVal('cfg-alerts-audio-value-regional_watch') || '',
-                audio_first_heard_file: getVal('cfg-alerts-audio-value-first_heard') || '',
-                audio_anomaly_file: getVal('cfg-alerts-audio-value-anomaly') || '',
-                audio_sporadic_e_file: getVal('cfg-alerts-audio-value-sporadic_e') || '',
-                audio_message_received_file: getVal('cfg-alerts-audio-value-message_received') || '',
-                audio_weather_warning_file: getVal('cfg-alerts-audio-value-weather_warning') || '',
-                audio_weather_watch_file: getVal('cfg-alerts-audio-value-weather_watch') || '',
-                discord_enabled: getChk('cfg-alerts-discord'),
-                discord_webhook_url: getVal('cfg-alerts-discord-url'),
-                email_enabled: getChk('cfg-alerts-email'),
-                email_smtp_server: getVal('cfg-alerts-smtp'),
-                email_smtp_port: getVal('cfg-alerts-smtp-port'),
-                email_from: getVal('cfg-alerts-email-from'),
-                email_to: getVal('cfg-alerts-email-to'),
-                email_password: getVal('cfg-alerts-email-pw'),
-                sms_enabled: getChk('cfg-alerts-sms'),
-                sms_gateway_address: getVal('cfg-alerts-sms-addr'),
-            },
+            alerts: collectAlertSettings(),
             weather: {
                 enabled: getChk('cfg-wx-enabled'),
                 location_code: getVal('cfg-wx-location'),
@@ -2349,6 +2354,45 @@
         ['cfg-status-window', 'cfg-status-max-length'].forEach((id) => {
             document.getElementById(id)?.addEventListener('change', refreshStatusDxPreview);
         });
+    }
+
+    function initAlertTestControls() {
+        document.getElementById('btn-alerts-test')?.addEventListener('click', sendAlertTest);
+    }
+
+    async function sendAlertTest() {
+        const button = document.getElementById('btn-alerts-test');
+        const status = document.getElementById('cfg-alerts-test-status');
+        if (button) button.disabled = true;
+        if (status) {
+            status.textContent = 'Sending test alert...';
+            status.title = '';
+        }
+
+        try {
+            const resp = await fetch('/api/alerts/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ alerts: collectAlertSettings() }),
+            });
+            const result = await resp.json();
+            const details = (result.results || [])
+                .map((item) => `${item.channel}: ${item.ok ? 'sent' : item.message}`)
+                .join(' | ');
+            if (status) {
+                status.textContent = result.success
+                    ? (details || 'Test alert sent.')
+                    : (details || result.message || 'Test alert failed.');
+                status.title = result.message || '';
+            }
+            showSystemNotification(result.message || (result.success ? 'Test alert sent.' : 'Test alert failed.'), result.success ? 'info' : 'error');
+        } catch (e) {
+            console.error('Failed to send test alert:', e);
+            if (status) status.textContent = 'Network error sending test alert.';
+            showSystemNotification('Network error sending test alert.', 'error');
+        } finally {
+            if (button) button.disabled = false;
+        }
     }
 
     async function refreshStatusDxPreview() {

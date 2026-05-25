@@ -106,9 +106,9 @@ class APRSISComplianceTests(unittest.TestCase):
         config = Config()
         config.station.callsign = "K5ABC"
         config.aprs_is.passcode = "12345"
-        client = APRSISClient(config, lambda packet: None, app_version="1.5.2")
+        client = APRSISClient(config, lambda packet: None, app_version="1.5.2.1")
 
-        self.assertIn("vers APRSPropView 1.5.2", client._build_login())
+        self.assertIn("vers APRSPropView 1.5.2.1", client._build_login())
 
 
 class ConfigTests(unittest.TestCase):
@@ -188,6 +188,34 @@ class WxNowTests(unittest.TestCase):
             build_wxnow_info(config, reading),
             "_292/004g011t098h36b10139jDvs9",
         )
+
+    def test_build_positioned_wx_packet_inserts_missing_temperature_tag(self):
+        config = Config()
+        config.station.callsign = "K5ABC"
+        config.station.latitude = 35.5321667
+        config.station.longitude = -79.75
+        reading = parse_wxnow_text("May 25 2026 09:35\n180/000074P9616h99b09976\n")
+
+        self.assertEqual(reading.weather_body, "180/000t074P9616h99b09976")
+        self.assertEqual(
+            build_wxnow_info(config, reading),
+            "@250935z3531.93N/07945.00W_180/000t074P9616h99b09976",
+        )
+
+    def test_build_positionless_wx_packet_inserts_missing_temperature_tag(self):
+        config = Config()
+        config.wxnow.include_position = False
+        reading = parse_wxnow_text("May 25 2026 09:42\n067/000074P9616h99b09977\n")
+
+        self.assertEqual(
+            build_wxnow_info(config, reading),
+            "_067/000t074P9616h99b09977",
+        )
+
+    def test_parse_wxnow_inserts_missing_temperature_tag_after_gust(self):
+        reading = parse_wxnow_text("Jun 01 2003 08:07\n272/000g006069r010p030P020h61b10150\n")
+
+        self.assertEqual(reading.weather_body, "272/000g006t069r010p030P020h61b10150")
 
     def test_parse_wxnow_values_for_current_conditions(self):
         reading = parse_wxnow_text("Feb 09 2021 13:00\n086/004g008t028r000p000P000h75b10007\n")
@@ -666,6 +694,52 @@ class BandOpeningAlertTests(unittest.TestCase):
                 "candidates": [{"callsign": "K1ABC", "distance_km": 900}],
             })
             self.assertEqual(manager.get_alert_history(), [])
+
+        asyncio.run(run_test())
+
+    def test_test_alert_reports_selected_channel_results(self):
+        async def run_test():
+            manager = AlertManager(
+                AlertConfig(
+                    discord_enabled=True,
+                    discord_webhook_url="https://example.com/webhook",
+                    email_enabled=True,
+                    email_smtp_server="smtp.example.com",
+                    email_from="from@example.com",
+                    email_to="to@example.com",
+                ),
+                station_callsign="N0CALL",
+            )
+            sent = []
+
+            async def fake_discord(alert):
+                sent.append(("discord", alert["type"], alert["message"]))
+
+            async def fake_email(alert):
+                sent.append(("email", alert["type"], alert["message"]))
+
+            manager._send_discord = fake_discord
+            manager._send_email = fake_email
+
+            result = await manager.send_test_alert()
+
+            self.assertTrue(result["success"])
+            self.assertEqual([item["channel"] for item in result["results"]], ["discord", "email"])
+            self.assertEqual([item["ok"] for item in result["results"]], [True, True])
+            self.assertEqual([item[0] for item in sent], ["discord", "email"])
+            self.assertTrue(all(item[1] == "test" for item in sent))
+
+        asyncio.run(run_test())
+
+    def test_test_alert_reports_missing_selected_channel_config(self):
+        async def run_test():
+            manager = AlertManager(AlertConfig(discord_enabled=True), station_callsign="N0CALL")
+
+            result = await manager.send_test_alert()
+
+            self.assertFalse(result["success"])
+            self.assertEqual(result["results"][0]["channel"], "discord")
+            self.assertIn("webhook", result["results"][0]["message"].lower())
 
         asyncio.run(run_test())
 

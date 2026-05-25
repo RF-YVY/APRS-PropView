@@ -341,33 +341,82 @@ class AlertManager:
 
     async def send_alert(self, alert: Dict[str, Any]):
         """Send alert via all configured channels."""
-        tasks = []
+        tasks, missing = self._alert_channel_tasks(alert)
 
         logger.info(
             f"send_alert called — discord={self.config.discord_enabled}, "
             f"email={self.config.email_enabled}, sms={self.config.sms_enabled}"
         )
 
-        if self.config.discord_enabled and self.config.discord_webhook_url:
-            tasks.append(self._send_discord(alert))
-
-        if self.config.email_enabled and self.config.email_smtp_server:
-            tasks.append(self._send_email(alert))
-
-        if self.config.sms_enabled and self.config.sms_gateway_address:
-            tasks.append(self._send_sms(alert))
+        for channel, message in missing:
+            logger.warning("Alert %s channel skipped: %s", channel, message)
 
         if not tasks:
             logger.warning("Alert triggered but no notification channels are configured/enabled")
             return
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        for i, result in enumerate(results):
+        results = await asyncio.gather(*(task for _, task in tasks), return_exceptions=True)
+        for channel, result in zip((channel for channel, _ in tasks), results):
             if isinstance(result, Exception):
-                logger.error(f"Alert channel {i} failed: {result}", exc_info=result)
+                logger.error(f"Alert {channel} channel failed: {result}", exc_info=result)
+
+    async def send_test_alert(self) -> Dict[str, Any]:
+        """Send a preformatted test alert to configured alert channels."""
+        alert = {
+            "type": "test",
+            "timestamp": time.time(),
+            "message": (
+                "APRS PropView test alert.\n"
+                "Your notification destination is configured and able to receive alerts."
+            ),
+        }
+        tasks, missing = self._alert_channel_tasks(alert)
+        results = [
+            {"channel": channel, "ok": False, "message": message}
+            for channel, message in missing
+        ]
+
+        if tasks:
+            sent = await asyncio.gather(*(task for _, task in tasks), return_exceptions=True)
+            for channel, result in zip((channel for channel, _ in tasks), sent):
+                if isinstance(result, Exception):
+                    results.append({"channel": channel, "ok": False, "message": str(result)})
+                else:
+                    results.append({"channel": channel, "ok": True, "message": "Sent"})
+
+        return {
+            "success": bool(results) and all(item["ok"] for item in results),
+            "results": results,
+        }
+
+    def _alert_channel_tasks(self, alert: Dict[str, Any]) -> tuple[list[tuple[str, Any]], list[tuple[str, str]]]:
+        tasks = []
+        missing = []
+
+        if self.config.discord_enabled:
+            if self.config.discord_webhook_url:
+                tasks.append(("discord", self._send_discord(alert)))
+            else:
+                missing.append(("discord", "Discord webhook URL is required."))
+
+        if self.config.email_enabled:
+            if self.config.email_smtp_server and self.config.email_from and self.config.email_to:
+                tasks.append(("email", self._send_email(alert)))
+            else:
+                missing.append(("email", "SMTP server, from address, and to address are required."))
+
+        if self.config.sms_enabled:
+            if self.config.email_smtp_server and self.config.email_from and self.config.sms_gateway_address:
+                tasks.append(("sms", self._send_sms(alert)))
+            else:
+                missing.append(("sms", "SMTP server, from address, and SMS gateway address are required."))
+
+        return tasks, missing
 
     def _alert_embed_title(self, alert: Dict[str, Any]) -> str:
         alert_type = alert.get("type")
+        if alert_type == "test":
+            return "\U0001f4e1 APRS PropView Test Alert"
         if alert_type == "my_station_opening":
             return "\U0001f6a8 MY STATION Band Opening!"
         if alert_type == "anomaly":
@@ -378,6 +427,8 @@ class AlertManager:
 
     def _alert_embed_color(self, alert: Dict[str, Any]) -> int:
         alert_type = alert.get("type")
+        if alert_type == "test":
+            return 0x58A6FF
         if alert_type == "my_station_opening":
             return 0xFF6B35
         if alert_type == "anomaly":
@@ -486,6 +537,7 @@ class AlertManager:
 
             subject = (
                 "APRS PropView \u2014 MY STATION Band Opening!" if alert.get("type") == "my_station_opening"
+                else "APRS PropView \u2014 Test Alert" if alert.get("type") == "test"
                 else "APRS PropView \u2014 Regional VHF Band Watch"
             )
             msg = MIMEText(alert["message"])

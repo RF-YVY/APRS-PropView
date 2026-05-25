@@ -782,8 +782,6 @@ class PacketHandler:
         # Beacon on APRS-IS
         if mode in {"aprs_is", "both"} and self.aprs_is and self.aprs_is.connected:
             if await self.aprs_is.send_position():
-                from server.aprs_parser import make_position_packet, build_station_beacon_comment
-
                 is_info = make_position_packet(
                     cfg.full_callsign,
                     cfg.latitude,
