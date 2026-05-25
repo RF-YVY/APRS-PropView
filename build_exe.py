@@ -96,7 +96,7 @@ def _write_manifest(path):
   <assemblyIdentity
     type="win32"
     name="WickerMade.APRSPropView"
-    version="1.5.2.2"
+    version="1.5.2.3"
     processorArchitecture="amd64"
   />
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
@@ -141,8 +141,8 @@ def _write_version_info(path):
     content = """# UTF-8
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 5, 2, 2),
-    prodvers=(1, 5, 2, 2),
+    filevers=(1, 5, 2, 3),
+    prodvers=(1, 5, 2, 3),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -158,11 +158,11 @@ VSVersionInfo(
           [
             StringStruct(u'CompanyName', u'Wicker Made, LLC'),
             StringStruct(u'FileDescription', u'APRS PropView - VHF Propagation Monitor'),
-            StringStruct(u'FileVersion', u'1.5.2.2'),
+            StringStruct(u'FileVersion', u'1.5.2.3'),
             StringStruct(u'InternalName', u'APRSPropView'),
             StringStruct(u'OriginalFilename', u'APRSPropView.exe'),
             StringStruct(u'ProductName', u'APRS PropView'),
-            StringStruct(u'ProductVersion', u'1.5.2.2'),
+            StringStruct(u'ProductVersion', u'1.5.2.3'),
           ]
         )
       ]

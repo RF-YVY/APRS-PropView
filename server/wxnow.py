@@ -32,7 +32,8 @@ class WxNowReading:
 
 def normalize_weather_body(weather_body: str) -> str:
     """Normalize common WXnow variants into APRS weather body syntax."""
-    return WEATHER_BODY_WITH_IMPLIED_TEMP_RE.sub(r"\1t\2", weather_body, count=1)
+    weather_body = WEATHER_BODY_WITH_IMPLIED_TEMP_RE.sub(r"\1t\2", weather_body, count=1)
+    return re.sub(r"([rpP])\d{4,}(?=[A-Za-z]|$)", r"\1...", weather_body)
 
 
 def format_positionless_weather_body(weather_body: str) -> str:
@@ -153,7 +154,9 @@ def parse_weather_body_values(reading: WxNowReading) -> dict[str, Any]:
     temperature = field(r"t(-?\d{3})")
     if temperature is not None:
         values["temperature"] = temperature
+        values["temperature_f"] = temperature
         values["feels_like"] = temperature
+        values["feels_like_f"] = temperature
 
     gust = field(r"g(\d{3})")
     if gust is not None:
@@ -166,6 +169,7 @@ def parse_weather_body_values(reading: WxNowReading) -> dict[str, Any]:
     pressure = field(r"b(\d{5})")
     if pressure is not None:
         values["pressure"] = pressure / 10.0
+        values["pressure_mb"] = pressure / 10.0
 
     rain_hour = field(r"r(\d{3})")
     if rain_hour is not None:
@@ -242,7 +246,7 @@ class WxNowTransmitter:
 
         position_result = None
         if not wx.include_position:
-            position_result = await self._transmit_position_if_needed(force=force)
+            position_result = await self._transmit_position_if_needed()
 
         info = build_wxnow_info(self.config, reading)
         result = await self.handler.transmit_aprs_info(

@@ -1,6 +1,6 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.5.2.2** | May 25, 2026
+**Version 1.5.2.3** | May 25, 2026
 
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 
@@ -13,7 +13,7 @@
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
 
-Version 1.5.2.2 fixes APRS positionless weather packet transmit formatting and WX station position seeding, adds alert destination test messages, respects configured digipeater aliases, adds WXnow.txt current conditions, and shows transmitted packets in the packet list.
+Version 1.5.2.3 preserves valid rain-since-midnight WX data while marking over-width rain fields unknown, fixes APRS positionless weather packet transmit formatting and WX station position seeding, adds alert destination test messages, and improves WXnow current conditions.
 
 Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs/linux-raspberry-pi.md).
 
