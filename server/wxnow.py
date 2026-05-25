@@ -12,6 +12,7 @@ from typing import Any, Optional
 from server.config import Config
 
 logger = logging.getLogger("propview.wxnow")
+POSITIONLESS_WX_POSITION_INTERVAL = 30 * 60
 
 WXNOW_TIMESTAMP_FORMATS = (
     "%b %d %Y %H:%M",
@@ -32,6 +33,17 @@ class WxNowReading:
 def normalize_weather_body(weather_body: str) -> str:
     """Normalize common WXnow variants into APRS weather body syntax."""
     return WEATHER_BODY_WITH_IMPLIED_TEMP_RE.sub(r"\1t\2", weather_body, count=1)
+
+
+def format_positionless_weather_body(weather_body: str) -> str:
+    """Return APRS101 positionless WX body syntax."""
+    match = re.match(r"^([0-9. ]{3})/([0-9. ]{3})(.*)$", weather_body)
+    if not match:
+        return weather_body
+    wind_dir, wind_speed, rest = match.groups()
+    if not rest.startswith("g"):
+        rest = f"g...{rest}"
+    return f"c{wind_dir}s{wind_speed}{rest}"
 
 
 def parse_wxnow_text(text: str, file_mtime: Optional[float] = None) -> WxNowReading:
@@ -93,7 +105,20 @@ def build_wxnow_info(config: Config, reading: WxNowReading) -> str:
         code = (wx.symbol_code or "_")[:1]
         return f"@{timestamp}{lat}{table}{lon}{code}{reading.weather_body}"
 
-    return f"_{reading.weather_body}"
+    timestamp = reading.timestamp.strftime("%m%d%H%M")
+    return f"_{timestamp}{format_positionless_weather_body(reading.weather_body)}"
+
+
+def build_wxnow_position_info(config: Config) -> str:
+    """Build a same-callsign weather-symbol position for positionless WX reports."""
+    station = config.station
+    if station.latitude == 0.0 and station.longitude == 0.0:
+        raise ValueError("Set station latitude and longitude before sending positionless WX packets.")
+    lat, lon = format_aprs_lat_lon(station.latitude, station.longitude)
+    wx = config.wxnow
+    table = (wx.symbol_table or "/")[:1]
+    code = (wx.symbol_code or "_")[:1]
+    return f"!{lat}{table}{lon}{code}WXnow"
 
 
 def parse_weather_body_values(reading: WxNowReading) -> dict[str, Any]:
@@ -158,6 +183,7 @@ class WxNowTransmitter:
         self.handler = handler
         self._last_signature = ""
         self._last_tx = 0.0
+        self._last_position_tx = 0.0
         self._last_error = ""
         self._last_reading: Optional[WxNowReading] = None
 
@@ -187,6 +213,7 @@ class WxNowTransmitter:
             "beacon_interval": wx.beacon_interval,
             "max_age_minutes": wx.max_age_minutes,
             "last_transmit": self._last_tx or None,
+            "last_position_transmit": self._last_position_tx or None,
             "last_error": self._last_error,
             "age_seconds": age_seconds,
             "stale": stale,
@@ -213,6 +240,10 @@ class WxNowTransmitter:
         if not force and reading.signature == self._last_signature:
             return {"transmitted": False, "message": "WXnow.txt has not changed since the last transmit."}
 
+        position_result = None
+        if not wx.include_position:
+            position_result = await self._transmit_position_if_needed(force=force)
+
         info = build_wxnow_info(self.config, reading)
         result = await self.handler.transmit_aprs_info(
             source_call=self._station_call(),
@@ -232,8 +263,29 @@ class WxNowTransmitter:
             "transmitted": True,
             "message": result["message"],
             "info": info,
+            "position_info": position_result.get("info") if position_result else None,
             "station": self._station_call(),
         }
+
+    async def _transmit_position_if_needed(self, force: bool = False) -> Optional[dict]:
+        now = time.time()
+        if not force and self._last_position_tx and now - self._last_position_tx < POSITIONLESS_WX_POSITION_INTERVAL:
+            return None
+
+        wx = self.config.wxnow
+        info = build_wxnow_position_info(self.config)
+        result = await self.handler.transmit_aprs_info(
+            source_call=self._station_call(),
+            info=info,
+            mode=(wx.mode or "both").strip().lower(),
+            path=wx.path,
+        )
+        if not result["can_transmit"]:
+            raise ValueError(result["message"])
+
+        self._last_position_tx = now
+        logger.info("WXnow position TX: %s", result.get("message"))
+        return {"info": info, "message": result.get("message")}
 
     async def loop(self):
         await asyncio.sleep(15)

@@ -17,7 +17,7 @@ from server.station_tracker import StationTracker
 from server.websocket_manager import WebSocketManager
 from server.gps import GPSManager, parse_nmea_position
 from server.status_report import build_dx_status_text, trim_status_text
-from server.wxnow import build_wxnow_info, parse_weather_body_values, parse_wxnow_text
+from server.wxnow import build_wxnow_info, build_wxnow_position_info, parse_weather_body_values, parse_wxnow_text
 
 
 class APRSParserComplianceTests(unittest.TestCase):
@@ -106,9 +106,9 @@ class APRSISComplianceTests(unittest.TestCase):
         config = Config()
         config.station.callsign = "K5ABC"
         config.aprs_is.passcode = "12345"
-        client = APRSISClient(config, lambda packet: None, app_version="1.5.2.1")
+        client = APRSISClient(config, lambda packet: None, app_version="1.5.2.2")
 
-        self.assertIn("vers APRSPropView 1.5.2.1", client._build_login())
+        self.assertIn("vers APRSPropView 1.5.2.2", client._build_login())
 
 
 class ConfigTests(unittest.TestCase):
@@ -186,7 +186,7 @@ class WxNowTests(unittest.TestCase):
 
         self.assertEqual(
             build_wxnow_info(config, reading),
-            "_292/004g011t098h36b10139jDvs9",
+            "_07071400c292s004g011t098h36b10139jDvs9",
         )
 
     def test_build_positioned_wx_packet_inserts_missing_temperature_tag(self):
@@ -209,8 +209,67 @@ class WxNowTests(unittest.TestCase):
 
         self.assertEqual(
             build_wxnow_info(config, reading),
-            "_067/000t074P9616h99b09977",
+            "_05250942c067s000g...t074P9616h99b09977",
         )
+
+    def test_positionless_wx_packet_matches_aprslib_format(self):
+        import aprslib
+
+        config = Config()
+        config.wxnow.include_position = False
+        reading = parse_wxnow_text("May 25 2026 09:42\n067/000074P9616h99b09977\n")
+        raw = f"K5ABC-13>APPRPV:{build_wxnow_info(config, reading)}"
+
+        parsed = aprslib.parse(raw)
+
+        self.assertEqual(parsed["format"], "wx")
+        self.assertEqual(parsed["wx_raw_timestamp"], "05250942")
+        self.assertEqual(parsed["weather"]["wind_direction"], 67)
+        self.assertAlmostEqual(parsed["weather"]["temperature"], 23.333333333333332)
+
+    def test_build_positionless_wx_position_uses_weather_station_symbol(self):
+        config = Config()
+        config.station.latitude = 35.5321667
+        config.station.longitude = -79.75
+
+        self.assertEqual(
+            build_wxnow_position_info(config),
+            "!3531.93N/07945.00W_WXnow",
+        )
+
+    def test_positionless_wx_transmit_seeds_matching_position_call(self):
+        from server.wxnow import WxNowTransmitter
+
+        class FakeHandler:
+            def __init__(self):
+                self.sent = []
+
+            async def transmit_aprs_info(self, **kwargs):
+                self.sent.append(kwargs)
+                return {"can_transmit": True, "message": "Transmitted on APRS-IS."}
+
+        async def run_test():
+            with tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "WXnow.txt"
+                path.write_text("May 25 2026 09:42\n067/000074P9616h99b09977\n", encoding="ascii")
+                config = Config()
+                config.station.callsign = "K5ABC"
+                config.station.latitude = 35.5321667
+                config.station.longitude = -79.75
+                config.wxnow.enabled = True
+                config.wxnow.file_path = str(path)
+                config.wxnow.include_position = False
+                config.wxnow.mode = "aprs_is"
+                handler = FakeHandler()
+
+                result = await WxNowTransmitter(config, handler).transmit_once(force=True)
+
+                self.assertEqual(result["station"], "K5ABC-13")
+                self.assertEqual([sent["source_call"] for sent in handler.sent], ["K5ABC-13", "K5ABC-13"])
+                self.assertEqual(handler.sent[0]["info"], "!3531.93N/07945.00W_WXnow")
+                self.assertEqual(handler.sent[1]["info"], "_05250942c067s000g...t074P9616h99b09977")
+
+        asyncio.run(run_test())
 
     def test_parse_wxnow_inserts_missing_temperature_tag_after_gust(self):
         reading = parse_wxnow_text("Jun 01 2003 08:07\n272/000g006069r010p030P020h61b10150\n")

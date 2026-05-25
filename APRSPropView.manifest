@@ -3,7 +3,7 @@
   <assemblyIdentity
     type="win32"
     name="WickerMade.APRSPropView"
-    version="1.5.2.1"
+    version="1.5.2.2"
     processorArchitecture="amd64"
   />
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
