@@ -4,7 +4,7 @@
 
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 
-*Thanks to Contributions and Suggestions from many that emailed or subitted issues.*
+*Thanks to Contributions and Suggestions from many that emailed or submitted issues.*
 
 *Special thanks to Kyle (galaxie67w) for many suggestions and bug finds.*
 
