@@ -619,7 +619,7 @@ class PropViewMap {
             const hop = part.trim();
             if (!hop) continue;
             if (hop.endsWith('*')) {
-                const call = hop.replace('*', '');
+                const call = hop.slice(0, -1);
                 if (!aliasRe.test(call)) return false;
             }
         }

@@ -788,9 +788,10 @@ def create_app(
             return {"success": True, "message": msg}
 
         except ValueError as e:
+            logger.warning("Message send validation failed: %s", e)
             return JSONResponse(
                 status_code=400,
-                content={"success": False, "message": str(e)},
+                content={"success": False, "message": "Message could not be sent. Check the addressee, text, and selected route."},
             )
         except Exception as e:
             logger.error(f"Failed to send message: {e}")
@@ -818,9 +819,10 @@ def create_app(
             result = await handler.transmit_beacon_now(mode=mode)
             return {"success": True, **result}
         except ValueError as e:
+            logger.warning("Beacon transmit validation failed: %s", e)
             return JSONResponse(
                 status_code=400,
-                content={"success": False, "message": str(e)},
+                content={"success": False, "message": "Beacon could not be transmitted. Check station position and transmit connections."},
             )
         except Exception as e:
             logger.error(f"Failed to transmit beacon: {e}")
@@ -846,9 +848,10 @@ def create_app(
             result = await wxnow_transmitter.transmit_once(force=True)
             return {"success": True, **result}
         except ValueError as e:
+            logger.warning("WXnow transmit validation failed: %s", e)
             return JSONResponse(
                 status_code=400,
-                content={"success": False, "message": str(e)},
+                content={"success": False, "message": "WXnow packet could not be transmitted. Check WXnow settings and file status."},
             )
         except Exception as e:
             logger.error("Failed to transmit WXnow packet: %s", e)
@@ -903,9 +906,10 @@ def create_app(
             result = await status_transmitter.transmit_once(force=True)
             return {"success": True, **result}
         except ValueError as e:
+            logger.warning("Status/DX transmit validation failed: %s", e)
             return JSONResponse(
                 status_code=400,
-                content={"success": False, "message": str(e)},
+                content={"success": False, "message": "Status/DX packet could not be transmitted. Check transmit settings and connection status."},
             )
         except Exception as e:
             logger.error("Failed to transmit Status/DX packet: %s", e)
