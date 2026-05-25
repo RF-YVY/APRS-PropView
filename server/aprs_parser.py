@@ -132,10 +132,10 @@ def parse_packet(raw: str, source: str = "rf") -> APRSPacket:
 
         if dti in ("!", "="):
             _parse_position(pkt, info[1:], with_messaging=(dti == "="))
-            pkt.packet_type = "position" if pkt.has_position else "other"
+            pkt.packet_type = _position_packet_type(pkt)
         elif dti in ("/", "@"):
             _parse_position_with_timestamp(pkt, info[1:], with_messaging=(dti == "@"))
-            pkt.packet_type = "position" if pkt.has_position else "other"
+            pkt.packet_type = _position_packet_type(pkt)
         elif dti == ":":
             _parse_message(pkt, info[1:])
             pkt.packet_type = "message"
@@ -196,6 +196,12 @@ def _parse_lat_lon(data: str):
         return lat, lon, rest, sym_table, sym_code
     except (ValueError, IndexError):
         return None
+
+
+def _position_packet_type(pkt: APRSPacket) -> str:
+    if not pkt.has_position:
+        return "other"
+    return "weather" if pkt.symbol_code == "_" else "position"
 
 
 def _is_uncompressed_position(data: str) -> bool:

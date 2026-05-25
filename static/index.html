@@ -238,6 +238,7 @@
                             <option value="">All</option>
                             <option value="rf">RF Only</option>
                             <option value="aprs_is">APRS-IS Only</option>
+                            <option value="tx">Transmitted Only</option>
                         </select>
                     </label>
                     <button id="btn-clear-packets" class="btn-small">Clear</button>
@@ -1086,6 +1087,7 @@
                                 <label for="cfg-wx-current-provider">Current Conditions</label>
                                 <select id="cfg-wx-current-provider">
                                     <option value="open_meteo">Open-Meteo - global, no key</option>
+                                    <option value="wxnow">WXnow.txt - transmitted values</option>
                                 </select>
                             </div>
                             <div class="settings-row">
@@ -1376,7 +1378,7 @@
                 <div class="about-panel">
                     <div class="about-header">
                         <h2>APRS PropView</h2>
-                        <span id="about-version" class="about-version">v1.5.1</span>
+                        <span id="about-version" class="about-version">v1.5.2</span>
                     </div>
                     <div class="about-section">
                         <p>A real-time APRS digipeater and IGate focused on VHF propagation, live mapping, APRS messaging, analytics, and weather-aware situational awareness.</p>
@@ -1392,7 +1394,7 @@
                     </div>
                     <div class="about-section">
                         <h3>Build Info</h3>
-                        <p>Version: <span id="about-version-detail">1.5.1</span></p>
+                        <p>Version: <span id="about-version-detail">1.5.2</span></p>
                         <p>Release Date: <span id="about-date">May 24, 2026</span></p>
                         <p>Highlights: multiple named RF ports, WXnow.txt weather transmit, compact Status/DX beacons, and per-port packet/station origin display.</p>
                     </div>

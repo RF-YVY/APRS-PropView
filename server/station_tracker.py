@@ -59,6 +59,52 @@ class StationTracker:
         self.my_lat = float(latitude)
         self.my_lon = float(longitude)
 
+    def _propview_transmit_callsigns(self) -> set[str]:
+        base = (self.config.station.callsign or "").strip().upper()
+        calls = {self.config.station.full_callsign.upper()}
+        if base:
+            wx_ssid = max(0, min(15, int(getattr(self.config.wxnow, "ssid", 13) or 0)))
+            calls.add(f"{base}-{wx_ssid}" if wx_ssid else base)
+        return {call for call in calls if call}
+
+    async def _log_packet_only(
+        self,
+        packet: APRSPacket,
+        port_name: str,
+        distance_km: Optional[float] = None,
+        commit: bool = True,
+    ):
+        await self.db.log_packet(
+            source=packet.source,
+            from_call=packet.from_call,
+            to_call=packet.to_call,
+            path=packet.path,
+            raw=packet.raw,
+            packet_type=packet.packet_type,
+            latitude=packet.latitude,
+            longitude=packet.longitude,
+            port_name=port_name,
+            commit=commit,
+        )
+        await self.ws.broadcast(
+            {
+                "type": "packet",
+                "data": {
+                    "timestamp": time.time(),
+                    "source": packet.source,
+                    "from_call": packet.from_call,
+                    "to_call": packet.to_call,
+                    "path": packet.path,
+                    "raw": packet.raw,
+                    "packet_type": packet.packet_type,
+                    "latitude": packet.latitude,
+                    "longitude": packet.longitude,
+                    "port_name": port_name,
+                    "distance_km": distance_km,
+                },
+            }
+        )
+
     async def track_packet(self, packet: APRSPacket):
         """Process a parsed packet and update station tracking."""
         source = packet.source  # 'rf' or 'aprs_is'
@@ -115,38 +161,10 @@ class StationTracker:
                 source="self_packet",
             )
 
-        is_own_packet = callsign.upper() == self.config.station.full_callsign.upper()
-        if is_own_packet and packet.packet_type == "message" and not packet.has_position:
-            await self.db.log_packet(
-                source=source,
-                from_call=callsign,
-                to_call=packet.to_call,
-                path=packet.path,
-                raw=packet.raw,
-                packet_type=packet.packet_type,
-                latitude=packet.latitude,
-                longitude=packet.longitude,
-                port_name=port_name,
-            )
-            await self.ws.broadcast(
-                {
-                    "type": "packet",
-                    "data": {
-                        "timestamp": time.time(),
-                        "source": source,
-                        "from_call": callsign,
-                        "to_call": packet.to_call,
-                        "path": packet.path,
-                        "raw": packet.raw,
-                        "packet_type": packet.packet_type,
-                        "latitude": packet.latitude,
-                        "longitude": packet.longitude,
-                        "port_name": port_name,
-                        "distance_km": None,
-                    },
-                }
-            )
-            logger.debug("Ignoring own message packet for station tracking: %s", callsign)
+        is_own_packet = callsign.upper() in self._propview_transmit_callsigns()
+        if is_own_packet:
+            await self._log_packet_only(packet, port_name)
+            logger.debug("Ignoring own PropView packet for station tracking: %s", callsign)
             return
 
         # Calculate distance if we have both positions
@@ -391,7 +409,11 @@ class StationTracker:
         prop_cfg = self.config.propagation
 
         # Get RF stations with distances for the last hour
-        rf_1h = await self.db.get_stations(source="rf", since=now - 3600)
+        own_calls = self._propview_transmit_callsigns()
+        rf_1h = [
+            station for station in await self.db.get_stations(source="rf", since=now - 3600)
+            if (station.get("callsign") or "").upper() not in own_calls
+        ]
 
         # Split RF stations into direct-heard local and relayed regional groups
         all_distances = [s["distance_km"] for s in rf_1h if s.get("distance_km")]
@@ -406,8 +428,14 @@ class StationTracker:
         regional_stations = [s for s in rf_1h if not self._is_direct_path(s.get("last_path", ""))]
         regional_distances = [s["distance_km"] for s in regional_stations if s.get("distance_km")]
 
-        rf_6h = await self.db.get_stations(source="rf", since=now - 21600)
-        rf_24h = await self.db.get_stations(source="rf", since=now - 86400)
+        rf_6h = [
+            station for station in await self.db.get_stations(source="rf", since=now - 21600)
+            if (station.get("callsign") or "").upper() not in own_calls
+        ]
+        rf_24h = [
+            station for station in await self.db.get_stations(source="rf", since=now - 86400)
+            if (station.get("callsign") or "").upper() not in own_calls
+        ]
         regional_count_6h = sum(1 for s in rf_6h if not self._is_direct_path(s.get("last_path", "")))
         regional_count_24h = sum(1 for s in rf_24h if not self._is_direct_path(s.get("last_path", "")))
 

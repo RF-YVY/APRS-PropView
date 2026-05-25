@@ -16,6 +16,7 @@ import time
 import urllib.request
 import urllib.error
 import urllib.parse
+from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 
 from server.config import Config
@@ -720,6 +721,8 @@ class WeatherManager:
 
     @property
     def is_configured(self) -> bool:
+        if (self.config.weather.current_provider or "").strip().lower() == "wxnow":
+            return bool(self.config.weather.enabled and self.config.wxnow.file_path)
         return bool(
             self.config.weather.enabled
             and self.config.weather.location_code
@@ -797,6 +800,9 @@ class WeatherManager:
 
     async def get_current_weather(self, force: bool = False) -> Optional[Dict[str, Any]]:
         """Get current weather, fetching from API if cache is stale."""
+        if (self.config.weather.current_provider or "").strip().lower() == "wxnow":
+            return self._get_wxnow_current_weather()
+
         if not self.is_configured:
             return None
 
@@ -825,6 +831,27 @@ class WeatherManager:
             self._last_fetch = time.time()
 
         return self._current
+
+    def _get_wxnow_current_weather(self) -> Optional[Dict[str, Any]]:
+        path_value = (getattr(self.config.wxnow, "file_path", "") or "").strip()
+        if not path_value:
+            return None
+        path = Path(path_value).expanduser()
+        if not path.exists() or not path.is_file():
+            return None
+
+        from server.wxnow import parse_weather_body_values, parse_wxnow_text
+
+        reading = parse_wxnow_text(path.read_text(encoding="ascii", errors="strict"), path.stat().st_mtime)
+        weather = parse_weather_body_values(reading)
+        weather["location_name"] = "WXnow.txt"
+        weather["location_code"] = "WXnow.txt"
+        weather["wind_direction_label"] = _wind_direction_label(
+            weather.get("wind_direction", 0) or 0
+        )
+        self._current = weather
+        self._last_fetch = time.time()
+        return weather
 
     async def get_alerts(self, force: bool = False) -> List[Dict[str, Any]]:
         """Get configured weather alerts, fetching from API if cache is stale."""

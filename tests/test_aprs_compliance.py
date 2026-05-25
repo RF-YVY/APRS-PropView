@@ -8,14 +8,16 @@ from server.aprs_parser import make_message_packet, parse_packet
 from server.app import _is_valid_message_addressee, _is_valid_station_callsign, _validate_config
 from server.analytics import AnalyticsEngine
 from server.alerts import AlertConfig, AlertManager
+from server.ax25 import AX25Address, AX25Frame
 from server.config import Config, RFPortConfig
 from server.database import Database
+from server.digipeater import Digipeater
 from server.packet_handler import PacketHandler
 from server.station_tracker import StationTracker
 from server.websocket_manager import WebSocketManager
 from server.gps import GPSManager, parse_nmea_position
 from server.status_report import build_dx_status_text, trim_status_text
-from server.wxnow import build_wxnow_info, parse_wxnow_text
+from server.wxnow import build_wxnow_info, parse_weather_body_values, parse_wxnow_text
 
 
 class APRSParserComplianceTests(unittest.TestCase):
@@ -38,6 +40,16 @@ class APRSParserComplianceTests(unittest.TestCase):
         self.assertEqual(packet.addressee, "N0CALL")
         self.assertEqual(packet.message_text, "Hi")
         self.assertEqual(packet.message_id, "001")
+
+    def test_position_weather_symbol_is_weather_packet(self):
+        packet = parse_packet(
+            "K5ABC-13>APPRPV:@071400z3530.00N/09745.00W_292/004g011t098h36b10139",
+            source="rf",
+        )
+
+        self.assertEqual(packet.packet_type, "weather")
+        self.assertAlmostEqual(packet.latitude, 35.5)
+        self.assertEqual(packet.symbol_code, "_")
 
     def test_compressed_position_keeps_full_comment(self):
         packet = parse_packet("CALL>APRS:!/5L!!<*e7Pxyzcomment", source="rf")
@@ -94,9 +106,9 @@ class APRSISComplianceTests(unittest.TestCase):
         config = Config()
         config.station.callsign = "K5ABC"
         config.aprs_is.passcode = "12345"
-        client = APRSISClient(config, lambda packet: None, app_version="1.5.1")
+        client = APRSISClient(config, lambda packet: None, app_version="1.5.2")
 
-        self.assertIn("vers APRSPropView 1.5.1", client._build_login())
+        self.assertIn("vers APRSPropView 1.5.2", client._build_login())
 
 
 class ConfigTests(unittest.TestCase):
@@ -174,8 +186,40 @@ class WxNowTests(unittest.TestCase):
 
         self.assertEqual(
             build_wxnow_info(config, reading),
-            "_07071400292/004g011t098h36b10139jDvs9",
+            "_292/004g011t098h36b10139jDvs9",
         )
+
+    def test_parse_wxnow_values_for_current_conditions(self):
+        reading = parse_wxnow_text("Feb 09 2021 13:00\n086/004g008t028r000p000P000h75b10007\n")
+        values = parse_weather_body_values(reading)
+
+        self.assertEqual(values["wind_direction"], 86)
+        self.assertEqual(values["wind_speed_mph"], 4)
+        self.assertEqual(values["wind_gusts_mph"], 8)
+        self.assertEqual(values["temperature"], 28)
+        self.assertEqual(values["humidity"], 75)
+        self.assertEqual(values["pressure"], 1000.7)
+
+
+class DigipeaterTests(unittest.TestCase):
+    def _frame(self, path):
+        return AX25Frame(
+            destination=AX25Address.from_string("APRS"),
+            source=AX25Address.from_string("K1ABC"),
+            digipeaters=[AX25Address.from_string(hop) for hop in path],
+            info=b"!3530.00N/09745.00W-Test",
+        )
+
+    def test_only_configured_wide_aliases_are_digipeated(self):
+        config = Config()
+        config.station.callsign = "K5ABC"
+        config.station.ssid = 1
+        config.digipeater.aliases = ["WIDE1-1"]
+        digi = Digipeater(config)
+
+        self.assertIsNone(digi.should_digipeat(self._frame(["WIDE2-1"])))
+        digi = Digipeater(config)
+        self.assertIsNotNone(digi.should_digipeat(self._frame(["WIDE1-1"])))
 
 
 class StatusDxTests(unittest.TestCase):

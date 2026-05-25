@@ -206,7 +206,9 @@ class StationManager {
         const time = pkt.timestamp
             ? new Date(pkt.timestamp * 1000).toLocaleTimeString()
             : '';
-        const sourceLabel = pkt.source === 'rf' ? (pkt.port_name || 'RF') : 'IS';
+        const sourceLabel = pkt.source === 'rf'
+            ? (pkt.port_name || 'RF')
+            : (pkt.source === 'tx' ? (pkt.port_name || 'TX') : 'IS');
         const sourceClass = pkt.source || 'rf';
 
         const el = document.createElement('div');

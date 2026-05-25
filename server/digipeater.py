@@ -91,8 +91,8 @@ class Digipeater:
             if digi_call == self.my_call.upper():
                 return self._mark_digipeated(frame, i)
 
-            # WIDEn-N handling
-            if self._is_wide_alias(digi_call):
+            # WIDEn-N handling, restricted to the aliases the operator enabled.
+            if self._is_wide_alias(digi_call) and digi_call in self.aliases:
                 return self._handle_wide(frame, i, digi)
 
             # Check against configured aliases

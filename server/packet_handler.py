@@ -487,13 +487,15 @@ class PacketHandler:
             frame.destination = AX25Address.from_string("APPRPV")
             frame.digipeaters = [AX25Address.from_string("WIDE1-1")]
             frame.info = info.encode("latin-1")
-            await self._transmit_rf(frame)
+            if await self._transmit_rf(frame):
+                await self._record_tx_packet(frame.to_aprs_string(), "RF TX")
 
         # Send on APRS-IS
         if send_is and self.aprs_is and self.aprs_is.connected:
             is_packet = f"{my_call}>APPRPV,TCPIP*:{info}"
-            await self.aprs_is.send(is_packet)
-            self.stats["is_tx"] += 1
+            if await self.aprs_is.send(is_packet):
+                self.stats["is_tx"] += 1
+                await self._record_tx_packet(is_packet, "APRS-IS TX")
 
     def get_messages(self, limit: int = 100) -> List[Dict[str, Any]]:
         """Return recent messages (newest first)."""
@@ -514,6 +516,7 @@ class PacketHandler:
     async def _transmit_rf(self, frame: AX25Frame):
         """Transmit an AX.25 frame on all RF interfaces."""
         encoded = frame.encode()
+        sent = 0
         for iface in self.rf_interfaces:
             if not getattr(iface, "can_transmit", True):
                 logger.debug(f"Skipping RF TX on receive-only interface {iface.name}")
@@ -521,9 +524,42 @@ class PacketHandler:
             try:
                 await iface.send(encoded)
                 self.stats["rf_tx"] += 1
+                sent += 1
                 logger.debug(f"RF TX via {iface.name}: {frame.to_aprs_string()}")
             except Exception as e:
                 logger.error(f"RF TX error on {iface.name}: {e}")
+        return sent
+
+    async def _record_tx_packet(self, raw: str, transport: str):
+        packet = parse_packet(raw, source="tx")
+        packet.port_name = transport
+        await self.tracker.db.log_packet(
+            source="tx",
+            from_call=packet.from_call,
+            to_call=packet.to_call,
+            path=packet.path,
+            raw=packet.raw,
+            packet_type=packet.packet_type,
+            latitude=packet.latitude,
+            longitude=packet.longitude,
+            port_name=transport,
+        )
+        await self.ws.broadcast({
+            "type": "packet",
+            "data": {
+                "timestamp": time.time(),
+                "source": "tx",
+                "from_call": packet.from_call,
+                "to_call": packet.to_call,
+                "path": packet.path,
+                "raw": packet.raw,
+                "packet_type": packet.packet_type,
+                "latitude": packet.latitude,
+                "longitude": packet.longitude,
+                "port_name": transport,
+                "distance_km": None,
+            },
+        })
 
     async def transmit_aprs_info(
         self,
@@ -564,13 +600,16 @@ class PacketHandler:
                 if hop.strip()
             ]
             frame.info = info.encode("latin-1")
-            await self._transmit_rf(frame)
+            if await self._transmit_rf(frame):
+                await self._record_tx_packet(frame.to_aprs_string(), "RF TX")
 
         is_sent = False
         if send_is and aprs_is_available:
-            is_sent = await self.aprs_is.send(f"{source_call}>{destination},TCPIP*:{info}")
+            is_packet = f"{source_call}>{destination},TCPIP*:{info}"
+            is_sent = await self.aprs_is.send(is_packet)
             if is_sent:
                 self.stats["is_tx"] += 1
+                await self._record_tx_packet(is_packet, "APRS-IS TX")
 
         await self._broadcast_stats()
 
@@ -736,12 +775,28 @@ class PacketHandler:
                 frame.digipeaters = []
 
             frame.info = info.encode("latin-1")
-            await self._transmit_rf(frame)
+            if await self._transmit_rf(frame):
+                await self._record_tx_packet(frame.to_aprs_string(), "RF TX")
             logger.info(f"Beacon RF TX: {cfg.full_callsign}>APPRPV via {path_str or 'DIRECT'}")
 
         # Beacon on APRS-IS
         if mode in {"aprs_is", "both"} and self.aprs_is and self.aprs_is.connected:
-            await self.aprs_is.send_position()
+            if await self.aprs_is.send_position():
+                from server.aprs_parser import make_position_packet, build_station_beacon_comment
+
+                is_info = make_position_packet(
+                    cfg.full_callsign,
+                    cfg.latitude,
+                    cfg.longitude,
+                    cfg.symbol_table,
+                    cfg.symbol_code,
+                    build_station_beacon_comment(
+                        comment=cfg.comment,
+                        phg=cfg.phg,
+                        equipment=cfg.equipment,
+                    ),
+                )
+                await self._record_tx_packet(f"{cfg.full_callsign}>APPRPV,TCPIP*:{is_info}", "APRS-IS TX")
             logger.info("Beacon APRS-IS TX")
 
         if mode == "rf" and not self.rf_interfaces:

@@ -1018,6 +1018,7 @@ html.ui-theme-light #tab-messages.active {
 
 .packet-item .pkt-source.rf { color: var(--rf-color); }
 .packet-item .pkt-source.aprs_is { color: var(--is-color); }
+.packet-item .pkt-source.tx { color: var(--accent-color); }
 .packet-item .pkt-source.rf {
     max-width: 150px;
     display: inline-block;

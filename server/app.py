@@ -1707,7 +1707,7 @@ def create_app(
                 config.weather.enabled = bool(wc.get("enabled", config.weather.enabled))
                 config.weather.location_code = (wc.get("location_code", config.weather.location_code) or "").strip()
                 current_provider = (wc.get("current_provider", config.weather.current_provider) or "open_meteo").strip().lower()
-                config.weather.current_provider = current_provider if current_provider in {"open_meteo"} else "open_meteo"
+                config.weather.current_provider = current_provider if current_provider in {"open_meteo", "wxnow"} else "open_meteo"
                 alert_provider = (wc.get("alert_provider", config.weather.alert_provider) or "auto").strip().lower()
                 if alert_provider in {"nws", "open_meteo_risk"}:
                     alert_provider = "auto"

@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from server.config import Config
 
@@ -87,8 +87,61 @@ def build_wxnow_info(config: Config, reading: WxNowReading) -> str:
         code = (wx.symbol_code or "_")[:1]
         return f"@{timestamp}{lat}{table}{lon}{code}{reading.weather_body}"
 
-    timestamp = reading.timestamp.strftime("%m%d%H%M")
-    return f"_{timestamp}{reading.weather_body}"
+    return f"_{reading.weather_body}"
+
+
+def parse_weather_body_values(reading: WxNowReading) -> dict[str, Any]:
+    """Parse common APRS WX body fields into dashboard current conditions."""
+    body = reading.weather_body
+    values: dict[str, Any] = {
+        "time": reading.timestamp.isoformat(),
+        "raw": body,
+        "source": "wxnow",
+    }
+
+    wind = re.match(r"^(?P<dir>[0-9. ]{3})/(?P<speed>[0-9. ]{3})", body)
+    if wind:
+        try:
+            values["wind_direction"] = int(wind.group("dir").strip().replace(".", "") or 0)
+        except ValueError:
+            pass
+        try:
+            values["wind_speed_mph"] = int(wind.group("speed").strip().replace(".", "") or 0)
+        except ValueError:
+            pass
+
+    def field(pattern: str) -> Optional[int]:
+        match = re.search(pattern, body)
+        if not match:
+            return None
+        try:
+            return int(match.group(1))
+        except ValueError:
+            return None
+
+    temperature = field(r"t(-?\d{3})")
+    if temperature is not None:
+        values["temperature"] = temperature
+        values["feels_like"] = temperature
+
+    gust = field(r"g(\d{3})")
+    if gust is not None:
+        values["wind_gusts_mph"] = gust
+
+    humidity = field(r"h(\d{2})")
+    if humidity is not None:
+        values["humidity"] = 100 if humidity == 0 else humidity
+
+    pressure = field(r"b(\d{5})")
+    if pressure is not None:
+        values["pressure"] = pressure / 10.0
+
+    rain_hour = field(r"r(\d{3})")
+    if rain_hour is not None:
+        values["precipitation_in"] = rain_hour / 100.0
+        values["rain"] = rain_hour / 100.0
+
+    return values
 
 
 class WxNowTransmitter:

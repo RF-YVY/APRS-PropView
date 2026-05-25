@@ -156,6 +156,7 @@ max_length = 67
 [weather]
 enabled = false
 location_code = ""
+# Current sources: open_meteo, wxnow
 current_provider = "open_meteo"
 alert_provider = "auto"
 weatherbit_api_key = ""
