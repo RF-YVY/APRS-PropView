@@ -11,6 +11,7 @@
     const SETTINGS_COLLAPSE_KEY = 'pvSettingsCollapsed';
     const UI_STATE_KEY = 'pvDesktopUIState';
     const UPDATE_BANNER_DISMISS_KEY = 'pvUpdateBannerDismissed';
+    const MANUAL_BEACON_MODE_KEY = 'pvManualBeaconMode';
     const DEFAULT_UI_THEME = 'dark';
     const ALERT_AUDIO_SLOTS = [
         ['my_station_opening', 'My Station Band Opening'],
@@ -55,6 +56,7 @@
                 })
                 .then((cfg) => {
                     serverConfig = cfg;
+                    applyUnitSystem(cfg.web?.unit_system || window.pvUnitSystem || 'imperial', false);
                     return cfg;
                 })
                 .catch((err) => {
@@ -70,9 +72,12 @@
     window.pvConfigPromise = loadConfig(false);
 
     // ── Distance unit helpers (mi / km) ────────────────────────
-    // Default to miles; persisted in localStorage
-    window.pvDistUnit = localStorage.getItem('pvDistUnit') || 'mi';
+    // Default to imperial; persisted in localStorage and overridden by saved config.
+    window.pvUnitSystem = localStorage.getItem('pvUnitSystem') || (localStorage.getItem('pvDistUnit') === 'km' ? 'metric' : 'imperial');
+    window.pvDistUnit = window.pvUnitSystem === 'metric' ? 'km' : 'mi';
     const KM_TO_MI = 0.621371;
+    const MPH_TO_MS = 0.44704;
+    const IN_TO_MM = 25.4;
 
     /** Convert km to the active display unit. */
     window.convertDist = function (km) {
@@ -99,11 +104,11 @@
     /** Return the current unit label ('mi' or 'km'). */
     window.distLabel = function () { return window.pvDistUnit; };
 
+    window.applyUnitSystem = applyUnitSystem;
+
     /** Toggle the distance unit and refresh all displays. */
     window.toggleDistUnit = function () {
-        window.pvDistUnit = window.pvDistUnit === 'mi' ? 'km' : 'mi';
-        localStorage.setItem('pvDistUnit', window.pvDistUnit);
-        _refreshAllDistanceDisplays();
+        applyUnitSystem(window.pvUnitSystem === 'metric' ? 'imperial' : 'metric', true);
     };
 
     /** Convert a km value to the active unit for settings fields that store in km. */
@@ -115,6 +120,42 @@
     window.displayToDist = function (val) {
         return window.pvDistUnit === 'mi' ? val / KM_TO_MI : val;
     };
+
+    window.formatTempF = function (tempF, decimals = 0) {
+        if (tempF == null || Number.isNaN(Number(tempF))) return '--';
+        const value = window.pvUnitSystem === 'metric' ? (Number(tempF) - 32) * 5 / 9 : Number(tempF);
+        const unit = window.pvUnitSystem === 'metric' ? '°C' : '°F';
+        return `${value.toFixed(decimals)}${unit}`;
+    };
+
+    window.formatWindMph = function (mph, decimals = 0) {
+        if (mph == null || Number.isNaN(Number(mph))) return '--';
+        const value = window.pvUnitSystem === 'metric' ? Number(mph) * MPH_TO_MS : Number(mph);
+        const unit = window.pvUnitSystem === 'metric' ? 'm/s' : 'mph';
+        return `${value.toFixed(decimals)} ${unit}`;
+    };
+
+    window.formatRainIn = function (inches, decimals) {
+        if (inches == null || Number.isNaN(Number(inches))) return '--';
+        if (window.pvUnitSystem === 'metric') {
+            return `${(Number(inches) * IN_TO_MM).toFixed(decimals ?? 1)} mm`;
+        }
+        return `${Number(inches).toFixed(decimals ?? 2)} in`;
+    };
+
+    function applyUnitSystem(system, persist) {
+        const normalized = system === 'metric' ? 'metric' : 'imperial';
+        window.pvUnitSystem = normalized;
+        window.pvDistUnit = normalized === 'metric' ? 'km' : 'mi';
+        if (persist) {
+            localStorage.setItem('pvUnitSystem', normalized);
+            localStorage.setItem('pvDistUnit', window.pvDistUnit);
+        }
+        setVal('cfg-unit-system', normalized);
+        _refreshAllDistanceDisplays();
+        window.pvWeather?.rerender?.();
+        window.pvMap?.refreshOpenPopups?.();
+    }
 
     /** Refresh every distance-related display after a unit toggle. */
     function _refreshAllDistanceDisplays() {
@@ -132,7 +173,7 @@
         if (window.pvStations) window.pvStations.render();
         // Refresh map legend
         if (window.pvMap) window.pvMap.refreshLegend();
-        // Refresh map popups (will update on next open)
+        window.pvMap?.refreshOpenPopups?.();
     }
 
     // ── Initialize ─────────────────────────────────────────────
@@ -156,6 +197,7 @@
         // Organize settings UI before control bindings are attached
         initAlertAudioControls();
         initSettingsOrganizer();
+        initSettingsDescriptions();
 
         // Init station manager
         window.pvStations.init();
@@ -179,10 +221,13 @@
         initStatusDxControls();
         initAlertTestControls();
         initRfPortsControls();
-        initTncProfileSettings();
         initUpdateCheckerUi();
         initGpsControls();
+        initMapSearch();
+        initSettingsImportExport();
+        initBeaconPreviewControls();
         initSettingsDirtyTracking();
+        loadTransmitHistory();
 
         // Wire up WebSocket events
         wireWebSocket();
@@ -220,6 +265,7 @@
             window.pvMap?.ghostStaleMarkers(window._ghostMinutes);
             window.pvMap?.updateObservedRange();
         }, 15000);
+        setInterval(loadTransmitHistory, 30000);
 
         // Periodically expire stale stations (every 60s)
         setInterval(() => {
@@ -589,6 +635,9 @@
         document.getElementById('cfg-ui-theme')?.addEventListener('change', (e) => {
             setUITheme(e.target.value);
         });
+        document.getElementById('cfg-unit-system')?.addEventListener('change', (e) => {
+            applyUnitSystem(e.target.value, true);
+        });
     }
 
     function _escapeHTML(text) {
@@ -937,8 +986,15 @@
         const modeEl = document.getElementById('manual-beacon-mode');
         if (!btn || !modeEl) return;
 
+        const savedMode = localStorage.getItem(MANUAL_BEACON_MODE_KEY);
+        if (['both', 'rf', 'aprs_is'].includes(savedMode)) {
+            modeEl.value = savedMode;
+        }
         updateManualBeaconControls(lastStatus);
-        modeEl.addEventListener('change', () => updateManualBeaconControls(lastStatus));
+        modeEl.addEventListener('change', () => {
+            localStorage.setItem(MANUAL_BEACON_MODE_KEY, modeEl.value || 'both');
+            updateManualBeaconControls(lastStatus);
+        });
         btn.addEventListener('click', async () => {
             if (manualBeaconPending) return;
 
@@ -957,6 +1013,7 @@
                 }
                 showSystemNotification(result.message || 'Beacon transmitted.', 'success');
                 await refreshSystemStatus();
+                await loadTransmitHistory();
             } catch (e) {
                 showSystemNotification(e.message || 'Beacon transmit failed.', 'error');
             } finally {
@@ -1440,7 +1497,7 @@
 
     function renderUpdateStatus(data, els) {
         const { messageEl, detailEl, linkEl, footerEl } = els;
-        const currentVersion = data?.current_version || '1.5.2.3';
+        const currentVersion = data?.current_version || '1.5.3';
         const latestVersion = data?.latest_version || currentVersion;
         const releaseUrl = data?.release_url || 'https://github.com/RF-YVY/APRS-PropView/releases';
         const publishedAt = data?.published_at ? formatReleaseDate(data.published_at) : '';
@@ -1590,6 +1647,62 @@
         });
     }
 
+    function initMapSearch() {
+        const input = document.getElementById('map-search-call');
+        const button = document.getElementById('btn-map-search');
+        const run = () => {
+            const result = window.pvMap?.searchStation(input?.value || '');
+            if (!result?.found) {
+                showSystemNotification(result?.message || 'Station not found on map.', 'error');
+                return;
+            }
+            showSystemNotification(`Centered on ${result.callsign}.`, 'info');
+        };
+        button?.addEventListener('click', run);
+        input?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                run();
+            }
+        });
+        input?.addEventListener('input', (e) => {
+            const start = e.target.selectionStart;
+            const end = e.target.selectionEnd;
+            e.target.value = e.target.value.toUpperCase();
+            e.target.setSelectionRange(start, end);
+        });
+    }
+
+    function initSettingsDescriptions() {
+        const descriptions = {
+            'cfg-web-host': 'Network address the web UI binds to. 127.0.0.1 is local-only; 0.0.0.0 allows LAN access.',
+            'cfg-web-port': 'TCP port for the web UI. Changing it requires using the new port in your browser.',
+            'cfg-unit-system': 'Controls distance, weather temperature, and wind units throughout the web UI.',
+            'cfg-wx-wxnow-conditions': 'When WXnow supplies station measurements, Open-Meteo is queried only for general condition text and icon.',
+            'cfg-status-source': 'Chooses what the periodic status beacon says: propagation, preset text, or direct-heard stations.',
+            'cfg-status-dynamic-order': 'Chooses whether preset messages rotate in order or are selected randomly.',
+            'cfg-status-dynamic-messages': 'One APRS status message per line. Each line is trimmed to the configured max length.',
+            'cfg-status-weather-alerts': 'When enabled, active severe weather alerts can also be sent as APRS status beacons.',
+            'cfg-status-weather-cooldown': 'Minimum time between weather-alert beacons for the same station.',
+            'cfg-msg-retention': 'How long APRS message history is kept in the local database.',
+        };
+
+        document.querySelectorAll('.settings-section .settings-row').forEach((row) => {
+            if (row.querySelector('.setting-description')) return;
+            const label = row.querySelector('label');
+            if (!label) return;
+            const targetId = label.getAttribute('for') || row.querySelector('[id^="cfg-"]')?.id || '';
+            const labelText = (label.textContent || '').trim();
+            if (!labelText) return;
+            const sectionTitle = row.closest('.settings-section')?.querySelector('h3')?.textContent?.trim() || 'this section';
+            const text = descriptions[targetId] || `Controls ${labelText.toLowerCase()} for ${sectionTitle}.`;
+            const desc = document.createElement('div');
+            desc.className = 'setting-description';
+            desc.textContent = text;
+            row.appendChild(desc);
+        });
+    }
+
     function isSettingsControl(el) {
         return !!(
             el &&
@@ -1609,6 +1722,43 @@
             statusEl.className = 'settings-status warning dirty';
             statusEl.textContent = message || 'Unsaved settings. Save Configuration to apply these changes and keep them after restart.';
         }
+        updateFirstRunChecklist();
+    }
+
+    function escapeHtml(text) {
+        return String(text ?? '').replace(/[&<>"']/g, (ch) => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;',
+        }[ch]));
+    }
+
+    function updateFirstRunChecklist() {
+        const list = document.getElementById('first-run-checklist');
+        if (!list) return;
+        const call = (getVal('cfg-callsign') || '').trim().toUpperCase();
+        const lat = parseFloat(getVal('cfg-latitude'));
+        const lon = parseFloat(getVal('cfg-longitude'));
+        const pass = (getVal('cfg-is-passcode') || '').trim();
+        const aprsFilter = buildFilterString();
+        const ports = collectRfPorts();
+        const path = getVal('cfg-beacon-path') || '';
+        const historyItems = Array.from(document.querySelectorAll('.transmit-history-item'));
+        const items = [
+            ['callsign', !!call && !['N0CALL', 'NOCALL', 'MYCALL', 'TEST'].includes(call), 'Callsign set'],
+            ['location', Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0), 'Station location set'],
+            ['passcode', !!pass && pass !== '-1' && !pass.includes('*'), 'APRS-IS passcode set for transmitting'],
+            ['filter', !!aprsFilter, 'APRS-IS server filter set, for example r/35/-79/80'],
+            ['rf', ports.some((port) => port.enabled), 'At least one RF port configured'],
+            ['path', path !== undefined, `Beacon path chosen (${path || 'DIRECT'})`],
+            ['save', !settingsDirty, 'Settings saved'],
+            ['test', historyItems.length > 0, 'Preview or test transmit completed'],
+        ];
+        list.innerHTML = items.map(([, done, label]) => (
+            `<div class="first-run-item ${done ? 'done' : ''}">${escapeHtml(label)}</div>`
+        )).join('');
     }
 
     function defaultRfPort(type) {
@@ -1954,19 +2104,6 @@
             setVal('cfg-is-passcode', cfg.aprs_is?.passcode);
             parseFilterIntoFields(cfg.aprs_is?.filter || '');
 
-            // KISS Serial
-            setChk('cfg-ks-enabled', cfg.kiss_serial?.enabled);
-            setVal('cfg-ks-mode', cfg.kiss_serial?.mode || 'kiss');
-            setVal('cfg-ks-profile', cfg.kiss_serial?.init_profile || 'none');
-            setVal('cfg-ks-port', cfg.kiss_serial?.port);
-            setVal('cfg-ks-baud', cfg.kiss_serial?.baudrate);
-            setVal('cfg-ks-flow', cfg.kiss_serial?.flow_control || 'none');
-            setVal('cfg-ks-init', cfg.kiss_serial?.init_commands || '');
-
-            // KISS TCP
-            setChk('cfg-kt-enabled', cfg.kiss_tcp?.enabled);
-            setVal('cfg-kt-host', cfg.kiss_tcp?.host);
-            setVal('cfg-kt-port', cfg.kiss_tcp?.port);
             renderRfPorts(rfPortsFromConfig(cfg));
 
             // Web
@@ -1976,6 +2113,8 @@
             setVal('cfg-ui-theme', getUITheme());
             applyUITheme(getUITheme());
             applyFont(cfg.web?.font_family || '');
+            setVal('cfg-unit-system', cfg.web?.unit_system || 'imperial');
+            applyUnitSystem(cfg.web?.unit_system || 'imperial', true);
             setVal('cfg-map-tile-source', cfg.web?.map_tile_source || 'osm');
             setVal('cfg-map-tile-url', cfg.web?.map_tile_url || '');
             setVal('cfg-map-tile-attribution', cfg.web?.map_tile_attribution || '');
@@ -1999,6 +2138,11 @@
             setVal('cfg-status-interval', Math.round((cfg.status?.beacon_interval || 1800) / 60));
             setVal('cfg-status-window', cfg.status?.report_window_minutes ?? 60);
             setVal('cfg-status-max-length', cfg.status?.max_length ?? 67);
+            setVal('cfg-status-source', cfg.status?.source || 'dx');
+            setVal('cfg-status-dynamic-order', cfg.status?.dynamic_order || 'sequential');
+            setVal('cfg-status-dynamic-messages', (cfg.status?.dynamic_messages || []).join('\n'));
+            setChk('cfg-status-weather-alerts', cfg.status?.weather_alert_beacon_enabled);
+            setVal('cfg-status-weather-cooldown', cfg.status?.weather_alert_cooldown_minutes ?? 30);
             setVal('cfg-status-mode', cfg.status?.mode || 'both');
             setVal('cfg-status-path', cfg.status?.path || 'WIDE1-1');
             refreshStatusDxPreview();
@@ -2053,6 +2197,7 @@
             setChk('cfg-wx-enabled', cfg.weather?.enabled);
             setVal('cfg-wx-location', cfg.weather?.location_code);
             setVal('cfg-wx-current-provider', cfg.weather?.current_provider || 'open_meteo');
+            setChk('cfg-wx-wxnow-conditions', cfg.weather?.wxnow_condition_fallback_enabled ?? true);
             setVal('cfg-wx-alert-provider', normalizeWeatherAlertProvider(cfg.weather?.alert_provider || 'auto'));
             setVal('cfg-wx-weatherbit-key', cfg.weather?.weatherbit_api_key || '');
             setVal('cfg-wx-weatherbit-poll', cfg.weather?.weatherbit_poll_minutes ?? 30);
@@ -2088,6 +2233,8 @@
         } finally {
             settingsLoading = false;
             clearSettingsDirty();
+            updateFirstRunChecklist();
+            loadTransmitHistory();
             const statusEl = document.getElementById('settings-status');
             if (statusEl && statusEl.classList.contains('dirty')) {
                 statusEl.style.display = 'none';
@@ -2172,20 +2319,6 @@
                 passcode: getVal('cfg-is-passcode'),
                 filter: buildFilterString(),
             },
-            kiss_serial: {
-                enabled: getChk('cfg-ks-enabled'),
-                mode: getVal('cfg-ks-mode') || 'kiss',
-                init_profile: getVal('cfg-ks-profile') || 'none',
-                port: getVal('cfg-ks-port'),
-                baudrate: getVal('cfg-ks-baud'),
-                flow_control: getVal('cfg-ks-flow') || 'none',
-                init_commands: getVal('cfg-ks-init') || '',
-            },
-            kiss_tcp: {
-                enabled: getChk('cfg-kt-enabled'),
-                host: getVal('cfg-kt-host'),
-                port: getVal('cfg-kt-port'),
-            },
             rf_ports: collectRfPorts(),
             gps: {
                 enabled: getChk('cfg-gps-enabled'),
@@ -2204,6 +2337,7 @@
                 host: getVal('cfg-web-host'),
                 port: getVal('cfg-web-port'),
                 font_family: getVal('cfg-web-font') || '',
+                unit_system: getVal('cfg-unit-system') || 'imperial',
                 map_tile_source: getVal('cfg-map-tile-source') || 'osm',
                 map_tile_url: getVal('cfg-map-tile-url') || '',
                 map_tile_attribution: getVal('cfg-map-tile-attribution') || '',
@@ -2228,6 +2362,14 @@
                 path: getVal('cfg-status-path') || '',
                 report_window_minutes: parseInt(getVal('cfg-status-window')) || 60,
                 max_length: parseInt(getVal('cfg-status-max-length')) || 67,
+                source: getVal('cfg-status-source') || 'dx',
+                dynamic_order: getVal('cfg-status-dynamic-order') || 'sequential',
+                dynamic_messages: (getVal('cfg-status-dynamic-messages') || '')
+                    .split(/\r?\n/)
+                    .map((line) => line.trim())
+                    .filter(Boolean),
+                weather_alert_beacon_enabled: getChk('cfg-status-weather-alerts'),
+                weather_alert_cooldown_minutes: parseInt(getVal('cfg-status-weather-cooldown')) || 30,
             },
             wxnow: {
                 enabled: getChk('cfg-wxnow-enabled'),
@@ -2246,6 +2388,7 @@
                 enabled: getChk('cfg-wx-enabled'),
                 location_code: getVal('cfg-wx-location'),
                 current_provider: getVal('cfg-wx-current-provider') || 'open_meteo',
+                wxnow_condition_fallback_enabled: getChk('cfg-wx-wxnow-conditions'),
                 alert_provider: normalizeWeatherAlertProvider(getVal('cfg-wx-alert-provider') || 'auto'),
                 weatherbit_api_key: getVal('cfg-wx-weatherbit-key') || '',
                 weatherbit_poll_minutes: parseInt(getVal('cfg-wx-weatherbit-poll')) || 30,
@@ -2299,6 +2442,7 @@
             }
             if (result.success) {
                 clearSettingsDirty();
+                updateFirstRunChecklist();
                 window.pvConfigPromise = null;
                 serverConfig = { ...(serverConfig || {}), alerts: { ...body.alerts } };
                 const delay = result.needRestart ? 10000 : 5000;
@@ -2344,15 +2488,155 @@
         return el ? el.checked : false;
     }
 
+    function initSettingsImportExport() {
+        document.getElementById('btn-config-export')?.addEventListener('click', () => {
+            window.location.href = '/api/config/export';
+        });
+
+        const fileInput = document.getElementById('cfg-config-import-file');
+        document.getElementById('btn-config-import')?.addEventListener('click', () => {
+            fileInput?.click();
+        });
+        fileInput?.addEventListener('change', async () => {
+            const file = fileInput.files?.[0];
+            if (!file) return;
+            const statusEl = document.getElementById('settings-status');
+            try {
+                const content = await file.text();
+                const resp = await fetch('/api/config/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content }),
+                });
+                const result = await resp.json();
+                if (statusEl) {
+                    statusEl.style.display = 'block';
+                    statusEl.className = 'settings-status ' + (result.success ? 'warning' : 'error');
+                    statusEl.textContent = result.message || (result.success ? 'Settings imported.' : 'Import failed.');
+                }
+                showSystemNotification(result.message || 'Settings import finished.', result.success ? 'warning' : 'error');
+            } catch (e) {
+                if (statusEl) {
+                    statusEl.style.display = 'block';
+                    statusEl.className = 'settings-status error';
+                    statusEl.textContent = 'Settings import failed.';
+                }
+            } finally {
+                fileInput.value = '';
+            }
+        });
+    }
+
+    function initBeaconPreviewControls() {
+        document.getElementById('btn-beacon-preview')?.addEventListener('click', previewStationBeacon);
+        document.getElementById('btn-beacon-transmit')?.addEventListener('click', transmitStationBeaconFromSettings);
+        ['cfg-beacon-path', 'cfg-comment', 'cfg-phg', 'cfg-equipment', 'cfg-latitude', 'cfg-longitude'].forEach((id) => {
+            document.getElementById(id)?.addEventListener('change', updateFirstRunChecklist);
+            document.getElementById(id)?.addEventListener('input', updateFirstRunChecklist);
+        });
+    }
+
+    function formatFeatureLabel(feature) {
+        const labels = {
+            station_beacon: 'Station',
+            wxnow: 'WXnow',
+            status: 'Status',
+            mheard: 'MHeard',
+            weather_alert: 'WX Alert',
+        };
+        return labels[feature] || feature || 'Transmit';
+    }
+
+    async function loadTransmitHistory() {
+        const list = document.getElementById('transmit-history-list');
+        if (!list) return;
+        try {
+            const resp = await fetch('/api/transmit/history');
+            const data = await resp.json();
+            const items = data.items || [];
+            if (!items.length) {
+                list.textContent = 'No transmitted packets yet.';
+                updateFirstRunChecklist();
+                return;
+            }
+            list.innerHTML = items.slice(0, 12).map((item) => {
+                const timeLabel = item.timestamp
+                    ? new Date(item.timestamp * 1000).toLocaleTimeString()
+                    : '--';
+                return `
+                    <div class="transmit-history-item">
+                        <div class="transmit-history-meta">
+                            <span>${escapeHtml(formatFeatureLabel(item.feature))}</span>
+                            <span>${escapeHtml(timeLabel)}</span>
+                        </div>
+                        <div class="transmit-history-info">${escapeHtml(item.info || item.message || '')}</div>
+                    </div>
+                `;
+            }).join('');
+            updateFirstRunChecklist();
+        } catch (e) {
+            list.textContent = 'History unavailable.';
+        }
+    }
+
+    async function previewStationBeacon() {
+        const preview = document.getElementById('cfg-beacon-preview');
+        if (preview) preview.textContent = 'Building preview...';
+        try {
+            const mode = document.getElementById('manual-beacon-mode')?.value || 'both';
+            const resp = await fetch(`/api/beacon/preview?mode=${encodeURIComponent(mode)}`);
+            const result = await resp.json();
+            if (!resp.ok || !result.success) throw new Error(result.message || 'Preview failed.');
+            const packet = mode === 'aprs_is' ? result.aprs_is_packet : result.rf_packet;
+            const altPacket = mode === 'both' && result.aprs_is_packet ? `\n${result.aprs_is_packet}` : '';
+            if (preview) {
+                preview.textContent = packet ? `${packet}${altPacket}` : (result.message || 'No packet available');
+                preview.title = result.message || '';
+            }
+            showSystemNotification(result.message || 'Station beacon preview ready.', result.can_transmit ? 'info' : 'warning');
+        } catch (e) {
+            if (preview) preview.textContent = e.message || 'Preview failed';
+        }
+    }
+
+    async function transmitStationBeaconFromSettings() {
+        const preview = document.getElementById('cfg-beacon-preview');
+        const button = document.getElementById('btn-beacon-transmit');
+        if (button) button.disabled = true;
+        if (preview) preview.textContent = 'Transmitting...';
+        try {
+            const mode = document.getElementById('manual-beacon-mode')?.value || 'both';
+            const resp = await fetch('/api/beacon/transmit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode }),
+            });
+            const result = await resp.json();
+            if (!resp.ok || !result.success) throw new Error(result.message || 'Beacon transmit failed.');
+            if (preview) preview.textContent = result.message || 'Beacon transmitted.';
+            showSystemNotification(result.message || 'Beacon transmitted.', 'success');
+            await refreshSystemStatus();
+            await loadTransmitHistory();
+        } catch (e) {
+            if (preview) preview.textContent = e.message || 'Transmit failed';
+            showSystemNotification(e.message || 'Beacon transmit failed.', 'error');
+        } finally {
+            if (button) button.disabled = false;
+        }
+    }
+
     function initWxNowControls() {
         document.getElementById('btn-wxnow-browse')?.addEventListener('click', selectWxNowFile);
+        document.getElementById('btn-wxnow-preview')?.addEventListener('click', previewWxNow);
         document.getElementById('btn-wxnow-test')?.addEventListener('click', transmitWxNowNow);
     }
 
     function initStatusDxControls() {
+        document.getElementById('btn-status-preview')?.addEventListener('click', refreshStatusDxPreview);
         document.getElementById('btn-status-test')?.addEventListener('click', transmitStatusDxNow);
-        ['cfg-status-window', 'cfg-status-max-length'].forEach((id) => {
+        ['cfg-status-window', 'cfg-status-max-length', 'cfg-status-source', 'cfg-status-dynamic-order', 'cfg-status-dynamic-messages'].forEach((id) => {
             document.getElementById(id)?.addEventListener('change', refreshStatusDxPreview);
+            document.getElementById(id)?.addEventListener('input', refreshStatusDxPreview);
         });
     }
 
@@ -2397,15 +2681,22 @@
 
     async function refreshStatusDxPreview() {
         const preview = document.getElementById('cfg-status-preview');
+        const alertPreview = document.getElementById('cfg-status-alert-preview');
         if (!preview) return;
         try {
-            const resp = await fetch('/api/status-dx/status');
+            const resp = await fetch('/api/status-dx/preview');
             const data = await resp.json();
-            const text = data.preview_text || data.last_text || 'No RF stations heard';
+            const text = data.text || data.preview_text || data.last_text || 'No RF stations heard';
             preview.textContent = `>${text}`;
             if (data.last_error) preview.title = data.last_error;
+            const alertText = data.weather_alert_preview?.text || data.weather_alert_preview?.message || 'No active alert preview';
+            if (alertPreview) {
+                alertPreview.textContent = data.weather_alert_preview?.text ? `>${alertText}` : alertText;
+                alertPreview.title = data.weather_alert_preview?.message || '';
+            }
         } catch (e) {
             preview.textContent = 'Preview unavailable';
+            if (alertPreview) alertPreview.textContent = 'Preview unavailable';
         }
     }
 
@@ -2421,12 +2712,34 @@
                 preview.textContent = result.text ? `>${result.text}` : (result.message || 'Transmit failed');
                 preview.title = result.message || '';
             }
+            await loadTransmitHistory();
         } catch (e) {
             console.error('Failed to transmit Status/DX packet:', e);
             if (preview) preview.textContent = 'Transmit failed';
         } finally {
             if (button) button.disabled = false;
             setTimeout(refreshStatusDxPreview, 2500);
+        }
+    }
+
+    async function previewWxNow() {
+        const preview = document.getElementById('cfg-wxnow-preview');
+        if (preview) preview.textContent = 'Building preview...';
+        try {
+            const resp = await fetch('/api/wxnow/preview');
+            const result = await resp.json();
+            if (!resp.ok || !result.success) throw new Error(result.message || 'Preview failed.');
+            const lines = [];
+            const pathPart = result.path ? `,${result.path}` : '';
+            if (result.position_info) lines.push(`${result.station}>APPRPV${pathPart}:${result.position_info}`);
+            lines.push(`${result.station}>APPRPV${pathPart}:${result.info}`);
+            if (preview) {
+                preview.textContent = lines.join('\n');
+                preview.title = result.unchanged ? 'WXnow.txt is unchanged since the last transmit.' : '';
+            }
+            showSystemNotification('WXnow preview ready.', 'info');
+        } catch (e) {
+            if (preview) preview.textContent = e.message || 'Preview failed';
         }
     }
 
@@ -2480,6 +2793,7 @@
             const resp = await fetch('/api/wxnow/transmit', { method: 'POST' });
             const result = await resp.json();
             if (status) status.textContent = result.message || (result.success ? 'Transmitted' : 'Transmit failed');
+            await loadTransmitHistory();
         } catch (e) {
             console.error('Failed to transmit WXnow packet:', e);
             if (status) status.textContent = 'Transmit failed';
@@ -2538,31 +2852,6 @@
     function normalizeWeatherAlertProvider(provider) {
         if (provider === 'nws' || provider === 'open_meteo_risk') return 'auto';
         return ['auto', 'weatherbit', 'disabled'].includes(provider) ? provider : 'auto';
-    }
-
-    function initTncProfileSettings() {
-        const profile = document.getElementById('cfg-ks-profile');
-        const mode = document.getElementById('cfg-ks-mode');
-        const flow = document.getElementById('cfg-ks-flow');
-        const baud = document.getElementById('cfg-ks-baud');
-        if (!profile) return;
-
-        profile.addEventListener('change', () => {
-            if (profile.value === 'kenwood_thd7' || profile.value === 'kenwood_tmd700') {
-                if (flow) flow.value = 'xonxoff';
-                if (baud && !baud.value) baud.value = '9600';
-            } else if (profile.value === 'kenwood_thd72' || profile.value === 'generic_tnc2_kiss') {
-                if (flow && flow.value === 'xonxoff') flow.value = 'none';
-                if (baud && !baud.value) baud.value = '9600';
-            }
-        });
-
-        mode?.addEventListener('change', () => {
-            if (mode.value === 'tnc2_monitor' && profile.value === 'none') {
-                profile.value = 'kenwood_thd7';
-                if (flow) flow.value = 'xonxoff';
-            }
-        });
     }
 
     function updateWeatherOverlayOpacityLabel() {
@@ -2642,47 +2931,62 @@
     // ── APRS-IS filter helpers ──────────────────────────────────
 
     /**
-     * Parse a stored filter string like "r/35.1234/-80.5678/160.9 b/CALL" into
+     * Parse a stored filter string like "r/35/-80/160 b/CALL" into
      * the range-miles field and extra-filters field.
-     * APRS-IS range filter: r/lat/lon/range_km
+     * APRS-IS range filters: r/lat/lon/range_km or m/range_km
      */
     function parseFilterIntoFields(filterStr) {
         const rangeEl = document.getElementById('cfg-is-range-miles');
         const extraEl = document.getElementById('cfg-is-extra-filters');
+        const modeEl = document.getElementById('cfg-is-range-mode');
         if (!rangeEl || !extraEl) return;
 
-        // Match r/lat/lon/km pattern
+        // Match r/lat/lon/km and m/km patterns.
         const rMatch = filterStr.match(/r\/([\-\d.]+)\/([\-\d.]+)\/([\d.]+)/);
+        const mMatch = filterStr.match(/m\/([\d.]+)/);
         const parts = filterStr.split(/\s+/).filter(Boolean);
 
         if (rMatch) {
             const rangeKm = parseFloat(rMatch[3]);
             const rangeMiles = Math.round(rangeKm / 1.60934);
             rangeEl.value = rangeMiles;
-            // Everything except the r/ part goes into extra filters
+            if (modeEl) modeEl.value = 'fixed';
             const extras = parts.filter(p => !p.startsWith('r/')).join(' ');
+            extraEl.value = extras;
+        } else if (mMatch) {
+            const rangeKm = parseFloat(mMatch[1]);
+            const rangeMiles = Math.round(rangeKm / 1.60934);
+            rangeEl.value = rangeMiles;
+            if (modeEl) modeEl.value = 'moving';
+            const extras = parts.filter(p => !p.startsWith('m/')).join(' ');
             extraEl.value = extras;
         } else {
             rangeEl.value = '';
+            if (modeEl) modeEl.value = 'fixed';
             extraEl.value = filterStr;
         }
         updateFilterPreview();
     }
 
     /**
-     * Build the combined APRS-IS filter string from range-miles + lat/lon + extras.
+     * Build the combined APRS-IS filter string from range mode, range miles, and extras.
      */
     function buildFilterString() {
         const miles = parseFloat(getVal('cfg-is-range-miles'));
+        const mode = getVal('cfg-is-range-mode') || 'fixed';
         const lat = parseFloat(getVal('cfg-latitude'));
         const lng = parseFloat(getVal('cfg-longitude'));
         const extras = getVal('cfg-is-extra-filters').trim();
 
         let parts = [];
 
-        if (miles > 0 && !isNaN(lat) && !isNaN(lng) && (lat !== 0 || lng !== 0)) {
-            const rangeKm = (miles * 1.60934).toFixed(1);
-            parts.push(`r/${lat.toFixed(4)}/${lng.toFixed(4)}/${rangeKm}`);
+        if (miles > 0) {
+            const rangeKm = Math.max(1, Math.round(miles * 1.60934));
+            if (mode === 'moving') {
+                parts.push(`m/${rangeKm}`);
+            } else if (!isNaN(lat) && !isNaN(lng) && (lat !== 0 || lng !== 0)) {
+                parts.push(`r/${Math.round(lat)}/${Math.round(lng)}/${rangeKm}`);
+            }
         }
 
         if (extras) {
@@ -2699,6 +3003,7 @@
         const combined = buildFilterString();
 
         const miles = parseFloat(getVal('cfg-is-range-miles'));
+        const mode = getVal('cfg-is-range-mode') || 'fixed';
         const lat = parseFloat(getVal('cfg-latitude'));
         const lng = parseFloat(getVal('cfg-longitude'));
 
@@ -2706,10 +3011,14 @@
         const combinedPreview = document.getElementById('cfg-is-filter-combined');
 
         if (rangePreview) {
-            if (miles > 0 && !isNaN(lat) && !isNaN(lng) && (lat !== 0 || lng !== 0)) {
-                const rangeKm = (miles * 1.60934).toFixed(1);
-                rangePreview.textContent = `r/${lat.toFixed(4)}/${lng.toFixed(4)}/${rangeKm}`;
-                rangePreview.title = `${miles} mi = ${rangeKm} km around ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+            if (miles > 0 && mode === 'moving') {
+                const rangeKm = Math.max(1, Math.round(miles * 1.60934));
+                rangePreview.textContent = `m/${rangeKm}`;
+                rangePreview.title = `${miles} mi = ${rangeKm} km centered on this logged-in station's last known APRS-IS position`;
+            } else if (miles > 0 && !isNaN(lat) && !isNaN(lng) && (lat !== 0 || lng !== 0)) {
+                const rangeKm = Math.max(1, Math.round(miles * 1.60934));
+                rangePreview.textContent = `r/${Math.round(lat)}/${Math.round(lng)}/${rangeKm}`;
+                rangePreview.title = `${miles} mi = ${rangeKm} km around ${Math.round(lat)}, ${Math.round(lng)}`;
             } else if (miles > 0) {
                 rangePreview.textContent = 'Set lat/lon first';
                 rangePreview.title = '';
@@ -2726,10 +3035,11 @@
 
         // Also update hidden field
         setVal('cfg-is-filter', combined);
+        updateFirstRunChecklist();
     }
 
     // Live-update preview when any relevant field changes
-    ['cfg-is-range-miles', 'cfg-is-extra-filters', 'cfg-latitude', 'cfg-longitude'].forEach(id => {
+    ['cfg-is-range-mode', 'cfg-is-range-miles', 'cfg-is-extra-filters', 'cfg-latitude', 'cfg-longitude'].forEach(id => {
         document.getElementById(id)?.addEventListener('input', updateFilterPreview);
         document.getElementById(id)?.addEventListener('change', updateFilterPreview);
     });
@@ -2772,6 +3082,9 @@
     });
 
     // Help modal
+    document.getElementById('btn-settings-help')?.addEventListener('click', () => {
+        document.getElementById('help-modal').style.display = 'flex';
+    });
     document.getElementById('btn-open-help')?.addEventListener('click', () => {
         document.getElementById('help-modal').style.display = 'flex';
     });

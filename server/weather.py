@@ -801,7 +801,10 @@ class WeatherManager:
     async def get_current_weather(self, force: bool = False) -> Optional[Dict[str, Any]]:
         """Get current weather, fetching from API if cache is stale."""
         if (self.config.weather.current_provider or "").strip().lower() == "wxnow":
-            return self._get_wxnow_current_weather()
+            weather = self._get_wxnow_current_weather()
+            if weather and self.config.weather.wxnow_condition_fallback_enabled:
+                await self._enrich_wxnow_conditions(weather, force=force)
+            return weather
 
         if not self.is_configured:
             return None
@@ -852,6 +855,35 @@ class WeatherManager:
         self._current = weather
         self._last_fetch = time.time()
         return weather
+
+    async def _enrich_wxnow_conditions(self, weather: Dict[str, Any], force: bool = False) -> None:
+        """Use Open-Meteo only for general condition text/icon when WXnow supplies measurements."""
+        if not self.config.weather.location_code:
+            return
+        if self.config.weather.location_code != self._location_code_resolved:
+            await self.resolve_and_set_location(self.config.weather.location_code)
+        if not self._location:
+            return
+
+        refresh = self.config.weather.refresh_minutes * 60
+        fallback = None
+        if not force and self._current and self._current.get("condition_source") == "open_meteo":
+            if time.time() - self._last_fetch < refresh:
+                fallback = self._current
+        if fallback is None:
+            fallback = await fetch_current_weather(
+                self._location["latitude"],
+                self._location["longitude"],
+            )
+            if fallback:
+                fallback["condition_source"] = "open_meteo"
+
+        if not fallback:
+            return
+        for key in ("weather_code", "description", "icon", "is_day", "cloud_cover", "is_thunderstorm"):
+            if fallback.get(key) is not None:
+                weather[key] = fallback[key]
+        weather["condition_source"] = "open_meteo"
 
     async def get_alerts(self, force: bool = False) -> List[Dict[str, Any]]:
         """Get configured weather alerts, fetching from API if cache is stale."""

@@ -6,6 +6,7 @@ import mimetypes
 import re
 import time
 import logging
+import tempfile
 import urllib.parse
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -61,7 +62,7 @@ _STATION_CALLSIGN_RE = re.compile(r'^[A-Z0-9]{1,9}$')
 _MESSAGE_ADDRESSEE_RE = re.compile(r'^[A-Z0-9][A-Z0-9-]{0,8}$')
 _HOSTNAME_RE = re.compile(r'^[A-Za-z0-9._-]{1,253}$')
 _SAFE_PATH_RE = re.compile(r'^[A-Za-z0-9._-]{1,100}$')
-_FILTER_TOKEN_RE = re.compile(r'^[a-z]/[\w.\-*/,]+$', re.IGNORECASE)
+_FILTER_TOKEN_RE = re.compile(r'^-?[a-z]{1,2}/[!-~]+$', re.IGNORECASE)
 _GPS_SOURCE_VALUES = {"browser", "self_packet", "nmea_serial", "nmea_tcp", "nmea_udp", "any"}
 _TILE_URL_TOKENS = ("{z}", "{x}", "{y}")
 # Disallowed callsigns (common placeholders)
@@ -183,8 +184,12 @@ def _validate_config(body: Dict[str, Any]) -> Optional[str]:
         filt = (a.get("filter", "") or "").strip()
         if filt:
             for token in filt.split():
+                if token.lower() == "default":
+                    continue
+                if token.lower() == "filter":
+                    return "Enter only the APRS-IS filter tokens, not the leading 'filter' command word."
                 if not _FILTER_TOKEN_RE.match(token):
-                    return f"Invalid APRS-IS filter token: '{token}'. Filters use format like r/lat/lon/range, b/CALL, t/poimq etc."
+                    return f"Invalid APRS-IS filter token: '{token}'. Filters use format like r/35/-79/80, m/80, b/CALL, t/poimq, or -p/CW."
 
     # IGate policy checks
     if "igate" in body:
@@ -298,6 +303,9 @@ def _validate_config(body: Dict[str, Any]) -> Optional[str]:
         tile_source = (w.get("map_tile_source", "osm") or "osm").strip().lower()
         if tile_source not in {"osm", "custom"}:
             return "Map tile source must be osm or custom."
+        unit_system = (w.get("unit_system", "imperial") or "imperial").strip().lower()
+        if unit_system not in {"imperial", "metric"}:
+            return "Unit system must be imperial or metric."
         tile_url = (w.get("map_tile_url", "") or "").strip()
         if tile_source == "custom":
             if not tile_url:
@@ -831,11 +839,50 @@ def create_app(
                 content={"success": False, "message": "Error transmitting beacon."},
             )
 
+    @app.get("/api/beacon/preview")
+    async def beacon_preview(mode: str = Query("both", pattern="^(both|rf|aprs_is)$")):
+        """Preview the next station beacon without transmitting."""
+        try:
+            return {"success": True, **handler.preview_beacon(mode=mode)}
+        except ValueError as e:
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": str(e)},
+            )
+        except Exception as e:
+            logger.error("Failed to preview beacon: %s", e)
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "message": "Error previewing beacon."},
+            )
+
     @app.get("/api/wxnow/status")
     async def wxnow_status():
         if not wxnow_transmitter:
             return {"enabled": False, "configured": False, "message": "WXnow transmitter is not available."}
         return wxnow_transmitter.get_status()
+
+    @app.get("/api/wxnow/preview")
+    async def wxnow_preview():
+        if not wxnow_transmitter:
+            return JSONResponse(
+                status_code=503,
+                content={"success": False, "message": "WXnow transmitter is not available."},
+            )
+        try:
+            return {"success": True, **wxnow_transmitter.preview()}
+        except ValueError as e:
+            logger.warning("WXnow preview validation failed: %s", e)
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": str(e)},
+            )
+        except Exception as e:
+            logger.error("Failed to preview WXnow packet: %s", e)
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "message": "Error previewing WXnow packet."},
+            )
 
     @app.post("/api/wxnow/transmit")
     async def wxnow_transmit():
@@ -889,11 +936,36 @@ def create_app(
             return {"enabled": False, "message": "Status/DX transmitter is not available."}
         status = status_transmitter.get_status()
         try:
-            status["preview_text"] = await status_transmitter.build_text()
+            status["preview_text"] = await status_transmitter.build_preview_text()
+            status["weather_alert_preview"] = await status_transmitter.preview_weather_alert_text()
         except Exception as e:
             status["preview_text"] = ""
             status["last_error"] = str(e)
         return status
+
+    @app.get("/api/status-dx/preview")
+    async def status_dx_preview():
+        if not status_transmitter:
+            return JSONResponse(
+                status_code=503,
+                content={"success": False, "message": "Status/DX transmitter is not available."},
+            )
+        try:
+            text = await status_transmitter.build_preview_text()
+            alert_preview = await status_transmitter.preview_weather_alert_text()
+            return {
+                "success": True,
+                "dry_run": True,
+                "text": text,
+                "info": f">{text}" if text else "",
+                "weather_alert_preview": alert_preview,
+            }
+        except Exception as e:
+            logger.error("Failed to preview Status/DX packet: %s", e)
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "message": "Error previewing Status/DX packet."},
+            )
 
     @app.post("/api/status-dx/transmit")
     async def status_dx_transmit():
@@ -917,6 +989,10 @@ def create_app(
                 status_code=500,
                 content={"success": False, "message": "Error transmitting Status/DX packet."},
             )
+
+    @app.get("/api/transmit/history")
+    async def transmit_history():
+        return {"items": handler.get_transmit_history()}
 
     @app.get("/api/analytics/longest-paths")
     async def get_longest_paths(
@@ -1013,7 +1089,7 @@ def create_app(
 
     @app.get("/api/export/stations")
     async def export_stations(
-        fmt: str = Query("json", regex="^(json|csv)$"),
+        fmt: str = Query("json", pattern="^(json|csv)$"),
     ):
         from server.export import stations_to_csv
         rows = await db.export_stations()
@@ -1028,7 +1104,7 @@ def create_app(
 
     @app.get("/api/export/packets")
     async def export_packets(
-        fmt: str = Query("json", regex="^(json|csv)$"),
+        fmt: str = Query("json", pattern="^(json|csv)$"),
         hours: int = Query(24, ge=1, le=168),
     ):
         from server.export import packets_to_csv
@@ -1044,7 +1120,7 @@ def create_app(
 
     @app.get("/api/export/propagation")
     async def export_propagation(
-        fmt: str = Query("json", regex="^(json|csv)$"),
+        fmt: str = Query("json", pattern="^(json|csv)$"),
         hours: int = Query(24, ge=1, le=168),
     ):
         from server.export import propagation_to_csv
@@ -1340,6 +1416,7 @@ def create_app(
                 "map_tile_url": config.web.map_tile_url,
                 "map_tile_attribution": config.web.map_tile_attribution,
                 "map_tile_max_zoom": config.web.map_tile_max_zoom,
+                "unit_system": config.web.unit_system,
                 "ghost_after_minutes": config.web.ghost_after_minutes,
                 "expire_after_minutes": config.web.expire_after_minutes,
                 "mobile_pin": config.web.mobile_pin,
@@ -1402,6 +1479,7 @@ def create_app(
                 "enabled": config.weather.enabled,
                 "location_code": config.weather.location_code,
                 "current_provider": config.weather.current_provider,
+                "wxnow_condition_fallback_enabled": config.weather.wxnow_condition_fallback_enabled,
                 "alert_provider": config.weather.alert_provider,
                 "weatherbit_api_key": _mask_passcode(config.weather.weatherbit_api_key),
                 "weatherbit_poll_minutes": config.weather.weatherbit_poll_minutes,
@@ -1458,6 +1536,11 @@ def create_app(
                 "path": config.status.path,
                 "report_window_minutes": config.status.report_window_minutes,
                 "max_length": config.status.max_length,
+                "source": config.status.source,
+                "dynamic_order": config.status.dynamic_order,
+                "dynamic_messages": config.status.dynamic_messages,
+                "weather_alert_beacon_enabled": config.status.weather_alert_beacon_enabled,
+                "weather_alert_cooldown_minutes": config.status.weather_alert_cooldown_minutes,
             },
             "mqtt": {
                 "enabled": config.mqtt.enabled,
@@ -1468,6 +1551,59 @@ def create_app(
                 "password": _mask_passcode(config.mqtt.password),
             },
         }
+
+    @app.get("/api/config/export")
+    async def export_config():
+        path = Path("config.toml")
+        if not path.exists() or not path.is_file():
+            return JSONResponse(
+                status_code=404,
+                content={"success": False, "message": "config.toml was not found."},
+            )
+        return FileResponse(
+            path,
+            media_type="application/toml",
+            filename="aprs-propview-config.toml",
+        )
+
+    @app.post("/api/config/import")
+    async def import_config(request: Request):
+        try:
+            body = await request.json()
+            content = body.get("content", "")
+            if not isinstance(content, str) or not content.strip():
+                return JSONResponse(
+                    status_code=400,
+                    content={"success": False, "message": "Imported settings file is empty."},
+                )
+            if len(content.encode("utf-8")) > 512 * 1024:
+                return JSONResponse(
+                    status_code=400,
+                    content={"success": False, "message": "Imported settings file is too large."},
+                )
+
+            temp_name = ""
+            try:
+                with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".toml", delete=False) as temp:
+                    temp.write(content)
+                    temp_name = temp.name
+                Config.load(Path(temp_name))
+            finally:
+                if temp_name:
+                    Path(temp_name).unlink(missing_ok=True)
+
+            Path("config.toml").write_text(content, encoding="utf-8")
+            return {
+                "success": True,
+                "needRestart": True,
+                "message": "Settings imported. Restart APRS PropView to load the imported configuration.",
+            }
+        except Exception as e:
+            logger.warning("Config import failed: %s", e)
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": "Imported settings could not be read as a valid PropView TOML config."},
+            )
 
     @app.post("/api/config/save")
     async def save_config(request: Request):
@@ -1629,6 +1765,8 @@ def create_app(
                 config.web.map_tile_url = (w.get("map_tile_url", config.web.map_tile_url) or "").strip()
                 config.web.map_tile_attribution = (w.get("map_tile_attribution", config.web.map_tile_attribution) or "").strip()
                 config.web.map_tile_max_zoom = min(22, max(1, int(w.get("map_tile_max_zoom", config.web.map_tile_max_zoom))))
+                unit_system = (w.get("unit_system", config.web.unit_system) or "imperial").strip().lower()
+                config.web.unit_system = unit_system if unit_system in {"imperial", "metric"} else "imperial"
                 config.web.ghost_after_minutes = int(w.get("ghost_after_minutes", config.web.ghost_after_minutes))
                 config.web.expire_after_minutes = int(w.get("expire_after_minutes", config.web.expire_after_minutes))
                 config.web.mobile_pin = (w.get("mobile_pin", config.web.mobile_pin) or "").strip()
@@ -1755,6 +1893,10 @@ def create_app(
                 config.weather.location_code = (wc.get("location_code", config.weather.location_code) or "").strip()
                 current_provider = (wc.get("current_provider", config.weather.current_provider) or "open_meteo").strip().lower()
                 config.weather.current_provider = current_provider if current_provider in {"open_meteo", "wxnow"} else "open_meteo"
+                config.weather.wxnow_condition_fallback_enabled = bool(wc.get(
+                    "wxnow_condition_fallback_enabled",
+                    config.weather.wxnow_condition_fallback_enabled,
+                ))
                 alert_provider = (wc.get("alert_provider", config.weather.alert_provider) or "auto").strip().lower()
                 if alert_provider in {"nws", "open_meteo_risk"}:
                     alert_provider = "auto"
@@ -1823,6 +1965,28 @@ def create_app(
                 config.status.path = (st.get("path", config.status.path) or "").strip()
                 config.status.report_window_minutes = max(15, int(st.get("report_window_minutes", config.status.report_window_minutes)))
                 config.status.max_length = min(120, max(20, int(st.get("max_length", config.status.max_length))))
+                source = (st.get("source", config.status.source) or "dx").strip().lower()
+                config.status.source = source if source in {"dx", "dynamic", "mheard"} else "dx"
+                order = (st.get("dynamic_order", config.status.dynamic_order) or "sequential").strip().lower()
+                config.status.dynamic_order = order if order in {"sequential", "random"} else "sequential"
+                dynamic_messages = st.get("dynamic_messages", config.status.dynamic_messages)
+                if isinstance(dynamic_messages, str):
+                    dynamic_messages = [line.strip() for line in dynamic_messages.splitlines()]
+                if not isinstance(dynamic_messages, list):
+                    dynamic_messages = config.status.dynamic_messages
+                config.status.dynamic_messages = [
+                    str(message).strip()
+                    for message in dynamic_messages[:20]
+                    if str(message).strip()
+                ]
+                config.status.weather_alert_beacon_enabled = bool(st.get(
+                    "weather_alert_beacon_enabled",
+                    config.status.weather_alert_beacon_enabled,
+                ))
+                config.status.weather_alert_cooldown_minutes = max(1, int(st.get(
+                    "weather_alert_cooldown_minutes",
+                    config.status.weather_alert_cooldown_minutes,
+                )))
                 live_applied.append("Status/DX transmit")
 
             # Update MQTT config

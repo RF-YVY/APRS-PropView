@@ -13,6 +13,7 @@ window.pvMessages = (function () {
     let selectedConversation = '';
     let readTimestamps = {};
     const READ_STORAGE_KEY = 'aprsPropViewMessageReadTimestamps';
+    const SORT_STORAGE_KEY = 'aprsPropViewMessageSortOrder';
 
     function init() {
         loadReadTimestamps();
@@ -41,6 +42,14 @@ window.pvMessages = (function () {
 
         // Filter change
         document.getElementById('msg-filter')?.addEventListener('change', renderMessages);
+        const sortEl = document.getElementById('msg-sort-order');
+        if (sortEl) {
+            sortEl.value = localStorage.getItem(SORT_STORAGE_KEY) || 'desc';
+            sortEl.addEventListener('change', () => {
+                localStorage.setItem(SORT_STORAGE_KEY, sortEl.value || 'desc');
+                renderMessages();
+            });
+        }
         document.getElementById('btn-save-contact')?.addEventListener('click', saveCurrentContact);
 
         document.getElementById('msg-contact-list')?.addEventListener('click', (e) => {
@@ -434,6 +443,11 @@ window.pvMessages = (function () {
         } else if (filter === 'tx') {
             filtered = filtered.filter(m => m.direction === 'tx');
         }
+        const sortOrder = document.getElementById('msg-sort-order')?.value || 'desc';
+        filtered = filtered.slice().sort((a, b) => {
+            const diff = Number(a.timestamp || 0) - Number(b.timestamp || 0);
+            return sortOrder === 'asc' ? diff : -diff;
+        });
 
         if (countEl) countEl.textContent = `${filtered.length} messages`;
 

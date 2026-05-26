@@ -84,6 +84,7 @@ map_tile_source = "osm"
 map_tile_url = ""
 map_tile_attribution = ""
 map_tile_max_zoom = 19
+unit_system = "imperial"
 ghost_after_minutes = 60
 expire_after_minutes = 0
 mobile_pin = ""
@@ -152,12 +153,18 @@ mode = "both"  # both, rf, or aprs_is
 path = "WIDE1-1"
 report_window_minutes = 60
 max_length = 67
+source = "dx"  # dx, dynamic, or mheard
+dynamic_order = "sequential"  # sequential or random
+dynamic_messages = []
+weather_alert_beacon_enabled = false
+weather_alert_cooldown_minutes = 30
 
 [weather]
 enabled = false
 location_code = ""
 # Current sources: open_meteo, wxnow
 current_provider = "open_meteo"
+wxnow_condition_fallback_enabled = true
 alert_provider = "auto"
 weatherbit_api_key = ""
 weatherbit_poll_minutes = 30

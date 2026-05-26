@@ -69,6 +69,7 @@ map_tile_source = "osm"
 map_tile_url = ""
 map_tile_attribution = ""
 map_tile_max_zoom = 19
+unit_system = "imperial"
 ghost_after_minutes = 60
 expire_after_minutes = 0
 mobile_pin = ""
@@ -133,11 +134,17 @@ mode = "both"
 path = "WIDE1-1"
 report_window_minutes = 60
 max_length = 67
+source = "dx"
+dynamic_order = "sequential"
+dynamic_messages = []
+weather_alert_beacon_enabled = false
+weather_alert_cooldown_minutes = 30
 
 [weather]
 enabled = false
 location_code = ""
 current_provider = "open_meteo"
+wxnow_condition_fallback_enabled = true
 alert_provider = "auto"
 weatherbit_api_key = ""
 weatherbit_poll_minutes = 30
@@ -277,6 +284,7 @@ class WebConfig:
     map_tile_url: str = ""
     map_tile_attribution: str = ""
     map_tile_max_zoom: int = 19
+    unit_system: str = "imperial"
     ghost_after_minutes: int = 60
     expire_after_minutes: int = 0
     mobile_pin: str = ""
@@ -353,6 +361,11 @@ class StatusConfig:
     path: str = "WIDE1-1"
     report_window_minutes: int = 60
     max_length: int = 67
+    source: str = "dx"
+    dynamic_order: str = "sequential"
+    dynamic_messages: List[str] = field(default_factory=list)
+    weather_alert_beacon_enabled: bool = False
+    weather_alert_cooldown_minutes: int = 30
 
 
 @dataclass
@@ -360,6 +373,7 @@ class WeatherConfig:
     enabled: bool = False
     location_code: str = ""       # US zip code or ICAO code
     current_provider: str = "open_meteo"
+    wxnow_condition_fallback_enabled: bool = True
     alert_provider: str = "auto"   # auto, nws, open_meteo_risk, weatherbit, disabled
     weatherbit_api_key: str = ""
     weatherbit_poll_minutes: int = 30
@@ -588,6 +602,7 @@ class Config:
             f'map_tile_url = "{esc(self.web.map_tile_url)}"',
             f'map_tile_attribution = "{esc(self.web.map_tile_attribution)}"',
             f"map_tile_max_zoom = {int(self.web.map_tile_max_zoom)}",
+            f'unit_system = "{esc(self.web.unit_system)}"',
             f"ghost_after_minutes = {int(self.web.ghost_after_minutes)}",
             f"expire_after_minutes = {int(self.web.expire_after_minutes)}",
             f'mobile_pin = "{esc(self.web.mobile_pin)}"',
@@ -652,11 +667,17 @@ class Config:
             f'path = "{esc(self.status.path)}"',
             f"report_window_minutes = {int(self.status.report_window_minutes)}",
             f"max_length = {int(self.status.max_length)}",
+            f'source = "{esc(self.status.source)}"',
+            f'dynamic_order = "{esc(self.status.dynamic_order)}"',
+            'dynamic_messages = [' + ', '.join('"' + self._toml_escape(v) + '"' for v in self.status.dynamic_messages) + ']',
+            f"weather_alert_beacon_enabled = {'true' if self.status.weather_alert_beacon_enabled else 'false'}",
+            f"weather_alert_cooldown_minutes = {int(self.status.weather_alert_cooldown_minutes)}",
             "",
             "[weather]",
             f"enabled = {'true' if self.weather.enabled else 'false'}",
             f'location_code = "{esc(self.weather.location_code)}"',
             f'current_provider = "{esc(self.weather.current_provider)}"',
+            f"wxnow_condition_fallback_enabled = {'true' if self.weather.wxnow_condition_fallback_enabled else 'false'}",
             f'alert_provider = "{esc(self.weather.alert_provider)}"',
             f'weatherbit_api_key = "{esc(self.weather.weatherbit_api_key)}"',
             f"weatherbit_poll_minutes = {int(self.weather.weatherbit_poll_minutes)}",

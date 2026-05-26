@@ -4,7 +4,7 @@
 Launch this to start the application. The web interface opens automatically.
 """
 
-APP_VERSION = "1.5.2.3"
+APP_VERSION = "1.5.3"
 
 import asyncio
 import sys
@@ -292,7 +292,7 @@ async def main():
         "enabled" if config.wxnow.enabled and config.wxnow.file_path else "disabled or no file set",
     )
 
-    status_transmitter = StatusReportTransmitter(config, handler, tracker)
+    status_transmitter = StatusReportTransmitter(config, handler, tracker, weather_manager)
     logger.info("Status/DX transmit: %s", "enabled" if config.status.enabled else "disabled")
 
     update_checker = UpdateChecker(APP_VERSION)

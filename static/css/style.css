@@ -481,6 +481,42 @@ body {
     background: var(--bg-primary);
 }
 
+.map-search {
+    position: absolute;
+    top: 74px;
+    left: 12px;
+    z-index: 500;
+    display: flex;
+    gap: 6px;
+    padding: 6px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: rgba(13, 17, 23, 0.88);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.map-search input {
+    width: 126px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    padding: 6px 8px;
+    font-size: 12px;
+    text-transform: uppercase;
+}
+
+.map-search button {
+    border: 1px solid var(--accent-blue);
+    border-radius: 4px;
+    background: rgba(88, 166, 255, 0.16);
+    color: var(--accent-blue);
+    font-size: 12px;
+    font-weight: 700;
+    padding: 6px 10px;
+    cursor: pointer;
+}
+
 /* Leaflet overrides for dark theme — only when .dark-tiles is on the map */
 .dark-tiles .leaflet-tile-pane {
     filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(1.1);
@@ -1991,6 +2027,7 @@ canvas {
     justify-content: space-between;
     margin-bottom: 8px;
     gap: 8px;
+    flex-wrap: wrap;
 }
 
 .settings-row:last-child {
@@ -2002,6 +2039,15 @@ canvas {
     color: var(--text-secondary);
     flex-shrink: 0;
     min-width: 120px;
+}
+
+.setting-description {
+    flex-basis: 100%;
+    margin-left: 128px;
+    margin-top: -4px;
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.35;
 }
 
 .settings-row input[type="text"],
@@ -2294,6 +2340,104 @@ canvas {
     font-style: italic;
 }
 
+.settings-warning {
+    color: var(--accent-orange);
+}
+
+.settings-utility-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin: 12px 0 16px;
+}
+
+.settings-utility-panel {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-tertiary);
+    padding: 10px;
+    min-width: 0;
+}
+
+.settings-utility-title {
+    margin-bottom: 8px;
+    color: var(--text-primary);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.settings-button-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.first-run-checklist {
+    display: grid;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.first-run-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.first-run-item::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    flex: 0 0 8px;
+    border-radius: 50%;
+    background: var(--text-muted);
+}
+
+.first-run-item.done::before {
+    background: var(--accent-green);
+}
+
+.transmit-history-list {
+    display: grid;
+    gap: 6px;
+    max-height: 150px;
+    overflow-y: auto;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.transmit-history-item {
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+}
+
+.transmit-history-item:last-child {
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.transmit-history-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+}
+
+.transmit-history-info {
+    font-family: "Consolas", "Courier New", monospace;
+    color: var(--accent-cyan);
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 980px) {
+    .settings-utility-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 .settings-hint {
     margin: 4px 0 8px 0;
     padding: 6px 10px;
@@ -2509,6 +2653,10 @@ canvas {
     overflow-y: auto;
     height: 100%;
     background: var(--bg-primary);
+}
+
+.settings-warning {
+    color: var(--accent-orange);
 }
 
 .analytics-subtabs {

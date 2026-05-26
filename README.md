@@ -1,6 +1,6 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.5.2.3** | May 25, 2026
+**Version 1.5.3** | May 26, 2026
 
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 
@@ -13,7 +13,7 @@
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
 
-Version 1.5.2.3 preserves valid rain-since-midnight WX data while marking over-width rain fields unknown, fixes APRS positionless weather packet transmit formatting and WX station position seeding, adds alert destination test messages, and improves WXnow current conditions.
+Version 1.5.3 adds beacon preview and transmit-now workflows, transmit history, settings import/export, first-run setup guidance, APRS-IS fixed/mobile range filter helpers, metric/imperial display units, dynamic/status/MHeard/weather-alert beaconing, mobile message refresh/sorting improvements, WXnow condition fallback, and improved APRS weather parsing/display.
 
 Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs/linux-raspberry-pi.md).
 
@@ -30,6 +30,7 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **Dual Propagation Meters** — Header gauges: "VHF Propagation My Station" (direct-heard RF only) and "Regional VHF Propagation" (all RF including via digipeater), each with configurable scoring thresholds
 - **Animated Path Lines** — Dashed propagation lines flow from remote stations toward your position, color-coded by distance (red/orange/green/purple)
 - **Callsign Labels** — Toggle persistent callsign labels above each station icon on the map
+- **Map Callsign Search** — Jump directly to a station by callsign from the map search box
 - **Auto-Fit Zoom** — Automatically zoom the map to fit all visible stations; zooms back in as stations expire; overridden by manual pan/zoom
 - **Station Ghosting** — Configurable fade effect (pulsing dashed border) for stations not heard recently
 - **Station Expiry** — Automatically remove stations from the map after a configurable "last heard" timeout
@@ -50,6 +51,8 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 
 - **Band Opening Detection** — Automatic alerts when propagation thresholds are exceeded
 - **Status/DX Reports** — Optional compact APRS status beacons with the best direct DX station, bearing, counts, and propagation level
+- **Dynamic, MHeard, and Weather Alert Beacons** — Rotate preset status messages, beacon direct-heard RF stations, or beacon severe weather alert text with preview-before-transmit controls
+- **Alert Destination Tests** — Send preformatted test messages to selected Discord, Email, and SMS destinations from Settings
 - **Quiet Hours** — Configurable quiet time window (HH:MM 24h) to suppress notifications
 - **Message Notifications** — Get notified via Discord/Email/SMS when APRS messages are received
 - **MQTT Publishing** — Publish retained propagation metrics, score/level topics, and alert events to brokers such as Mosquitto, Home Assistant, Node-RED, or EMQX
@@ -61,6 +64,9 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 
 - **Current Conditions Banner** - Live weather banner on the map view (temperature, wind, humidity, pressure, feels-like) powered by Open-Meteo
 - **WXnow.txt Transmit** - Beacon APRS weather packets from a local `WXnow.txt` file, with weather SSID, RF/APRS-IS routing, optional position, and stale-file cutoff
+- **WXnow Condition Fallback** - Use local WXnow measurements while still querying Open-Meteo for general condition text/icon
+- **APRS Weather Station Popups** - Decode and show human-readable APRS weather station data, including non-timestamped position weather packets
+- **Metric/Imperial Weather Display** - Switch map weather and APRS WX station displays between °F/mph/in and °C/m/s/mm
 - **US Zip Code & ICAO Location** - Set your weather location by entering a US zip code or worldwide ICAO airport code
 - **Severe Weather Alerts** - NWS active alerts displayed as color-coded banners (red for warnings, orange for watches/advisories)
 - **Configurable Alert Range** - Select how far from your location to monitor severe weather (default 50 miles)
@@ -76,19 +82,26 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **Send & Receive** — Two-way APRS messaging with auto-ACK and retry support
 - **Click to Reply** — Click any received message to auto-populate the TO callsign for quick reply
 - **Message Log** — Filterable message history (All / Sent / Received)
+- **Message Sort Order** — Switch messages between newest-first and oldest-first ordering
+- **Mobile Message Refresh** — Mobile UI includes a manual message refresh button and closer parity with desktop message behavior
 - **RF + IS Routing** — Messages sent on both RF and APRS-IS simultaneously
 
 ### Settings & UX
 
 - **Web-based Configuration** — Edit all settings from the browser (saved to `config.toml`)
+- **First-Run Checklist** — Guided setup reminders for callsign, location, APRS-IS passcode/filter, RF port, beacon path, save, and test transmit
+- **Settings Import/Export** — Back up or restore `config.toml` before experimenting with RF, APRS-IS, host, or port settings
 - **Hot-Reload Settings** — Most settings apply immediately without restarting the server
+- **Preview and Transmit Now** — Preview station, WXnow, status, MHeard, dynamic, and weather-alert beacon text before one-shot transmit
+- **Last Transmitted History** — Settings panel shows recent station, WXnow, status, MHeard, and weather-alert transmissions
 - **Beacon Path Selector** — Choose digipeater path for beacons (DIRECT, WIDE1-1, WIDE1-1,WIDE2-1, etc.)
 - **Minute-based Timers** — All timer settings (beacon interval, dedupe, cleanup, cooldown) displayed in minutes for simplicity
 - **Pick Location on Map** — Click the map to set your station coordinates
 - **GPS Ingestion** — Use browser/mobile GPS, own APRS position packets, or NMEA serial/TCP/UDP streams to move the map marker or update station coordinates
 - **APRS Symbol Picker** — Visual icon chooser with both primary and alternate symbol tables
 - **Callsign + SSID Selector** — Uppercase callsign input with SSID dropdown (0–15) and descriptions
-- **Miles-based Range Filter** — Enter range in miles; auto-generates APRS-IS `r/` filter
+- **APRS-IS Filter Helpers** — Generate fixed `r/35/-79/80` or moving/mobile `m/80` range filters, with support for additional javAPRS filter tokens
+- **Metric System Option** — General unit preference controls distances, weather temperature, wind, and precipitation displays
 - **Collapsible Sidebar** — Toggle button to collapse/expand the sidebar for a larger map view
 - **Persistent Weather Banner** — Weather conditions stay visible on the map unless disabled in settings
 - **Font Selector** — Choose from multiple fonts in Settings for crisp, readable text
@@ -108,6 +121,7 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - IS→RF gated packets do not request further digipeating (no WIDE path)
 - IS→RF gated packets use APRS third-party format to avoid loops
 - APRS-IS filter token syntax validation
+- APRS-IS range filter guidance for fixed and mobile clients
 - Policy guidance displayed in the settings UI
 
 ### Security
@@ -156,17 +170,16 @@ All settings are in `config.toml` and can be edited from the web UI **Settings**
 | `[digipeater]` | Enable/disable, WIDEn-N aliases, dedupe window |
 | `[igate]` | Enable/disable, RF→IS and IS→RF gating |
 | `[aprs_is]` | Server, port, passcode, filter string |
-| `[kiss_serial]` | Serial RF TNC port, baud rate, KISS/TNC2 monitor mode, flow control, and optional startup profile |
-| `[kiss_tcp]` | TCP KISS TNC host and port |
-| `[[rf_ports]]` | Optional named multi-port RF setup for multiple serial/TCP KISS ports; overrides the legacy single-port blocks when present |
+| `[kiss_serial]` / `[kiss_tcp]` | Legacy single-port settings kept for older config files |
+| `[[rf_ports]]` | Named multi-port RF setup for serial KISS/TNC2 monitor and TCP KISS ports; preferred for all new setups |
 | `[web]` | Web interface bind address, port, font, custom map tile source, ghost time, expire time |
 | `[tracking]` | Station age limits and cleanup intervals |
 | `[messaging]` | APRS message history retention |
 | `[database]` | SQLite database path |
 | `[propagation]` | Scoring thresholds for My Station and Regional propagation meters |
-| `[status]` | Compact APRS Status/DX report transmit settings |
+| `[status]` | Compact APRS status beacon settings: DX summaries, dynamic preset text, direct-RF MHeard summaries, and optional severe weather alert beacons |
 | `[alerts]` | Band opening thresholds, Discord/email/SMS notification settings |
-| `[weather]` | Weather enabled, location code (zip/ICAO), alert range, radar overlay, alert polygons, alert scope, and adaptive polling |
+| `[weather]` | Weather enabled, location code (zip/ICAO), WXnow/Open-Meteo current-condition options, alert range, radar overlay, alert polygons, alert scope, and adaptive polling |
 | `[wxnow]` | APRS weather transmit from `WXnow.txt`, including SSID, beacon interval, stale cutoff, position mode, path, and RF/APRS-IS route |
 | `[gps]` | Browser, own-packet, serial, TCP, and UDP GPS ingestion |
 | `[mqtt]` | Optional broker settings for propagation and alert publishing |

@@ -16,7 +16,7 @@ from server.packet_handler import PacketHandler
 from server.station_tracker import StationTracker
 from server.websocket_manager import WebSocketManager
 from server.gps import GPSManager, parse_nmea_position
-from server.status_report import build_dx_status_text, trim_status_text
+from server.status_report import build_dx_status_text, build_mheard_status_text, build_weather_alert_status_text, trim_status_text
 from server.wxnow import build_wxnow_info, build_wxnow_position_info, parse_weather_body_values, parse_wxnow_text
 
 
@@ -50,6 +50,21 @@ class APRSParserComplianceTests(unittest.TestCase):
         self.assertEqual(packet.packet_type, "weather")
         self.assertAlmostEqual(packet.latitude, 35.5)
         self.assertEqual(packet.symbol_code, "_")
+
+    def test_position_weather_without_timestamp_keeps_weather_body(self):
+        packet = parse_packet(
+            "KK7PZE-13>APDW18:!3345.29N/11146.39W_098/003g004t082r000p000P000h26b10088Ambient Weather WS-2902",
+            source="aprs_is",
+        )
+
+        self.assertEqual(packet.packet_type, "weather")
+        self.assertEqual(packet.symbol_code, "_")
+        self.assertTrue(packet.comment.startswith("098/003g004t082"))
+        self.assertEqual(packet.weather["wind_direction"], 98)
+        self.assertEqual(packet.weather["wind_speed_mph"], 3)
+        self.assertEqual(packet.weather["temperature_f"], 82)
+        self.assertEqual(packet.weather["humidity"], 26)
+        self.assertEqual(packet.weather["pressure_mb"], 1008.8)
 
     def test_compressed_position_keeps_full_comment(self):
         packet = parse_packet("CALL>APRS:!/5L!!<*e7Pxyzcomment", source="rf")
@@ -106,9 +121,9 @@ class APRSISComplianceTests(unittest.TestCase):
         config = Config()
         config.station.callsign = "K5ABC"
         config.aprs_is.passcode = "12345"
-        client = APRSISClient(config, lambda packet: None, app_version="1.5.2.3")
+        client = APRSISClient(config, lambda packet: None, app_version="1.5.3")
 
-        self.assertIn("vers APRSPropView 1.5.2.3", client._build_login())
+        self.assertIn("vers APRSPropView 1.5.3", client._build_login())
 
 
 class ConfigTests(unittest.TestCase):
@@ -383,6 +398,50 @@ class StatusDxTests(unittest.TestCase):
     def test_status_text_is_printable_and_limited(self):
         self.assertEqual(trim_status_text("DX\nbad\tchars", 8), "DX bad chars"[:20])
         self.assertEqual(len(trim_status_text("x" * 200, 67)), 67)
+
+    def test_builds_mheard_from_direct_heard_stations(self):
+        text = build_mheard_status_text({
+            "direct_heard_stations": [
+                {"callsign": "K1ABC"},
+                {"callsign": "N5XYZ-7"},
+                {"callsign": "W4TEST"},
+            ],
+        })
+
+        self.assertEqual(text, "MHeard 60m: K1ABC, N5XYZ-7, W4TEST")
+
+    def test_weather_alert_status_is_compact(self):
+        text = build_weather_alert_status_text({
+            "event": "Severe Thunderstorm Warning",
+            "severity": "Severe",
+            "alert_type": "warning",
+        })
+
+        self.assertEqual(text, "WX WARNING: Severe Thunderstorm Warning")
+
+    def test_dynamic_preview_does_not_advance_next_message(self):
+        from server.status_report import StatusReportTransmitter
+
+        class FakeTracker:
+            async def get_propagation_data(self):
+                return {}
+
+        class FakeHandler:
+            async def transmit_aprs_info(self, **kwargs):
+                return {"can_transmit": True, "message": "Transmitted."}
+
+        async def run_test():
+            config = Config()
+            config.status.source = "dynamic"
+            config.status.dynamic_messages = ["One", "Two"]
+            tx = StatusReportTransmitter(config, FakeHandler(), FakeTracker())
+
+            self.assertEqual(await tx.build_preview_text(), "One")
+            self.assertEqual(await tx.build_preview_text(), "One")
+            self.assertEqual((await tx.transmit_once(force=True))["text"], "One")
+            self.assertEqual(await tx.build_preview_text(), "Two")
+
+        asyncio.run(run_test())
 
 
 class MessageAddresseeValidationTests(unittest.TestCase):

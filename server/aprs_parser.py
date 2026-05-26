@@ -152,6 +152,8 @@ def parse_packet(raw: str, source: str = "rf") -> APRSPacket:
             _parse_mic_e(pkt, info)
             pkt.packet_type = "mic_e"
         elif dti == "_":
+            pkt.comment = info[1:].strip()
+            pkt.weather = _parse_weather_telemetry(info[1:])
             pkt.packet_type = "weather"
         elif dti == "T":
             pkt.packet_type = "telemetry"
@@ -282,7 +284,11 @@ def _parse_position(pkt: APRSPacket, info: str, with_messaging: bool = False):
     result = _parse_lat_lon(info)
     if result:
         pkt.latitude, pkt.longitude, rest, pkt.symbol_table, pkt.symbol_code = result
-        _extract_data_extension(pkt, rest)
+        if pkt.symbol_code == "_":
+            pkt.comment = rest.strip()
+            pkt.weather = _parse_weather_telemetry(rest)
+        else:
+            _extract_data_extension(pkt, rest)
         _extract_altitude(pkt)
 
 
@@ -496,6 +502,45 @@ def _extract_data_extension(pkt: APRSPacket, rest: str):
         return
 
     pkt.comment = rest.strip()
+
+
+def _parse_weather_telemetry(text: str) -> Dict[str, Any]:
+    """Parse common APRS weather telemetry fields from a weather body."""
+    if not text:
+        return {}
+    raw = str(text).strip()
+    wx: Dict[str, Any] = {}
+
+    wind = re.match(r"^(\d{3})/(\d{3})(.*)$", raw)
+    if wind:
+        direction = int(wind.group(1))
+        if direction <= 360:
+            wx["wind_direction"] = direction
+        wx["wind_speed_mph"] = int(wind.group(2))
+
+    def read(token: str, width: int) -> Optional[int]:
+        match = re.search(rf"{re.escape(token)}(-?\d{{{width}}})", raw)
+        return int(match.group(1)) if match else None
+
+    for token, key, width, divisor in (
+        ("c", "wind_direction", 3, 1),
+        ("s", "wind_speed_mph", 3, 1),
+        ("g", "wind_gust_mph", 3, 1),
+        ("t", "temperature_f", 3, 1),
+        ("r", "rain_1h_in", 3, 100),
+        ("p", "rain_24h_in", 3, 100),
+        ("P", "rain_midnight_in", 3, 100),
+        ("h", "humidity", 2, 1),
+        ("b", "pressure_mb", 5, 10),
+    ):
+        value = read(token, width)
+        if value is None:
+            continue
+        if key == "humidity" and value == 0:
+            value = 100
+        wx[key] = value / divisor if divisor != 1 else value
+
+    return wx
 
 
 def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:

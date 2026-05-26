@@ -476,6 +476,20 @@ class StationTracker:
                     and station.get("callsign", "").upper() in {d.upper() for d in used_digis}
                 ),
             })
+        direct_heard_stations = [
+            {
+                "callsign": station.get("callsign"),
+                "distance_km": round(station["distance_km"], 1) if station.get("distance_km") else None,
+                "heading": round(station["heading"], 1) if station.get("heading") is not None else None,
+                "last_heard": station.get("last_heard"),
+                "path": station.get("last_path", ""),
+            }
+            for station in sorted(
+                direct_stations,
+                key=lambda s: s.get("last_heard") or 0,
+                reverse=True,
+            )
+        ]
         my_full_count = max(prop_cfg.my_station_full_count, 1)
         my_full_dist = max(prop_cfg.my_station_full_dist_km, 1)
         my_count_score = min(my_count / my_full_count * 50, 50)
@@ -503,6 +517,7 @@ class StationTracker:
             "my_avg_distance_km": round(my_avg_dist, 1),
             "my_top_station": my_top_station,
             "my_near_hop_stations": my_near_hop_stations,
+            "direct_heard_stations": direct_heard_stations,
             # Regional meter
             "score": round(reg_score, 1),
             "level": reg_level,

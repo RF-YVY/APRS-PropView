@@ -130,6 +130,10 @@
             </div>
             <!-- Severe weather alert banners -->
             <div id="wx-alerts-container" class="wx-alerts-container"></div>
+            <div class="map-search">
+                <input type="text" id="map-search-call" placeholder="Find callsign" maxlength="12" autocomplete="off">
+                <button type="button" id="btn-map-search" title="Jump to callsign on map">Find</button>
+            </div>
             <div id="map"></div>
             <button id="sidebar-toggle" title="Toggle sidebar">▶</button>
             <div id="map-controls">
@@ -270,6 +274,12 @@
                             <option value="mine">My Conversations</option>
                             <option value="rx">Received Only</option>
                             <option value="tx">Sent Only</option>
+                        </select>
+                    </label>
+                    <label>Order:
+                        <select id="msg-sort-order">
+                            <option value="desc">Newest first</option>
+                            <option value="asc">Oldest first</option>
                         </select>
                     </label>
                     <span id="msg-count" class="filter-count">0 messages</span>
@@ -552,11 +562,31 @@
                             <p>Configure APRS, map, weather, alerts, GPS, and integrations.</p>
                         </div>
                         <div class="settings-pane-header-actions">
+                            <button id="btn-settings-help" class="btn-small" type="button" title="Open User Guide & Help">User Guide &amp; Help</button>
                             <button id="btn-save-settings-top" class="btn-primary btn-save-settings">Save Configuration</button>
                             <button id="btn-close-settings" class="settings-pane-close" type="button" title="Close settings">&times;</button>
                         </div>
                     </div>
                     <div id="settings-status" class="settings-status" style="display:none;"></div>
+                    <div class="settings-utility-grid">
+                        <div class="settings-utility-panel">
+                            <div class="settings-utility-title">First-Run Checklist</div>
+                            <div id="first-run-checklist" class="first-run-checklist"></div>
+                        </div>
+                        <div class="settings-utility-panel">
+                            <div class="settings-utility-title">Settings Backup</div>
+                            <div class="settings-button-row">
+                                <button type="button" class="btn-small" id="btn-config-export">Export Settings</button>
+                                <button type="button" class="btn-small" id="btn-config-import">Import Settings</button>
+                                <input type="file" id="cfg-config-import-file" accept=".toml,.txt" hidden>
+                            </div>
+                            <p class="settings-note">Export before experimenting with host, port, APRS-IS, or RF settings. Imported settings require an app restart.</p>
+                        </div>
+                        <div class="settings-utility-panel">
+                            <div class="settings-utility-title">Last Transmitted</div>
+                            <div id="transmit-history-list" class="transmit-history-list">No transmitted packets yet.</div>
+                        </div>
+                    </div>
 
                     <!-- Station -->
                     <div class="settings-section" data-settings-key="station" data-summary="Callsign, location, beacon path, and station identity.">
@@ -703,6 +733,16 @@
                                 <option value="WIDE1-1,WIDE2-2">WIDE1-1,WIDE2-2</option>
                             </select>
                         </div>
+                        <div class="settings-row settings-row-stacked">
+                            <label>Station Beacon Preview</label>
+                            <div id="cfg-beacon-preview" class="status-preview">Preview has not been run.</div>
+                        </div>
+                        <div class="settings-row">
+                            <label></label>
+                            <button type="button" class="btn-small" id="btn-beacon-preview">Preview Station Beacon</button>
+                            <button type="button" class="btn-small" id="btn-beacon-transmit">Transmit Station Now</button>
+                        </div>
+                        <p class="settings-note settings-warning">APRS etiquette: keep routine fixed-station beacons at 10 minutes or slower, and use the shortest RF path that covers your local need. DIRECT is best when an IGate or digipeater can hear you directly.</p>
                     </div>
 
                     <!-- Digipeater -->
@@ -759,6 +799,13 @@
                             <input type="text" id="cfg-is-passcode" placeholder="-1">
                         </div>
                         <div class="settings-row">
+                            <label for="cfg-is-range-mode">Range Filter Mode</label>
+                            <select id="cfg-is-range-mode">
+                                <option value="fixed">Fixed station range (r/lat/lon/km)</option>
+                                <option value="moving">Moving / my range (m/km)</option>
+                            </select>
+                        </div>
+                        <div class="settings-row">
                             <label for="cfg-is-range-miles">Range (miles)</label>
                             <input type="number" id="cfg-is-range-miles" min="0" max="500" step="1" placeholder="e.g. 100">
                         </div>
@@ -775,6 +822,7 @@
                             <span id="cfg-is-filter-combined" class="filter-preview">—</span>
                         </div>
                         <input type="hidden" id="cfg-is-filter">
+                        <p class="settings-note settings-warning">Most APRS-IS filtered ports expect a filter before they will send traffic. Fixed stations usually use <code>r/35/-79/80</code>; moving/mobile clients can use <code>m/80</code> so the server centers the range on the logged-in station's last known position. Extra user filters such as <code>b/CALL</code>, <code>t/poimqstunw</code>, or <code>-p/CW</code> are sent as entered.</p>
                     </div>
 
                     <!-- RF Ports -->
@@ -785,72 +833,7 @@
                             <button type="button" class="settings-toolbar-btn" id="btn-rf-port-add-serial">Add Serial Port</button>
                             <button type="button" class="settings-toolbar-btn" id="btn-rf-port-add-tcp">Add TCP Port</button>
                         </div>
-                        <p class="settings-note">Named RF ports are shown on received packets and stations. KISS serial, KISS TCP, and serial TNC2 monitor receive-only ports can run at the same time after restart.</p>
-                    </div>
-
-                    <!-- KISS Serial -->
-                    <div class="settings-section" data-settings-key="kiss-serial" data-summary="Serial TNC connection settings.">
-                        <h3>KISS Serial TNC</h3>
-                        <div class="settings-row">
-                            <label for="cfg-ks-enabled">Enabled</label>
-                            <input type="checkbox" id="cfg-ks-enabled">
-                        </div>
-                        <div class="settings-row">
-                            <label for="cfg-ks-mode">Mode</label>
-                            <select id="cfg-ks-mode">
-                                <option value="kiss">KISS frames</option>
-                                <option value="tnc2_monitor">TNC2 monitor text (receive-only)</option>
-                            </select>
-                        </div>
-                        <div class="settings-row">
-                            <label for="cfg-ks-profile">Radio/TNC profile</label>
-                            <select id="cfg-ks-profile">
-                                <option value="none">Generic / already configured</option>
-                                <option value="kenwood_thd7">Kenwood TH-D7 / TH-D7E</option>
-                                <option value="kenwood_tmd700">Kenwood TM-D700</option>
-                                <option value="kenwood_thd72">Kenwood TH-D72</option>
-                                <option value="generic_tnc2_kiss">Generic TNC2 KISS startup</option>
-                            </select>
-                        </div>
-                        <div class="settings-row">
-                            <label for="cfg-ks-port">Serial Port</label>
-                            <input type="text" id="cfg-ks-port" placeholder="COM3">
-                        </div>
-                        <div class="settings-row">
-                            <label for="cfg-ks-baud">Baudrate</label>
-                            <input type="number" id="cfg-ks-baud" value="9600">
-                        </div>
-                        <div class="settings-row">
-                            <label for="cfg-ks-flow">Flow control</label>
-                            <select id="cfg-ks-flow">
-                                <option value="none">None</option>
-                                <option value="xonxoff">Xon/Xoff</option>
-                                <option value="rtscts">RTS/CTS</option>
-                                <option value="dsrdtr">DSR/DTR</option>
-                            </select>
-                        </div>
-                        <div class="settings-row settings-row-stacked">
-                            <label for="cfg-ks-init">Extra init commands</label>
-                            <textarea id="cfg-ks-init" rows="4" placeholder="One command per line, e.g.&#10;MYCALL {callsign}&#10;HB 1200"></textarea>
-                        </div>
-                        <p class="settings-note">Legacy Kenwood radios such as the TH-D7E usually need PACKET mode on the radio, 9600 bps PC speed, and Xon/Xoff. TNC2 monitor text is receive-only but can be more reliable when KISS mode is unstable.</p>
-                    </div>
-
-                    <!-- KISS TCP -->
-                    <div class="settings-section" data-settings-key="kiss-tcp" data-summary="Network TNC host and port settings.">
-                        <h3>KISS TCP TNC</h3>
-                        <div class="settings-row">
-                            <label for="cfg-kt-enabled">Enabled</label>
-                            <input type="checkbox" id="cfg-kt-enabled">
-                        </div>
-                        <div class="settings-row">
-                            <label for="cfg-kt-host">Host</label>
-                            <input type="text" id="cfg-kt-host" placeholder="127.0.0.1">
-                        </div>
-                        <div class="settings-row">
-                            <label for="cfg-kt-port">Port</label>
-                            <input type="number" id="cfg-kt-port" value="8001">
-                        </div>
+                        <p class="settings-note">Named RF ports are shown on received packets and stations. Add Serial for KISS or receive-only TNC2 monitor ports, or TCP for KISS-over-TCP. Older single-port KISS settings are automatically imported here when present.</p>
                     </div>
 
                     <!-- Web Interface -->
@@ -864,6 +847,7 @@
                             <label for="cfg-web-port">Port</label>
                             <input type="number" id="cfg-web-port" value="14501">
                         </div>
+                        <p class="settings-note settings-warning">Host and Port control where this web server listens. Do not change them unless you are sure what you are doing; a wrong value can make the UI unreachable until config.toml is corrected.</p>
                         <div class="settings-row">
                             <label for="cfg-web-font">Font</label>
                             <select id="cfg-web-font">
@@ -885,6 +869,13 @@
                             <select id="cfg-ui-theme">
                                 <option value="dark">Dark</option>
                                 <option value="light">Light</option>
+                            </select>
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-unit-system">Units</label>
+                            <select id="cfg-unit-system">
+                                <option value="imperial">Imperial (mi, °F, mph)</option>
+                                <option value="metric">Metric (km, °C, m/s)</option>
                             </select>
                         </div>
                         <div class="settings-row">
@@ -968,6 +959,33 @@
                             <input type="number" id="cfg-status-max-length" min="20" max="120" step="1" value="67">
                         </div>
                         <div class="settings-row">
+                            <label for="cfg-status-source">Beacon Content</label>
+                            <select id="cfg-status-source">
+                                <option value="dx">DX / propagation summary</option>
+                                <option value="dynamic">Dynamic preset messages</option>
+                                <option value="mheard">MHeard direct-RF list</option>
+                            </select>
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-status-dynamic-order">Dynamic Order</label>
+                            <select id="cfg-status-dynamic-order">
+                                <option value="sequential">Numbered order</option>
+                                <option value="random">Random</option>
+                            </select>
+                        </div>
+                        <div class="settings-row settings-row-stacked">
+                            <label for="cfg-status-dynamic-messages">Dynamic Messages</label>
+                            <textarea id="cfg-status-dynamic-messages" rows="4" placeholder="One status message per line"></textarea>
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-status-weather-alerts">Beacon Severe WX Alerts</label>
+                            <input type="checkbox" id="cfg-status-weather-alerts">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-status-weather-cooldown">WX Alert Cooldown (min)</label>
+                            <input type="number" id="cfg-status-weather-cooldown" min="1" max="1440" step="1" value="30">
+                        </div>
+                        <div class="settings-row">
                             <label for="cfg-status-mode">Transmit Via</label>
                             <select id="cfg-status-mode">
                                 <option value="both">RF + APRS-IS</option>
@@ -988,11 +1006,16 @@
                             <label>Status Preview</label>
                             <div id="cfg-status-preview" class="status-preview">Not checked</div>
                         </div>
+                        <div class="settings-row settings-row-stacked">
+                            <label>Weather Alert Preview</label>
+                            <div id="cfg-status-alert-preview" class="status-preview">Not checked</div>
+                        </div>
                         <div class="settings-row">
                             <label></label>
-                            <button type="button" class="btn-small" id="btn-status-test">Transmit Status Now</button>
+                            <button type="button" class="btn-small" id="btn-status-preview">Preview Next Beacon</button>
+                            <button type="button" class="btn-small" id="btn-status-test">Transmit Now</button>
                         </div>
-                        <p class="settings-note">The current report is a single compact status packet with the best direct DX station, bearing, direct count, RF count, and propagation level.</p>
+                        <p class="settings-note settings-warning">Status, MHeard, dynamic, and weather alert beacons are status text packets. Use 10 minutes or slower on RF unless your local coordination plan says otherwise.</p>
                     </div>
 
                     <div class="settings-section" data-settings-key="wxnow" data-summary="Transmit APRS weather packets from a WXnow.txt file.">
@@ -1048,11 +1071,16 @@
                             <label>Status</label>
                             <span id="cfg-wxnow-status" class="filter-preview">Not checked</span>
                         </div>
+                        <div class="settings-row settings-row-stacked">
+                            <label>WXnow Preview</label>
+                            <div id="cfg-wxnow-preview" class="status-preview">Preview has not been run.</div>
+                        </div>
                         <div class="settings-row">
                             <label></label>
-                            <button type="button" class="btn-small" id="btn-wxnow-test">Transmit WX Now</button>
+                            <button type="button" class="btn-small" id="btn-wxnow-preview">Preview WXnow</button>
+                            <button type="button" class="btn-small" id="btn-wxnow-test">Transmit Now</button>
                         </div>
-                        <p class="settings-note">WXnow.txt uses a local-time timestamp on line 1 and the APRS complete weather body on line 2. Unchanged files are not retransmitted by the automatic loop.</p>
+                        <p class="settings-note settings-warning">WXnow.txt uses a local-time timestamp on line 1 and the APRS complete weather body on line 2. Weather beacons are data-heavy; keep RF paths modest and avoid very fast intervals.</p>
                     </div>
 
                     <!-- Weather -->
@@ -1089,6 +1117,10 @@
                                     <option value="open_meteo">Open-Meteo - global, no key</option>
                                     <option value="wxnow">WXnow.txt - transmitted values</option>
                                 </select>
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-wxnow-conditions">WXnow Condition Text/Icon</label>
+                                <input type="checkbox" id="cfg-wx-wxnow-conditions">
                             </div>
                             <div class="settings-row">
                                 <label for="cfg-wx-alert-provider">Alerts / Risk Source</label>
@@ -1386,7 +1418,7 @@
                 <div class="about-panel">
                     <div class="about-header">
                         <h2>APRS PropView</h2>
-                        <span id="about-version" class="about-version">v1.5.2.3</span>
+                        <span id="about-version" class="about-version">v1.5.3</span>
                     </div>
                     <div class="about-section">
                         <p>A real-time APRS digipeater and IGate focused on VHF propagation, live mapping, APRS messaging, analytics, and weather-aware situational awareness.</p>
@@ -1402,9 +1434,9 @@
                     </div>
                     <div class="about-section">
                         <h3>Build Info</h3>
-                        <p>Version: <span id="about-version-detail">1.5.2.3</span></p>
-                        <p>Release Date: <span id="about-date">May 24, 2026</span></p>
-                        <p>Highlights: multiple named RF ports, WXnow.txt weather transmit, compact Status/DX beacons, and per-port packet/station origin display.</p>
+                        <p>Version: <span id="about-version-detail">1.5.3</span></p>
+                        <p>Release Date: <span id="about-date">May 26, 2026</span></p>
+                        <p>Highlights: beacon preview/transmit controls, transmit history, settings backup/import, first-run guidance, APRS-IS filter helpers, metric units, WXnow improvements, and dynamic/status/MHeard/weather-alert beacons.</p>
                     </div>
                     <div class="about-section">
                         <h3>Video Guide</h3>
@@ -1523,6 +1555,7 @@
                         <tr><td>🔎</td><td><b>Auto-Fit</b> — Automatically zoom to fit all visible stations. Turns off when you manually pan or zoom; click again to re-enable.</td></tr>
                         <tr><td>⏱️</td><td><b>Line Time Filter</b> — Only show path lines from stations heard within the selected window (1h, 6h, 12h, 24h, or all time).</td></tr>
                         <tr><td>🏷️ Types ▾</td><td><b>Type Filter</b> — Check/uncheck station categories (Digipeater, Weather, House, Car, etc.) to control which types appear on the map.</td></tr>
+                        <tr><td>Search</td><td><b>Callsign Search</b> — Enter a callsign to jump to that station marker on the map.</td></tr>
                     </table>
                     <p>Weather radar and NWS polygons are managed from Settings - Weather. All map toggle states, zoom level, position, and filter selections are saved automatically and persist across restarts.</p>
                     <p>Application update checks are managed from Settings - Web Interface. You can disable release checks entirely or choose how often the app rechecks GitHub while it stays running.</p>
@@ -1541,6 +1574,7 @@
                 <section class="help-section">
                     <h3>💬 Messages Tab</h3>
                     <p>Send and receive APRS messages. Type a destination callsign and message text (max 67 characters), then click Send. Incoming messages appear with ack/rej status indicators. Click any received message's callsign to auto-fill the To field for a quick reply.</p>
+                    <p>Use the sort selector to view newest-to-oldest or oldest-to-newest. The mobile UI includes the same ordering behavior and a manual refresh button.</p>
                     <p>Message notification channels (Discord, Email, SMS) are configured separately from band-opening alert channels in Settings → Alerts.</p>
                 </section>
 
@@ -1564,8 +1598,9 @@
                 <section class="help-section">
                     <h3>⚙️ Settings</h3>
                     <p>All settings are saved to <code>config.toml</code> next to the executable. Most UI, weather, alert, and analytics changes apply live; transport-layer changes such as TNC connection settings may still require a restart.</p>
+                    <p>The top of Settings includes a first-run checklist, settings import/export buttons for safe experimentation, and a last-transmitted history panel for station, WXnow, status, MHeard, and weather-alert beacons.</p>
                     <h4>Station</h4>
-                    <p>Your callsign, SSID, latitude/longitude (or use the 📌 map picker), APRS symbol, status comment, beacon interval (minutes), and beacon path (e.g. <code>WIDE1-1</code>).</p>
+                    <p>Your callsign, SSID, latitude/longitude (or use the 📌 map picker), APRS symbol, status comment, beacon interval (minutes), and beacon path (e.g. <code>WIDE1-1</code>). Use <b>Preview Station Beacon</b> to inspect the exact packet text before using <b>Transmit Station Now</b>.</p>
                     <h4>GPS Ingestion</h4>
                     <p>GPS ingestion lets APRS PropView use a live position instead of only the saved station latitude/longitude. Turn on <b>GPS Ingestion</b>, choose a source, then choose whether GPS should only move your map marker or also update the station latitude/longitude fields.</p>
                     <p><b>LOCK</b> prevents active GPS from changing the saved station latitude/longitude. Leave it enabled when you want GPS to move the map marker during mobile use without changing your configured home/base station position.</p>
@@ -1583,13 +1618,18 @@
                     <h4>IGate</h4>
                     <p>Enable/disable Internet gateway. Choose RF→IS (gate heard RF packets to APRS-IS), IS→RF (gate APRS-IS packets to local RF), or both.</p>
                     <h4>APRS-IS</h4>
-                    <p>Server/port (default: <code>rotate.aprs2.net:14580</code>), your APRS-IS passcode, range filter in miles (auto-generates the <code>r/lat/lon/km</code> server filter), and any extra filter expressions (e.g. <code>b/CALL</code>).</p>
-                    <h4>KISS Serial / KISS TCP</h4>
-                    <p>Connect to your TNC via serial port (COM port + baud rate) or TCP (host + port). Serial mode can use binary KISS frames or receive-only TNC2 monitor text for older radios. Kenwood TH-D7/TH-D7E users commonly need PACKET mode, 9600 bps PC speed, and Xon/Xoff flow control.</p>
+                    <p>Server/port (default: <code>rotate.aprs2.net:14580</code>), your APRS-IS passcode, fixed or moving range filter mode, range in miles, and any extra filter expressions. Fixed stations generate filters like <code>r/35/-79/80</code>; moving/mobile clients can use <code>m/80</code>. Extra javAPRS filters such as <code>b/CALL</code>, <code>t/poimqstunw</code>, or <code>-p/CW</code> are appended as entered.</p>
+                    <h4>RF Ports</h4>
+                    <p>Add one or more named serial or TCP ports. Serial ports can use binary KISS frames or receive-only TNC2 monitor text for older radios. Kenwood TH-D7/TH-D7E users commonly need PACKET mode, 9600 bps PC speed, and Xon/Xoff flow control. Legacy single serial/TCP controls have been replaced by this multi-port list, but old saved config is imported automatically.</p>
+                    <h4>Status, Dynamic, MHeard, and Weather Alert Beacons</h4>
+                    <p>Status/DX can transmit a compact propagation summary, rotate preset dynamic messages in sequence or randomly, send a direct-heard RF MHeard list, or beacon severe weather alert text when active. Use <b>Preview Next Beacon</b> and the weather-alert preview before one-shot transmit or enabling periodic beaconing.</p>
+                    <h4>WXnow Transmit</h4>
+                    <p>WXnow can send APRS weather packets from a local <code>WXnow.txt</code>, with optional position included in the packet. When positionless weather is selected, PropView can seed a matching weather-symbol position packet and then transmit the positionless WX report. Use <b>Preview WXnow</b> before <b>Transmit Now</b>.</p>
                     <h4>Web Interface</h4>
                     <p><b>Host/Port</b> — Bind address and port for the web UI (default <code>127.0.0.1:14501</code>). Use <code>0.0.0.0</code> to allow network access.</p>
                     <p><b>Font</b> — Choose a display font for the entire UI.</p>
                     <p><b>UI Theme</b> — Switch the application interface between dark and light mode independently from the map tile theme.</p>
+                    <p><b>Units</b> — Choose Imperial or Metric for distance, map weather temperature, APRS WX station temperature, wind, and precipitation displays.</p>
                     <p><b>Map Tiles</b> — Use the default online OpenStreetMap tiles or point PropView at a custom XYZ tile URL such as a local MBTiles/XYZ server. Custom URLs must include <code>{z}</code>, <code>{x}</code>, and <code>{y}</code>.</p>
                     <p><b>Ghost After (min)</b> — Stations not heard within this time will fade (pulsing dashed border, reduced opacity). Set to 0 to disable ghosting.</p>
                     <p><b>Expire After (min)</b> — Stations not heard within this time are completely removed from the map. Set to 0 to never auto-expire. Ghost time should be shorter than expiry time so stations fade before disappearing.</p>
@@ -1598,10 +1638,12 @@
                     <p><b>Max Station Age</b> — How long (minutes) to keep a station in the database before cleanup removes it. <b>Cleanup Interval</b> — How often (minutes) to run the cleanup process.</p>
                     <h4>Alerts — Band Opening Channels</h4>
                     <p>Trigger an alert when propagation exceeds thresholds (min RF stations + min distance). Cooldown prevents repeated alerts. Quiet hours suppress alerts during specified times. Channels: Discord webhook, Email (SMTP), and SMS via email gateway.</p>
+                    <p>Use <b>Send Test Alert</b> to send a preformatted test message to selected Discord, Email, and SMS destinations without waiting for a real alert trigger.</p>
                     <h4>Alerts — Message Notification Channels</h4>
                     <p>Separate channel toggles for forwarding incoming APRS messages to Discord, Email, or SMS — independent from band-opening channels.</p>
                     <h4>Weather</h4>
                     <p>Enable weather with a US zip code or ICAO airport code. Current conditions use Open-Meteo. Alert sources can be automatic, Weatherbit with a user API key, or disabled. Auto uses NWS for US stations and Open-Meteo risk indicators outside the US.</p>
+                    <p>When using WXnow as the current conditions source, the Open-Meteo condition fallback can still provide general condition text and icon while temperature, wind, humidity, and pressure come from your local station.</p>
                     <p><b>Map Overlays</b> - Turn radar and alert polygons on or off, adjust radar opacity, enable radar animation, and choose which alert categories should be drawn on the map. Polygons display only when the selected alert source returns geometry.</p>
                     <p><b>Alert Polling</b> - NWS county/zone UGC scope is available for US locations. Other alert sources use point-based or provider-defined coverage.</p>
                     <p><b>Adaptive Severe Weather Polling</b> - When one of your configured trigger events, such as <code>Tornado Watch</code> or <code>Severe Thunderstorm Watch</code>, becomes active, alert polling automatically speeds up to the elevated interval so newly issued warnings are detected more quickly. After the trigger clears, polling stays elevated through the configured cooldown before returning to normal.</p>
@@ -1619,7 +1661,7 @@
                 <section class="help-section">
                     <h3>⌨️ Tips</h3>
                     <ul>
-                        <li>Distance units (mi/km) can be toggled via the button in the map legend — the setting persists across sessions.</li>
+                        <li>Units can be changed in Settings → Web Interface. The map legend distance toggle also switches the same Imperial/Metric preference.</li>
                         <li>All map UI preferences (toggles, filters, zoom, position, map theme) are saved automatically to your browser and restored on next launch.</li>
                         <li>The desktop UI light/dark theme is saved separately from the map light/dark theme.</li>
                         <li>Ghost + Expire work together: set Ghost to 60 min and Expire to 180 min, for example, so stations fade at 1 hour and vanish at 3 hours.</li>
@@ -1627,6 +1669,7 @@
                         <li>The propagation score is calculated from RF station count, maximum distance, and average distance within the last hour.</li>
                         <li>If you want faster warning pickup for a surrounding county, switch alert scope from <b>Station point</b> to <b>County/Zone UGC</b> and enable elevated polling triggers in Settings → Weather.</li>
                         <li>For mobile operation, keep station latitude/longitude locked if you only want GPS to move your map marker. Unlock it only when you intentionally want the live GPS fix to update your saved station coordinates.</li>
+                        <li>Use settings export before changing host, port, APRS-IS, or RF port settings so you can quickly restore a known-good configuration.</li>
                     </ul>
                 </section>
 

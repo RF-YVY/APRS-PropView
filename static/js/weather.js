@@ -8,6 +8,7 @@ window.pvWeather = (function () {
     let refreshTimer = null;
     let lastAlertCount = 0;
     let hasRenderedAlerts = false;
+    let lastWeatherData = null;
 
     function init() {
         // Refresh button
@@ -47,6 +48,7 @@ window.pvWeather = (function () {
             const endpoint = force ? '/api/weather/refresh' : '/api/weather';
             const resp = await fetch(endpoint);
             const data = await resp.json();
+            lastWeatherData = data;
             renderWeather(data);
             scheduleRefresh(data);
         } catch (e) {
@@ -80,9 +82,9 @@ window.pvWeather = (function () {
         if (banner) banner.style.display = 'flex';
 
         setText('wx-icon', wx.icon || '❓');
-        setText('wx-temp', wx.temperature_f != null ? Math.round(wx.temperature_f) + '°F' : '--°F');
+        setText('wx-temp', window.formatTempF ? window.formatTempF(wx.temperature_f) : (wx.temperature_f != null ? Math.round(wx.temperature_f) + '°F' : '--°F'));
         setText('wx-desc', wx.description || '--');
-        setText('wx-feels', wx.feels_like_f != null ? Math.round(wx.feels_like_f) : '--');
+        setText('wx-feels', window.formatTempF ? window.formatTempF(wx.feels_like_f) : (wx.feels_like_f != null ? Math.round(wx.feels_like_f) + '°F' : '--'));
         setText('wx-wind', formatWind(wx));
         setText('wx-humidity', wx.humidity != null ? Math.round(wx.humidity) : '--');
         setText('wx-pressure', wx.pressure_mb != null ? Math.round(wx.pressure_mb) : '--');
@@ -124,12 +126,17 @@ window.pvWeather = (function () {
 
     function formatWind(wx) {
         if (wx.wind_speed_mph == null) return '--';
-        let wind = `${Math.round(wx.wind_speed_mph)} mph`;
+        let wind = window.formatWindMph ? window.formatWindMph(wx.wind_speed_mph) : `${Math.round(wx.wind_speed_mph)} mph`;
         if (wx.wind_direction_label) wind += ` ${wx.wind_direction_label}`;
         if (wx.wind_gusts_mph && wx.wind_gusts_mph > wx.wind_speed_mph + 5) {
-            wind += ` (G${Math.round(wx.wind_gusts_mph)})`;
+            const gust = window.formatWindMph ? window.formatWindMph(wx.wind_gusts_mph) : `${Math.round(wx.wind_gusts_mph)} mph`;
+            wind += ` (G ${gust})`;
         }
         return wind;
+    }
+
+    function rerender() {
+        if (lastWeatherData) renderWeather(lastWeatherData);
     }
 
     function renderAlerts(alerts) {
@@ -325,6 +332,7 @@ window.pvWeather = (function () {
     return {
         init,
         fetchWeather,
+        rerender,
         toggleAlertDetail,
     };
 })();

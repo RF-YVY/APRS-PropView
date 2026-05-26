@@ -233,6 +233,33 @@ class PropViewMap {
         }
     }
 
+    searchStation(query) {
+        const needle = (query || '').trim().toUpperCase();
+        if (!needle) return { found: false, message: 'Enter a callsign to search.' };
+
+        const candidates = Object.keys(this.stationMeta);
+        const exact = candidates.find(call => call.toUpperCase() === needle);
+        const prefix = candidates.find(call => call.toUpperCase().startsWith(needle));
+        const partial = candidates.find(call => call.toUpperCase().includes(needle));
+        const call = exact || prefix || partial;
+        if (!call) return { found: false, message: `Station ${needle} is not on the map.` };
+
+        const meta = this.stationMeta[call];
+        const markers = meta.source === 'rf' ? this.rfMarkers : this.isMarkers;
+        const layer = meta.source === 'rf' ? this.rfLayer : this.isLayer;
+        const marker = markers[call];
+        if (!marker) return { found: false, message: `Station ${call} has no marker yet.` };
+        if (layer && !layer.hasLayer(marker)) layer.addLayer(marker);
+
+        const ll = marker.getLatLng();
+        this._runProgrammaticViewportChange(() => {
+            this.map.setView(ll, Math.max(this.map.getZoom(), 11), { animate: true });
+        });
+        marker.openPopup();
+        this._saveUIState();
+        return { found: true, callsign: call };
+    }
+
     async updateObservedRange(propTimestamp) {
         if (!this.myPosition) return;
         const now = Date.now();
@@ -340,7 +367,7 @@ class PropViewMap {
         // Determine direct-heard vs via-digi for RF stations
         const isDirect = source === 'rf' ? this._isDirectPath(station.last_path) : null;
         // Store metadata for type and path filtering
-        this.stationMeta[call] = { source, symbol_table: symTable, symbol_code: symCode, category, last_heard: station.last_heard || 0, is_direct: isDirect };
+        this.stationMeta[call] = { source, symbol_table: symTable, symbol_code: symCode, category, last_heard: station.last_heard || 0, is_direct: isDirect, station: { ...station } };
 
         const heardViaHtml = isDirect === true
             ? '<span style="color:#3fb950;font-weight:600;">Direct</span>'
@@ -633,6 +660,17 @@ class PropViewMap {
         return sectors[Math.floor((normalized + 22.5) / 45) % 8];
     }
 
+    refreshOpenPopups() {
+        for (const [call, meta] of Object.entries(this.stationMeta || {})) {
+            const markers = meta.source === 'rf' ? this.rfMarkers : this.isMarkers;
+            const marker = markers[call];
+            if (marker?.isPopupOpen?.() && meta.station) {
+                this.addOrUpdateStation(meta.station);
+                marker.openPopup();
+            }
+        }
+    }
+
     _weatherRowsHTML(station, category) {
         const symCode = station.symbol_code || '';
         const isWeather = category === 'weather' || symCode === '_' || station.packet_type === 'weather';
@@ -642,19 +680,19 @@ class PropViewMap {
         if (!wx) return '';
 
         const rows = [];
-        if (wx.temp_f !== undefined) rows.push(['Temp', `${wx.temp_f}&deg;F`]);
+        if (wx.temp_f !== undefined) rows.push(['Temp', window.formatTempF ? window.formatTempF(wx.temp_f) : `${wx.temp_f}&deg;F`]);
         if (wx.wind_mph !== undefined) {
             const dir = wx.wind_dir_deg !== undefined ? `${wx.wind_dir_deg}&deg; ` : '';
-            rows.push(['Wind', `${dir}${wx.wind_mph} mph`]);
+            rows.push(['Wind', `${dir}${window.formatWindMph ? window.formatWindMph(wx.wind_mph) : `${wx.wind_mph} mph`}`]);
         }
-        if (wx.gust_mph !== undefined) rows.push(['Gust', `${wx.gust_mph} mph`]);
+        if (wx.gust_mph !== undefined) rows.push(['Gust', window.formatWindMph ? window.formatWindMph(wx.gust_mph) : `${wx.gust_mph} mph`]);
         if (wx.humidity !== undefined) rows.push(['Humidity', `${wx.humidity}%`]);
         if (wx.pressure_mb !== undefined) rows.push(['Pressure', `${wx.pressure_mb.toFixed(1)} mb`]);
-        if (wx.rain_1h_in !== undefined) rows.push(['Rain 1h', `${wx.rain_1h_in.toFixed(2)} in`]);
-        if (wx.rain_24h_in !== undefined) rows.push(['Rain 24h', `${wx.rain_24h_in.toFixed(2)} in`]);
-        if (wx.rain_midnight_in !== undefined) rows.push(['Rain Today', `${wx.rain_midnight_in.toFixed(2)} in`]);
+        if (wx.rain_1h_in !== undefined) rows.push(['Rain 1h', window.formatRainIn ? window.formatRainIn(wx.rain_1h_in) : `${wx.rain_1h_in.toFixed(2)} in`]);
+        if (wx.rain_24h_in !== undefined) rows.push(['Rain 24h', window.formatRainIn ? window.formatRainIn(wx.rain_24h_in) : `${wx.rain_24h_in.toFixed(2)} in`]);
+        if (wx.rain_midnight_in !== undefined) rows.push(['Rain Today', window.formatRainIn ? window.formatRainIn(wx.rain_midnight_in) : `${wx.rain_midnight_in.toFixed(2)} in`]);
         if (wx.luminosity !== undefined) rows.push(['Luminosity', `${wx.luminosity}`]);
-        if (wx.snow_24h_in !== undefined) rows.push(['Snow 24h', `${wx.snow_24h_in.toFixed(1)} in`]);
+        if (wx.snow_24h_in !== undefined) rows.push(['Snow 24h', window.formatRainIn ? window.formatRainIn(wx.snow_24h_in, 1) : `${wx.snow_24h_in.toFixed(1)} in`]);
 
         if (!rows.length) return '';
         return rows
@@ -675,6 +713,12 @@ class PropViewMap {
         if (windDir !== undefined && windDir <= 360) wx.wind_dir_deg = windDir;
         const wind = read('s', 3);
         if (wind !== undefined) wx.wind_mph = wind;
+        const slashWind = raw.match(/^(\d{3})\/(\d{3})/);
+        if (slashWind) {
+            const dir = parseInt(slashWind[1], 10);
+            if (dir <= 360) wx.wind_dir_deg = dir;
+            wx.wind_mph = parseInt(slashWind[2], 10);
+        }
         const gust = read('g', 3);
         if (gust !== undefined) wx.gust_mph = gust;
         const temp = read('t', 3);

@@ -190,6 +190,7 @@ class WxNowTransmitter:
         self._last_position_tx = 0.0
         self._last_error = ""
         self._last_reading: Optional[WxNowReading] = None
+        self._last_info = ""
 
     def _station_call(self) -> str:
         base = (self.config.station.callsign or "N0CALL").strip().upper()
@@ -219,8 +220,44 @@ class WxNowTransmitter:
             "last_transmit": self._last_tx or None,
             "last_position_transmit": self._last_position_tx or None,
             "last_error": self._last_error,
+            "last_info": self._last_info,
             "age_seconds": age_seconds,
             "stale": stale,
+        }
+
+    def preview(self) -> dict:
+        """Build the next WXnow packet(s) without transmitting."""
+        wx = self.config.wxnow
+        if not wx.file_path:
+            raise ValueError("Choose a WXnow.txt file before enabling weather transmit.")
+
+        path = Path(wx.file_path).expanduser()
+        if not path.exists() or not path.is_file():
+            raise ValueError("WXnow.txt file was not found.")
+
+        stat = path.stat()
+        max_age = max(1, int(wx.max_age_minutes)) * 60
+        age = time.time() - stat.st_mtime
+        if age > max_age:
+            raise ValueError(f"WXnow.txt is stale ({int(age // 60)} minutes old).")
+
+        reading = parse_wxnow_text(path.read_text(encoding="ascii", errors="strict"), stat.st_mtime)
+        info = build_wxnow_info(self.config, reading)
+        position_info = None
+        if not wx.include_position:
+            now = time.time()
+            if not self._last_position_tx or now - self._last_position_tx >= POSITIONLESS_WX_POSITION_INTERVAL:
+                position_info = build_wxnow_position_info(self.config)
+
+        return {
+            "dry_run": True,
+            "info": info,
+            "position_info": position_info,
+            "station": self._station_call(),
+            "mode": (wx.mode or "both").strip().lower(),
+            "path": wx.path,
+            "age_seconds": age,
+            "unchanged": reading.signature == self._last_signature,
         }
 
     async def transmit_once(self, force: bool = False) -> dict:
@@ -262,7 +299,15 @@ class WxNowTransmitter:
         self._last_signature = reading.signature
         self._last_reading = reading
         self._last_tx = time.time()
+        self._last_info = info
         self._last_error = ""
+        if hasattr(self.handler, "record_transmit_history"):
+            self.handler.record_transmit_history(
+                "wxnow",
+                self._station_call(),
+                info,
+                result["message"],
+            )
         return {
             "transmitted": True,
             "message": result["message"],

@@ -44,6 +44,9 @@ class PacketHandler:
         self.aprs_is = None
         self.gps_manager = None
         self.rf_interfaces = []
+        self._last_beacon_tx = 0.0
+        self._last_beacon_info = ""
+        self._transmit_history: List[Dict[str, Any]] = []
 
         # Alert manager (set later via set_alert_manager)
         self._alert_manager = None
@@ -735,6 +738,40 @@ class PacketHandler:
             "message": status["message"].replace("will transmit", "transmitted"),
         }
 
+    def preview_beacon(self, mode: str = "both") -> Dict[str, Any]:
+        """Build the next station beacon without transmitting it."""
+        mode = (mode or "both").strip().lower()
+        if mode not in {"both", "rf", "aprs_is"}:
+            raise ValueError("Invalid transmit mode.")
+
+        status = self.get_beacon_status(mode=mode)
+        cfg = self.config.station
+        info = ""
+        if status["has_position"]:
+            info = make_position_packet(
+                cfg.full_callsign,
+                cfg.latitude,
+                cfg.longitude,
+                cfg.symbol_table,
+                cfg.symbol_code,
+                build_station_beacon_comment(
+                    comment=cfg.comment,
+                    phg=cfg.phg,
+                    equipment=cfg.equipment,
+                ),
+            )
+        path = (cfg.beacon_path or "").strip()
+        return {
+            **status,
+            "dry_run": True,
+            "source_call": cfg.full_callsign,
+            "destination": "APPRPV",
+            "path": path,
+            "info": info,
+            "rf_packet": f"{cfg.full_callsign}>APPRPV{',' + path if path else ''}:{info}" if info else "",
+            "aprs_is_packet": f"{cfg.full_callsign}>APPRPV,TCPIP*:{info}" if info else "",
+        }
+
     async def _send_beacon(self, mode: str = "both"):
         """Send our position beacon on RF and APRS-IS."""
         cfg = self.config.station
@@ -756,6 +793,7 @@ class PacketHandler:
         )
 
         # Beacon on RF
+        transmitted = False
         if mode in {"rf", "both"} and self.rf_interfaces:
             from server.ax25 import AX25Address
 
@@ -776,12 +814,14 @@ class PacketHandler:
 
             frame.info = info.encode("latin-1")
             if await self._transmit_rf(frame):
+                transmitted = True
                 await self._record_tx_packet(frame.to_aprs_string(), "RF TX")
             logger.info(f"Beacon RF TX: {cfg.full_callsign}>APPRPV via {path_str or 'DIRECT'}")
 
         # Beacon on APRS-IS
         if mode in {"aprs_is", "both"} and self.aprs_is and self.aprs_is.connected:
             if await self.aprs_is.send_position():
+                transmitted = True
                 is_info = make_position_packet(
                     cfg.full_callsign,
                     cfg.latitude,
@@ -803,6 +843,30 @@ class PacketHandler:
             logger.warning("Beacon: no APRS-IS interface available")
         elif mode == "both" and not self.rf_interfaces and not (self.aprs_is and self.aprs_is.connected):
             logger.warning("Beacon: no RF or APRS-IS interfaces available")
+
+        if transmitted:
+            self._last_beacon_tx = time.time()
+            self._last_beacon_info = info
+            self.record_transmit_history(
+                "station_beacon",
+                cfg.full_callsign,
+                info,
+                f"Station beacon via {mode}",
+            )
+
+    def record_transmit_history(self, feature: str, station: str, info: str, message: str = "") -> None:
+        """Record a compact transmit history entry for the web UI."""
+        self._transmit_history.insert(0, {
+            "timestamp": time.time(),
+            "feature": feature,
+            "station": station,
+            "info": info,
+            "message": message,
+        })
+        del self._transmit_history[40:]
+
+    def get_transmit_history(self) -> List[Dict[str, Any]]:
+        return list(self._transmit_history)
 
     async def _broadcast_stats(self):
         """Push current stats to all connected web clients."""

@@ -63,7 +63,7 @@ html, body {
 .m-header .is-chip.offline .value { color: var(--accent-red); }
 .m-quick-actions {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 8px;
     padding: 8px 10px;
     background: var(--bg-card);
@@ -163,13 +163,15 @@ html, body {
 .m-empty .title { color: var(--text); font-weight: 700; font-size: 13px; margin-bottom: 4px; }
 .m-empty .copy { font-size: 12px; line-height: 1.45; }
 .msg-filter-bar {
-    display: flex; gap: 4px; padding: 6px 8px; background: var(--bg-card);
+    display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px; background: var(--bg-card);
     border-bottom: 1px solid var(--border); flex-shrink: 0;
 }
-.msg-filter-bar button {
+.msg-filter-bar button,
+.msg-filter-bar select {
     background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px;
     color: var(--text-muted); font-size: 11px; padding: 4px 10px; cursor: pointer;
 }
+.msg-filter-bar select { color: var(--text); max-width: 120px; }
 .msg-filter-bar button.active { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
 
 /* ── Map ────────────────────────────────── */
@@ -296,6 +298,11 @@ html, body {
                 <button data-f="mine">Mine</button>
                 <button data-f="rx">Received</button>
                 <button data-f="tx">Sent</button>
+                <select id="m-msg-sort" title="Message order">
+                    <option value="asc">Oldest first</option>
+                    <option value="desc">Newest first</option>
+                </select>
+                <button id="m-btn-refresh" type="button" title="Refresh messages and weather">Refresh</button>
             </div>
             <div class="msg-list" id="m-msg-list"><div class="msg-empty">No messages yet.</div></div>
             <div class="msg-compose">
@@ -435,9 +442,10 @@ html, body {
 // ── State ──────────────────────────────────────────────────
 const MOBILE_TAB_KEY = 'pvMobileTab';
 const MOBILE_MSG_FILTER_KEY = 'pvMobileMsgFilter';
+const MOBILE_MSG_SORT_KEY = 'pvMobileMsgSort';
 
 const S = {
-    ws: null, connected: false, myCall: '', messages: [], msgFilter: 'all',
+    ws: null, connected: false, myCall: '', messages: [], msgFilter: 'all', msgSort: 'asc',
     rfStations: {}, isStations: {},
     map: null, mapReady: false, rfMarkers: {}, isMarkers: {},
     rfLayer: null, isLayer: null, myMarker: null, myPos: null, baseTileLayer: null,
@@ -511,6 +519,16 @@ document.querySelector('.msg-filter-bar').addEventListener('click', e => {
     renderMessages();
 });
 
+$('m-msg-sort').addEventListener('change', e => {
+    S.msgSort = e.target.value === 'desc' ? 'desc' : 'asc';
+    localStorage.setItem(MOBILE_MSG_SORT_KEY, S.msgSort);
+    renderMessages();
+});
+
+$('m-btn-refresh').addEventListener('click', async () => {
+    await Promise.all([loadMobileMessages(), loadWeather()]);
+});
+
 // ── Send message ───────────────────────────────────────────
 $('m-btn-send').addEventListener('click', sendMsg);
 $('m-msg-text').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); sendMsg(); } });
@@ -571,8 +589,10 @@ function renderMessages() {
         return;
     }
 
-    // Oldest first (chat style)
-    const sorted = [...msgs].reverse();
+    const sorted = [...msgs].sort((a, b) => {
+        const diff = Number(a.timestamp || 0) - Number(b.timestamp || 0);
+        return S.msgSort === 'desc' ? -diff : diff;
+    });
     list.innerHTML = sorted.map(m => {
         const isTx = m.direction === 'tx';
         let ackHtml = '';
@@ -590,7 +610,19 @@ function renderMessages() {
             <div class="meta"><span>${fmtTime(m.timestamp)}</span><span>${src}</span>${ackHtml}</div>
         </div>`;
     }).join('');
-    list.scrollTop = list.scrollHeight;
+    list.scrollTop = S.msgSort === 'asc' ? list.scrollHeight : 0;
+}
+
+async function loadMobileMessages() {
+    try {
+        const r = await fetch('/api/messages?limit=500');
+        const d = await r.json();
+        if (d.messages) S.messages = d.messages;
+    } catch { /* silent */ }
+    finally {
+        S.messagesLoaded = true;
+        renderMessages();
+    }
 }
 
 function updateBadge() {
@@ -1049,6 +1081,8 @@ function toggleMobileGps() {
 async function init() {
     S.activeTab = localStorage.getItem(MOBILE_TAB_KEY) || S.activeTab;
     S.msgFilter = localStorage.getItem(MOBILE_MSG_FILTER_KEY) || S.msgFilter;
+    S.msgSort = localStorage.getItem(MOBILE_MSG_SORT_KEY) || S.msgSort;
+    if ($('m-msg-sort')) $('m-msg-sort').value = S.msgSort;
     syncMsgFilterButtons();
     try {
         const r = await fetch('/api/config');
@@ -1061,13 +1095,7 @@ async function init() {
     renderStations();
     connectWS();
 
-    // Load messages via REST
-    try {
-        const r = await fetch('/api/messages?limit=500');
-        const d = await r.json();
-        if (d.messages) { S.messages = d.messages; }
-    } catch { /* silent */ }
-    finally { S.messagesLoaded = true; renderMessages(); }
+    await loadMobileMessages();
 
     // Load version
     try {
