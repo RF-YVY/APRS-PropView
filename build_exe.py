@@ -96,7 +96,7 @@ def _write_manifest(path):
   <assemblyIdentity
     type="win32"
     name="WickerMade.APRSPropView"
-    version="1.5.3"
+    version="1.5.3.0"
     processorArchitecture="amd64"
   />
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
