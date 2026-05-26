@@ -1677,7 +1677,7 @@
         const descriptions = {
             'cfg-web-host': 'Network address the web UI binds to. 127.0.0.1 is local-only; 0.0.0.0 allows LAN access.',
             'cfg-web-port': 'TCP port for the web UI. Changing it requires using the new port in your browser.',
-            'cfg-unit-system': 'Controls distance, weather temperature, and wind units throughout the web UI.',
+            'cfg-unit-system': 'Switches distance, weather temperature, wind, and precipitation displays between Imperial and Metric units.',
             'cfg-wx-wxnow-conditions': 'When WXnow supplies station measurements, Open-Meteo is queried only for general condition text and icon.',
             'cfg-status-source': 'Chooses what the periodic status beacon says: propagation, preset text, or direct-heard stations.',
             'cfg-status-dynamic-order': 'Chooses whether preset messages rotate in order or are selected randomly.',
@@ -1694,8 +1694,8 @@
             const targetId = label.getAttribute('for') || row.querySelector('[id^="cfg-"]')?.id || '';
             const labelText = (label.textContent || '').trim();
             if (!labelText) return;
-            const sectionTitle = row.closest('.settings-section')?.querySelector('h3')?.textContent?.trim() || 'this section';
-            const text = descriptions[targetId] || `Controls ${labelText.toLowerCase()} for ${sectionTitle}.`;
+            const text = descriptions[targetId];
+            if (!text) return;
             const desc = document.createElement('div');
             desc.className = 'setting-description';
             desc.textContent = text;
