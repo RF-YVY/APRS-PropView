@@ -47,7 +47,7 @@ window.pvMessages = (function () {
             sortEl.value = localStorage.getItem(SORT_STORAGE_KEY) || 'desc';
             sortEl.addEventListener('change', () => {
                 localStorage.setItem(SORT_STORAGE_KEY, sortEl.value || 'desc');
-                renderMessages();
+                renderMessages({ scrollToLatest: true });
             });
         }
         document.getElementById('btn-save-contact')?.addEventListener('click', saveCurrentContact);
@@ -165,12 +165,14 @@ window.pvMessages = (function () {
 
         refreshMyCallsign();
 
+        const followLatest = shouldFollowLatestForMessage(msg);
         const isNew = upsertLocalMessage(msg);
         hasLoadedInitialMessages = true;
         if (selectedConversation && conversationCall(msg) === selectedConversation) {
             markConversationRead(selectedConversation);
         }
         if (isNew) refreshContacts();
+        renderMessages({ scrollToLatest: followLatest });
 
         // Show alert banner for messages addressed to us
         if (
@@ -253,7 +255,7 @@ window.pvMessages = (function () {
         if (toEl) toEl.value = selectedConversation;
         markConversationRead(selectedConversation);
         renderContacts();
-        renderMessages();
+        renderMessages({ scrollToLatest: true });
     }
 
     function messageKey(msg) {
@@ -269,11 +271,9 @@ window.pvMessages = (function () {
         const index = messages.findIndex(existing => messageKey(existing) === key);
         if (index >= 0) {
             messages[index] = { ...messages[index], ...msg };
-            renderMessages();
             return false;
         }
         messages.unshift(msg);
-        renderMessages();
         return true;
     }
 
@@ -422,7 +422,7 @@ window.pvMessages = (function () {
         `).join('');
     }
 
-    function renderMessages() {
+    function renderMessages(options = {}) {
         const list = document.getElementById('msg-list');
         const countEl = document.getElementById('msg-count');
         if (!list) return;
@@ -504,6 +504,34 @@ window.pvMessages = (function () {
                 </div>
             `;
         }).join('');
+
+        if (options.scrollToLatest) {
+            scrollToLatestMessage();
+        }
+    }
+
+    function shouldFollowLatestForMessage(msg) {
+        if (!selectedConversation || conversationCall(msg) !== selectedConversation) return false;
+        if (msg.direction === 'tx') return true;
+
+        const list = document.getElementById('msg-list');
+        if (!list) return true;
+
+        const sortOrder = document.getElementById('msg-sort-order')?.value || 'desc';
+        if (sortOrder === 'asc') {
+            return list.scrollHeight - list.scrollTop - list.clientHeight < 48;
+        }
+        return list.scrollTop < 48;
+    }
+
+    function scrollToLatestMessage() {
+        const list = document.getElementById('msg-list');
+        if (!list) return;
+
+        requestAnimationFrame(() => {
+            const sortOrder = document.getElementById('msg-sort-order')?.value || 'desc';
+            list.scrollTop = sortOrder === 'asc' ? list.scrollHeight : 0;
+        });
     }
 
     // ── Alert Banner ───────────────────────────────────────────

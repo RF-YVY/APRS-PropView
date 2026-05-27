@@ -164,7 +164,12 @@ class StationTracker:
         is_own_packet = callsign.upper() in self._propview_transmit_callsigns()
         if is_own_packet:
             await self._log_packet_only(packet, port_name)
-            logger.debug("Ignoring own PropView packet for station tracking: %s", callsign)
+            logger.info(
+                "%s: %s [%s] logged as own PropView packet; not added to station list",
+                "RF" if source == "rf" else "APRS-IS",
+                callsign,
+                packet.packet_type or "other",
+            )
             return
 
         # Calculate distance if we have both positions

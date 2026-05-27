@@ -488,7 +488,7 @@
                         <p class="analytics-desc">Today vs. yesterday vs. 7-day average — station count and max distance by hour.</p>
                         <h4>Station Count</h4>
                         <canvas id="historical-count-chart" width="380" height="160"></canvas>
-                        <h4>Max Distance (km)</h4>
+                        <h4>Max Distance</h4>
                         <canvas id="historical-dist-chart" width="380" height="160"></canvas>
                     </div>
 
@@ -710,7 +710,10 @@
                         <input type="hidden" id="cfg-symbol-code" value="#">
                         <div class="settings-row">
                             <label for="cfg-phg">PHG</label>
-                            <input type="text" id="cfg-phg" maxlength="4" placeholder="5130">
+                            <div class="inline-field-actions">
+                                <input type="text" id="cfg-phg" maxlength="4" placeholder="5130">
+                                <button type="button" class="btn-small" id="btn-phg-calculator">Calculator</button>
+                            </div>
                         </div>
                         <div class="settings-row">
                             <label for="cfg-equipment">Equipment</label>
@@ -734,12 +737,12 @@
                             </select>
                         </div>
                         <div class="settings-row settings-row-stacked">
-                            <label>Station Beacon Preview</label>
+                            <label>Station Beacon Preview (RF + APRS-IS)</label>
                             <div id="cfg-beacon-preview" class="status-preview">Preview has not been run.</div>
                         </div>
                         <div class="settings-row">
                             <label></label>
-                            <button type="button" class="btn-small" id="btn-beacon-preview">Preview Station Beacon</button>
+                            <button type="button" class="btn-small" id="btn-beacon-preview">Preview RF + APRS-IS Beacon</button>
                             <button type="button" class="btn-small" id="btn-beacon-transmit">Transmit Station Now</button>
                         </div>
                         <p class="settings-note settings-warning">APRS etiquette: keep routine fixed-station beacons at 10 minutes or slower, and use the shortest RF path that covers your local need. DIRECT is best when an IGate or digipeater can hear you directly.</p>
@@ -978,14 +981,6 @@
                             <textarea id="cfg-status-dynamic-messages" rows="4" placeholder="One status message per line"></textarea>
                         </div>
                         <div class="settings-row">
-                            <label for="cfg-status-weather-alerts">Beacon Severe WX Alerts</label>
-                            <input type="checkbox" id="cfg-status-weather-alerts">
-                        </div>
-                        <div class="settings-row">
-                            <label for="cfg-status-weather-cooldown">WX Alert Cooldown (min)</label>
-                            <input type="number" id="cfg-status-weather-cooldown" min="1" max="1440" step="1" value="30">
-                        </div>
-                        <div class="settings-row">
                             <label for="cfg-status-mode">Transmit Via</label>
                             <select id="cfg-status-mode">
                                 <option value="both">RF + APRS-IS</option>
@@ -1005,10 +1000,6 @@
                         <div class="settings-row settings-row-stacked">
                             <label>Status Preview</label>
                             <div id="cfg-status-preview" class="status-preview">Not checked</div>
-                        </div>
-                        <div class="settings-row settings-row-stacked">
-                            <label>Weather Alert Preview</label>
-                            <div id="cfg-status-alert-preview" class="status-preview">Not checked</div>
                         </div>
                         <div class="settings-row">
                             <label></label>
@@ -1172,11 +1163,47 @@
                                 <label for="cfg-wx-elevated-cooldown">Cooldown After Trigger (min)</label>
                                 <input type="number" id="cfg-wx-elevated-cooldown" min="1" max="120" step="1" value="15">
                             </div>
-                            <div class="settings-row">
-                                <label for="cfg-wx-elevated-events">Trigger Events</label>
-                                <input type="text" id="cfg-wx-elevated-events" placeholder="Tornado Watch, Severe Thunderstorm Watch">
-                            </div>
+                            <details class="weather-alert-groups">
+                                <summary>
+                                    <span>Trigger Events</span>
+                                    <span id="cfg-wx-elevated-events-summary" class="filter-preview">Default watch triggers</span>
+                                </summary>
+                                <div class="weather-alert-groups-grid">
+                                    <label><input type="checkbox" name="cfg-wx-elevated-event" value="Tornado Warning"> Tornado Warning</label>
+                                    <label><input type="checkbox" name="cfg-wx-elevated-event" value="Tornado Watch"> Tornado Watch</label>
+                                    <label><input type="checkbox" name="cfg-wx-elevated-event" value="Severe Thunderstorm Warning"> Severe Thunderstorm Warning</label>
+                                    <label><input type="checkbox" name="cfg-wx-elevated-event" value="Severe Thunderstorm Watch"> Severe Thunderstorm Watch</label>
+                                    <label><input type="checkbox" name="cfg-wx-elevated-event" value="Flash Flood Warning"> Flash Flood Warning</label>
+                                    <label><input type="checkbox" name="cfg-wx-elevated-event" value="Flood Warning"> Flood Warning</label>
+                                    <label><input type="checkbox" name="cfg-wx-elevated-event" value="Winter Storm Warning"> Winter Storm Warning</label>
+                                    <label><input type="checkbox" name="cfg-wx-elevated-event" value="Special Weather Statement"> Special Weather Statement</label>
+                                </div>
+                                <div class="settings-row settings-row-stacked">
+                                    <label for="cfg-wx-elevated-events-custom">Other Trigger Events</label>
+                                    <input type="text" id="cfg-wx-elevated-events-custom" placeholder="Comma-separated event names">
+                                </div>
+                            </details>
                             <p class="weather-overlay-note">When any configured trigger event is active in the selected alert scope, alert polling automatically increases to the elevated interval so new warnings are picked up faster.</p>
+                        </div>
+                        <div class="weather-overlay-card">
+                            <div class="weather-overlay-title">Weather Alert Beacons</div>
+                            <div class="settings-row">
+                                <label for="cfg-status-weather-alerts">Beacon Severe WX Alerts</label>
+                                <input type="checkbox" id="cfg-status-weather-alerts">
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-status-weather-cooldown">WX Alert Cooldown (min)</label>
+                                <input type="number" id="cfg-status-weather-cooldown" min="1" max="1440" step="1" value="30">
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-alert-symbol">Alert Station Symbol</label>
+                                <input type="checkbox" id="cfg-wx-alert-symbol">
+                            </div>
+                            <p class="weather-overlay-note">When enabled, active tornado or severe thunderstorm alerts temporarily change your station symbol on the map and station beacon preview/transmit. The saved user-selected symbol returns automatically after the alert expires or clears.</p>
+                            <div class="settings-row settings-row-stacked">
+                                <label>Weather Alert Preview</label>
+                                <div id="cfg-status-alert-preview" class="status-preview">Not checked</div>
+                            </div>
                         </div>
                         <div class="weather-overlay-card">
                             <div class="weather-overlay-title">Map Overlays</div>
@@ -1188,7 +1215,26 @@
                                 <label for="cfg-wx-radar-provider">Radar Source</label>
                                 <select id="cfg-wx-radar-provider">
                                     <option value="rainviewer">RainViewer tiles</option>
+                                    <option value="iem_nexrad">Iowa State IEM NEXRAD WMS</option>
+                                    <option value="custom_xyz">Custom XYZ tiles</option>
+                                    <option value="custom_wms">Custom WMS layer</option>
                                 </select>
+                            </div>
+                            <div class="settings-row wx-radar-custom wx-radar-custom-url">
+                                <label for="cfg-wx-radar-custom-url">Custom URL</label>
+                                <input type="text" id="cfg-wx-radar-custom-url" placeholder="https://example.com/radar/{z}/{x}/{y}.png or WMS base URL">
+                            </div>
+                            <div class="settings-row wx-radar-custom wx-radar-custom-layer">
+                                <label for="cfg-wx-radar-custom-layer">WMS Layer</label>
+                                <input type="text" id="cfg-wx-radar-custom-layer" placeholder="Layer name for custom WMS">
+                            </div>
+                            <div class="settings-row wx-radar-custom">
+                                <label for="cfg-wx-radar-custom-key">API Key / Token</label>
+                                <input type="password" id="cfg-wx-radar-custom-key" placeholder="Optional; use {key} in URL">
+                            </div>
+                            <div class="settings-row wx-radar-custom">
+                                <label for="cfg-wx-radar-custom-attribution">Attribution</label>
+                                <input type="text" id="cfg-wx-radar-custom-attribution" placeholder="Required provider attribution">
                             </div>
                             <div class="settings-row">
                                 <label for="cfg-wx-radar-opacity">Radar Opacity</label>
@@ -1220,7 +1266,7 @@
                                     <label><input type="checkbox" name="cfg-wx-alert-group" value="other"> Other</label>
                                 </div>
                             </details>
-                            <p class="weather-overlay-note">Radar animation is provider-based. Alert polygons display only when the selected alert source returns geometry.</p>
+                            <p class="weather-overlay-note">RainViewer supports animation. IEM NEXRAD and custom sources display as static overlays. For commercial feeds such as AllisonHouse or Baron, use the provider's tile/WMS URL and credentials from your account.</p>
                         </div>
                     </div>
 
@@ -1343,6 +1389,14 @@
                             <label for="cfg-alerts-msg-sms">SMS</label>
                             <input type="checkbox" id="cfg-alerts-msg-sms">
                         </div>
+                        <div class="settings-row">
+                            <label></label>
+                            <button type="button" class="btn-small" id="btn-alerts-msg-test">Send Test Message Notification</button>
+                        </div>
+                        <div class="settings-row settings-row-stacked">
+                            <label>Message Test Result</label>
+                            <div id="cfg-alerts-msg-test-status" class="status-preview">Not sent</div>
+                        </div>
 
                         <h4 style="color:var(--accent-purple);margin:10px 0 6px;">Discord Settings</h4>
                         <div class="settings-row">
@@ -1404,6 +1458,11 @@
                             <label for="cfg-mqtt-pass">Password</label>
                             <input type="password" id="cfg-mqtt-pass" placeholder="(optional)">
                         </div>
+                        <div class="settings-row">
+                            <label></label>
+                            <button type="button" class="btn-small" id="btn-mqtt-guide">Open MQTT Setup Guide</button>
+                        </div>
+                        <p class="settings-note">PropView publishes to an MQTT broker. Home Assistant, Node-RED, and dashboards usually subscribe to that broker rather than receiving MQTT directly from PropView.</p>
                     </div>
 
                     <div class="settings-actions">
@@ -1418,7 +1477,7 @@
                 <div class="about-panel">
                     <div class="about-header">
                         <h2>APRS PropView</h2>
-                        <span id="about-version" class="about-version">v1.5.3</span>
+                        <span id="about-version" class="about-version">v1.5.4</span>
                     </div>
                     <div class="about-section">
                         <p>A real-time APRS digipeater and IGate focused on VHF propagation, live mapping, APRS messaging, analytics, and weather-aware situational awareness.</p>
@@ -1434,8 +1493,8 @@
                     </div>
                     <div class="about-section">
                         <h3>Build Info</h3>
-                        <p>Version: <span id="about-version-detail">1.5.3</span></p>
-                        <p>Release Date: <span id="about-date">May 26, 2026</span></p>
+                        <p>Version: <span id="about-version-detail">1.5.4</span></p>
+                        <p>Release Date: <span id="about-date">May 27, 2026</span></p>
                         <p>Highlights: beacon preview/transmit controls, transmit history, settings backup/import, first-run guidance, APRS-IS filter helpers, metric units, WXnow improvements, and dynamic/status/MHeard/weather-alert beacons.</p>
                     </div>
                     <div class="about-section">
@@ -1495,6 +1554,51 @@
     </footer>
 
     <!-- ── APRS Icon Picker Modal ──────────────────────────────── -->
+    <div id="phg-calculator-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-content phg-calculator-modal">
+            <div class="modal-header">
+                <h3>PHG Calculator</h3>
+                <button id="phg-calculator-close" class="modal-close">&times;</button>
+            </div>
+            <div class="phg-calculator-grid">
+                <div class="settings-row">
+                    <label for="phg-calc-power">Power (watts)</label>
+                    <input type="number" id="phg-calc-power" min="0" max="1000" step="1" value="25">
+                </div>
+                <div class="settings-row">
+                    <label for="phg-calc-height">Antenna HAAT (ft)</label>
+                    <input type="number" id="phg-calc-height" min="0" max="10000" step="10" value="320">
+                </div>
+                <div class="settings-row">
+                    <label for="phg-calc-gain">Antenna Gain (dBi)</label>
+                    <input type="number" id="phg-calc-gain" min="0" max="9" step="1" value="3">
+                </div>
+                <div class="settings-row">
+                    <label for="phg-calc-direction">Directivity</label>
+                    <select id="phg-calc-direction">
+                        <option value="0">Omnidirectional</option>
+                        <option value="1">NE / 45 deg</option>
+                        <option value="2">E / 90 deg</option>
+                        <option value="3">SE / 135 deg</option>
+                        <option value="4">S / 180 deg</option>
+                        <option value="5">SW / 225 deg</option>
+                        <option value="6">W / 270 deg</option>
+                        <option value="7">NW / 315 deg</option>
+                        <option value="8">N / 360 deg</option>
+                    </select>
+                </div>
+            </div>
+            <div class="phg-result">
+                <span>Calculated PHG</span>
+                <strong id="phg-calc-result">5130</strong>
+            </div>
+            <p class="settings-note">PHG digits encode power, antenna height above average terrain, antenna gain, and directivity. Use your best practical estimate if exact HAAT is unknown.</p>
+            <div class="modal-footer">
+                <button type="button" class="btn-small" id="btn-phg-apply">Use This PHG</button>
+            </div>
+        </div>
+    </div>
+
     <div id="icon-picker-modal" class="modal-overlay" style="display:none;">
         <div class="modal-content icon-picker-modal">
             <div class="modal-header">

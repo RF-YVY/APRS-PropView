@@ -37,6 +37,17 @@
         serial: 'Serial KISS/TNC2',
         tcp: 'TCP KISS',
     };
+    const ELEVATED_EVENT_CHOICES = [
+        'Tornado Warning',
+        'Tornado Watch',
+        'Severe Thunderstorm Warning',
+        'Severe Thunderstorm Watch',
+        'Flash Flood Warning',
+        'Flood Warning',
+        'Winter Storm Warning',
+        'Special Weather Statement',
+    ];
+    const PHG_HEIGHT_FEET = [10, 20, 40, 80, 160, 320, 640, 1280, 2560, 5120];
     let lastStatus = null;
     let manualBeaconPending = false;
     let liveSyncPending = false;
@@ -46,6 +57,7 @@
     let settingsLoading = false;
     let settingsDirty = false;
     let lastNonSettingsTab = 'tab-rf';
+    let aprsIsPasscodeConfigured = false;
 
     async function loadConfig(force) {
         if (force || !window.pvConfigPromise) {
@@ -217,6 +229,7 @@
         // Init weather module
         window.pvWeather.init();
         initWeatherSettingsUi();
+        initPhgCalculator();
         initWxNowControls();
         initStatusDxControls();
         initAlertTestControls();
@@ -1064,7 +1077,7 @@
         const gpsCurrent = status.gps?.current;
         const gpsDrivesMap = !!(status.gps?.enabled && status.gps?.map_update_enabled && gpsCurrent);
         if (!gpsDrivesMap && status.latitude && status.longitude && status.latitude !== 0) {
-            window.pvMap.setMyPosition(status.latitude, status.longitude, status.station);
+            window.pvMap.setMyPosition(status.latitude, status.longitude, status.station, status.station_info || {});
         }
     }
 
@@ -1079,7 +1092,12 @@
                 textEl.textContent = `${current.source}: ${current.latitude.toFixed(5)}, ${current.longitude.toFixed(5)} (${applied}, ${age}s ago)`;
             }
             if (gps.enabled && gps.map_update_enabled) {
-                window.pvMap?.setMyPosition(current.latitude, current.longitude, lastStatus?.station || 'GPS');
+                window.pvMap?.setMyPosition(
+                    current.latitude,
+                    current.longitude,
+                    lastStatus?.station || 'GPS',
+                    lastStatus?.station_info || {}
+                );
             }
             if (current.applied_to_station) {
                 setVal('cfg-latitude', current.latitude.toFixed(5));
@@ -1457,7 +1475,7 @@
 
         banner.dataset.latestVersion = latestVersion;
         textEl.textContent = `A newer APRS PropView release is available: v${latestVersion}.`;
-        linkEl.href = data.release_url || 'https://github.com/RF-YVY/APRS-PropView/releases';
+        linkEl.href = 'https://github.com/RF-YVY/APRS-PropView/releases';
         banner.style.display = 'flex';
     }
 
@@ -1497,9 +1515,9 @@
 
     function renderUpdateStatus(data, els) {
         const { messageEl, detailEl, linkEl, footerEl } = els;
-        const currentVersion = data?.current_version || '1.5.3';
+        const currentVersion = data?.current_version || '1.5.4';
         const latestVersion = data?.latest_version || currentVersion;
-        const releaseUrl = data?.release_url || 'https://github.com/RF-YVY/APRS-PropView/releases';
+        const releaseUrl = 'https://github.com/RF-YVY/APRS-PropView/releases';
         const publishedAt = data?.published_at ? formatReleaseDate(data.published_at) : '';
 
         if (linkEl) linkEl.href = releaseUrl;
@@ -1742,6 +1760,8 @@
         const lat = parseFloat(getVal('cfg-latitude'));
         const lon = parseFloat(getVal('cfg-longitude'));
         const pass = (getVal('cfg-is-passcode') || '').trim();
+        const passcodeConfigured = (!!pass && pass !== '-1' && !pass.includes('*')) ||
+            (!!aprsIsPasscodeConfigured && pass.includes('*'));
         const aprsFilter = buildFilterString();
         const ports = collectRfPorts();
         const path = getVal('cfg-beacon-path') || '';
@@ -1749,8 +1769,8 @@
         const items = [
             ['callsign', !!call && !['N0CALL', 'NOCALL', 'MYCALL', 'TEST'].includes(call), 'Callsign set'],
             ['location', Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0), 'Station location set'],
-            ['passcode', !!pass && pass !== '-1' && !pass.includes('*'), 'APRS-IS passcode set for transmitting'],
-            ['filter', !!aprsFilter, 'APRS-IS server filter set, for example r/35/-79/80'],
+            ['passcode', passcodeConfigured, 'APRS-IS passcode set for transmitting'],
+            ['filter', !!aprsFilter, 'APRS-IS server filter set, for example r/35/-79/80 or r/35.5/-79.8/80'],
             ['rf', ports.some((port) => port.enabled), 'At least one RF port configured'],
             ['path', path !== undefined, `Beacon path chosen (${path || 'DIRECT'})`],
             ['save', !settingsDirty, 'Settings saved'],
@@ -2102,6 +2122,7 @@
             setVal('cfg-is-server', cfg.aprs_is?.server);
             setVal('cfg-is-port', cfg.aprs_is?.port);
             setVal('cfg-is-passcode', cfg.aprs_is?.passcode);
+            aprsIsPasscodeConfigured = !!cfg.aprs_is?.passcode_configured;
             parseFilterIntoFields(cfg.aprs_is?.filter || '');
 
             renderRfPorts(rfPortsFromConfig(cfg));
@@ -2205,6 +2226,10 @@
             setVal('cfg-wx-refresh', cfg.weather?.refresh_minutes);
             setChk('cfg-wx-radar-enabled', cfg.weather?.radar_enabled);
             setVal('cfg-wx-radar-provider', cfg.weather?.radar_provider || 'rainviewer');
+            setVal('cfg-wx-radar-custom-url', cfg.weather?.radar_custom_url || '');
+            setVal('cfg-wx-radar-custom-layer', cfg.weather?.radar_custom_layer || '');
+            setVal('cfg-wx-radar-custom-attribution', cfg.weather?.radar_custom_attribution || '');
+            setVal('cfg-wx-radar-custom-key', cfg.weather?.radar_custom_api_key || '');
             setVal('cfg-wx-radar-opacity', cfg.weather?.radar_opacity ?? 0.55);
             setChk('cfg-wx-radar-animate', cfg.weather?.radar_animate ?? true);
             setChk('cfg-wx-alert-overlay-enabled', cfg.weather?.alert_overlay_enabled);
@@ -2214,9 +2239,12 @@
             setChk('cfg-wx-elevated-enabled', cfg.weather?.elevated_alert_polling_enabled);
             setVal('cfg-wx-elevated-seconds', cfg.weather?.elevated_alert_polling_seconds ?? 60);
             setVal('cfg-wx-elevated-cooldown', cfg.weather?.elevated_alert_cooldown_minutes ?? 15);
-            setVal('cfg-wx-elevated-events', (cfg.weather?.elevated_trigger_events || []).join(', '));
+            setElevatedTriggerEvents(cfg.weather?.elevated_trigger_events || []);
+            setChk('cfg-wx-alert-symbol', cfg.weather?.weather_alert_symbol_enabled);
             updateWeatherOverlayOpacityLabel();
             updateWeatherAlertGroupSummary();
+            updateElevatedTriggerSummary();
+            updateRadarProviderUi();
             updateWeatherProviderUi();
             updateWeatherAlertScopePreview();
 
@@ -2396,6 +2424,10 @@
                 refresh_minutes: getVal('cfg-wx-refresh'),
                 radar_enabled: getChk('cfg-wx-radar-enabled'),
                 radar_provider: getVal('cfg-wx-radar-provider') || 'rainviewer',
+                radar_custom_url: getVal('cfg-wx-radar-custom-url') || '',
+                radar_custom_layer: getVal('cfg-wx-radar-custom-layer') || '',
+                radar_custom_attribution: getVal('cfg-wx-radar-custom-attribution') || '',
+                radar_custom_api_key: getVal('cfg-wx-radar-custom-key') || '',
                 radar_opacity: parseFloat(getVal('cfg-wx-radar-opacity')) || 0.55,
                 radar_animate: getChk('cfg-wx-radar-animate'),
                 alert_overlay_enabled: getChk('cfg-wx-alert-overlay-enabled'),
@@ -2405,7 +2437,8 @@
                 elevated_alert_polling_enabled: getChk('cfg-wx-elevated-enabled'),
                 elevated_alert_polling_seconds: parseInt(getVal('cfg-wx-elevated-seconds')) || 60,
                 elevated_alert_cooldown_minutes: parseInt(getVal('cfg-wx-elevated-cooldown')) || 15,
-                elevated_trigger_events: parseCsvList(getVal('cfg-wx-elevated-events')),
+                elevated_trigger_events: getElevatedTriggerEvents(),
+                weather_alert_symbol_enabled: getChk('cfg-wx-alert-symbol'),
             },
             propagation: {
                 my_station_full_count: parseInt(getVal('cfg-prop-my-count')) || 10,
@@ -2441,6 +2474,10 @@
                 const delay = result.needRestart ? 10000 : 5000;
             }
             if (result.success) {
+                const savedPass = (body.aprs_is.passcode || '').trim();
+                if (savedPass && savedPass !== '-1' && !savedPass.includes('*')) {
+                    aprsIsPasscodeConfigured = true;
+                }
                 clearSettingsDirty();
                 updateFirstRunChecklist();
                 window.pvConfigPromise = null;
@@ -2527,6 +2564,53 @@
         });
     }
 
+    function initPhgCalculator() {
+        const modal = document.getElementById('phg-calculator-modal');
+        const openBtn = document.getElementById('btn-phg-calculator');
+        const closeBtn = document.getElementById('phg-calculator-close');
+        const applyBtn = document.getElementById('btn-phg-apply');
+        if (!modal || !openBtn) return;
+
+        const update = () => {
+            const result = document.getElementById('phg-calc-result');
+            if (result) result.textContent = calculatePhg();
+        };
+        ['phg-calc-power', 'phg-calc-height', 'phg-calc-gain', 'phg-calc-direction'].forEach((id) => {
+            document.getElementById(id)?.addEventListener('input', update);
+            document.getElementById(id)?.addEventListener('change', update);
+        });
+
+        openBtn.addEventListener('click', () => {
+            modal.style.display = 'flex';
+            update();
+        });
+        closeBtn?.addEventListener('click', () => {
+            modal.style.display = 'none';
+        });
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) modal.style.display = 'none';
+        });
+        applyBtn?.addEventListener('click', () => {
+            setVal('cfg-phg', calculatePhg());
+            markSettingsDirty('PHG updated from calculator.');
+            updateFirstRunChecklist();
+            modal.style.display = 'none';
+        });
+    }
+
+    function calculatePhg() {
+        const watts = Math.max(0, parseFloat(getVal('phg-calc-power')) || 0);
+        const height = Math.max(0, parseFloat(getVal('phg-calc-height')) || 0);
+        const gain = Math.max(0, Math.min(9, Math.round(parseFloat(getVal('phg-calc-gain')) || 0)));
+        const direction = Math.max(0, Math.min(8, parseInt(getVal('phg-calc-direction'), 10) || 0));
+        const powerDigit = Math.max(0, Math.min(9, Math.round(Math.sqrt(watts))));
+        let heightDigit = 0;
+        for (let i = 0; i < PHG_HEIGHT_FEET.length; i += 1) {
+            if (height >= PHG_HEIGHT_FEET[i]) heightDigit = i;
+        }
+        return `${powerDigit}${heightDigit}${gain}${direction}`;
+    }
+
     function initBeaconPreviewControls() {
         document.getElementById('btn-beacon-preview')?.addEventListener('click', previewStationBeacon);
         document.getElementById('btn-beacon-transmit')?.addEventListener('click', transmitStationBeaconFromSettings);
@@ -2583,14 +2667,15 @@
         const preview = document.getElementById('cfg-beacon-preview');
         if (preview) preview.textContent = 'Building preview...';
         try {
-            const mode = document.getElementById('manual-beacon-mode')?.value || 'both';
+            const mode = 'both';
             const resp = await fetch(`/api/beacon/preview?mode=${encodeURIComponent(mode)}`);
             const result = await resp.json();
             if (!resp.ok || !result.success) throw new Error(result.message || 'Preview failed.');
-            const packet = mode === 'aprs_is' ? result.aprs_is_packet : result.rf_packet;
-            const altPacket = mode === 'both' && result.aprs_is_packet ? `\n${result.aprs_is_packet}` : '';
+            const packet = result.rf_packet ? `RF: ${result.rf_packet}` : '';
+            const altPacket = result.aprs_is_packet ? `\nAPRS-IS: ${result.aprs_is_packet}` : '';
+            const symbolNote = result.symbol_override_reason ? `\nSymbol override: ${result.symbol_override_reason}` : '';
             if (preview) {
-                preview.textContent = packet ? `${packet}${altPacket}` : (result.message || 'No packet available');
+                preview.textContent = packet || altPacket ? `${packet}${altPacket}${symbolNote}` : (result.message || 'No packet available');
                 preview.title = result.message || '';
             }
             showSystemNotification(result.message || 'Station beacon preview ready.', result.can_transmit ? 'info' : 'warning');
@@ -2642,6 +2727,19 @@
 
     function initAlertTestControls() {
         document.getElementById('btn-alerts-test')?.addEventListener('click', sendAlertTest);
+        document.getElementById('btn-alerts-msg-test')?.addEventListener('click', sendMessageNotificationTest);
+        document.getElementById('btn-mqtt-guide')?.addEventListener('click', () => {
+            window.open('/static/mqtt-guide.html', '_blank', 'noopener');
+        });
+    }
+
+    function formatChannelResults(result, fallback) {
+        const details = (result.results || [])
+            .map((item) => `${item.channel}: ${item.ok ? 'sent' : item.message}`)
+            .join(' | ');
+        return result.success
+            ? (details || fallback)
+            : (details || result.message || fallback);
     }
 
     async function sendAlertTest() {
@@ -2660,13 +2758,8 @@
                 body: JSON.stringify({ alerts: collectAlertSettings() }),
             });
             const result = await resp.json();
-            const details = (result.results || [])
-                .map((item) => `${item.channel}: ${item.ok ? 'sent' : item.message}`)
-                .join(' | ');
             if (status) {
-                status.textContent = result.success
-                    ? (details || 'Test alert sent.')
-                    : (details || result.message || 'Test alert failed.');
+                status.textContent = formatChannelResults(result, 'Test alert sent.');
                 status.title = result.message || '';
             }
             showSystemNotification(result.message || (result.success ? 'Test alert sent.' : 'Test alert failed.'), result.success ? 'info' : 'error');
@@ -2674,6 +2767,39 @@
             console.error('Failed to send test alert:', e);
             if (status) status.textContent = 'Network error sending test alert.';
             showSystemNotification('Network error sending test alert.', 'error');
+        } finally {
+            if (button) button.disabled = false;
+        }
+    }
+
+    async function sendMessageNotificationTest() {
+        const button = document.getElementById('btn-alerts-msg-test');
+        const status = document.getElementById('cfg-alerts-msg-test-status');
+        if (button) button.disabled = true;
+        if (status) {
+            status.textContent = 'Sending test message notification...';
+            status.title = '';
+        }
+
+        try {
+            const resp = await fetch('/api/messages/test-notification', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ alerts: collectAlertSettings() }),
+            });
+            const result = await resp.json();
+            if (status) {
+                status.textContent = formatChannelResults(result, 'Test message notification sent.');
+                status.title = result.message || '';
+            }
+            showSystemNotification(
+                result.message || (result.success ? 'Test message notification sent.' : 'Test message notification failed.'),
+                result.success ? 'info' : 'error'
+            );
+        } catch (e) {
+            console.error('Failed to send test message notification:', e);
+            if (status) status.textContent = 'Network error sending test message notification.';
+            showSystemNotification('Network error sending test message notification.', 'error');
         } finally {
             if (button) button.disabled = false;
         }
@@ -2818,17 +2944,36 @@
 
     function initWeatherSettingsUi() {
         document.getElementById('cfg-wx-radar-opacity')?.addEventListener('input', updateWeatherOverlayOpacityLabel);
+        document.getElementById('cfg-wx-radar-provider')?.addEventListener('change', updateRadarProviderUi);
         document.getElementById('cfg-wx-alert-provider')?.addEventListener('change', updateWeatherProviderUi);
         document.querySelectorAll('input[name="cfg-wx-alert-group"]').forEach((el) => {
             el.addEventListener('change', updateWeatherAlertGroupSummary);
         });
+        document.querySelectorAll('input[name="cfg-wx-elevated-event"]').forEach((el) => {
+            el.addEventListener('change', updateElevatedTriggerSummary);
+        });
+        document.getElementById('cfg-wx-elevated-events-custom')?.addEventListener('input', updateElevatedTriggerSummary);
         document.getElementById('cfg-wx-alert-scope-mode')?.addEventListener('change', updateWeatherAlertScopePreview);
         document.getElementById('cfg-wx-alert-scope-zone')?.addEventListener('input', updateWeatherAlertScopePreview);
         document.getElementById('btn-wx-resolve-scope')?.addEventListener('click', resolveWeatherAlertScope);
         updateWeatherOverlayOpacityLabel();
         updateWeatherAlertGroupSummary();
+        updateElevatedTriggerSummary();
+        updateRadarProviderUi();
         updateWeatherProviderUi();
         updateWeatherAlertScopePreview();
+    }
+
+    function updateRadarProviderUi() {
+        const provider = getVal('cfg-wx-radar-provider') || 'rainviewer';
+        const isCustom = provider === 'custom_xyz' || provider === 'custom_wms';
+        document.querySelectorAll('.wx-radar-custom').forEach((el) => {
+            const isLayer = el.classList.contains('wx-radar-custom-layer');
+            const shouldShow = isCustom && (!isLayer || provider === 'custom_wms');
+            el.classList.toggle('visible', shouldShow);
+        });
+        const animate = document.getElementById('cfg-wx-radar-animate');
+        if (animate) animate.disabled = provider !== 'rainviewer';
     }
 
     function updateWeatherProviderUi() {
@@ -2968,6 +3113,30 @@
         updateFilterPreview();
     }
 
+    function setElevatedTriggerEvents(events) {
+        const selected = new Set((events || []).map(String));
+        document.querySelectorAll('input[name="cfg-wx-elevated-event"]').forEach((el) => {
+            el.checked = selected.has(el.value);
+        });
+        const custom = (events || [])
+            .filter((event) => !ELEVATED_EVENT_CHOICES.includes(event))
+            .join(', ');
+        setVal('cfg-wx-elevated-events-custom', custom);
+    }
+
+    function getElevatedTriggerEvents() {
+        const selected = Array.from(document.querySelectorAll('input[name="cfg-wx-elevated-event"]:checked'))
+            .map((el) => el.value);
+        return [...selected, ...parseCsvList(getVal('cfg-wx-elevated-events-custom'))];
+    }
+
+    function updateElevatedTriggerSummary() {
+        const label = document.getElementById('cfg-wx-elevated-events-summary');
+        if (!label) return;
+        const count = getElevatedTriggerEvents().length;
+        label.textContent = count ? `${count} selected` : 'No trigger events';
+    }
+
     /**
      * Build the combined APRS-IS filter string from range mode, range miles, and extras.
      */
@@ -2985,7 +3154,7 @@
             if (mode === 'moving') {
                 parts.push(`m/${rangeKm}`);
             } else if (!isNaN(lat) && !isNaN(lng) && (lat !== 0 || lng !== 0)) {
-                parts.push(`r/${Math.round(lat)}/${Math.round(lng)}/${rangeKm}`);
+                parts.push(`r/${formatFilterCoord(lat)}/${formatFilterCoord(lng)}/${rangeKm}`);
             }
         }
 
@@ -2994,6 +3163,10 @@
         }
 
         return parts.join(' ');
+    }
+
+    function formatFilterCoord(value) {
+        return Number(value).toFixed(4).replace(/\.?0+$/, '');
     }
 
     /**
@@ -3017,8 +3190,8 @@
                 rangePreview.title = `${miles} mi = ${rangeKm} km centered on this logged-in station's last known APRS-IS position`;
             } else if (miles > 0 && !isNaN(lat) && !isNaN(lng) && (lat !== 0 || lng !== 0)) {
                 const rangeKm = Math.max(1, Math.round(miles * 1.60934));
-                rangePreview.textContent = `r/${Math.round(lat)}/${Math.round(lng)}/${rangeKm}`;
-                rangePreview.title = `${miles} mi = ${rangeKm} km around ${Math.round(lat)}, ${Math.round(lng)}`;
+                rangePreview.textContent = `r/${formatFilterCoord(lat)}/${formatFilterCoord(lng)}/${rangeKm}`;
+                rangePreview.title = `${miles} mi = ${rangeKm} km around ${formatFilterCoord(lat)}, ${formatFilterCoord(lng)}`;
             } else if (miles > 0) {
                 rangePreview.textContent = 'Set lat/lon first';
                 rangePreview.title = '';

@@ -50,6 +50,7 @@ class PropViewMap {
         this.weatherAlertLayer = null;
         this.radarFrames = [];
         this.radarTileLayers = [];
+        this.radarStaticLayer = null;
         this.radarFrameIndex = 0;
         this.radarAnimationTimer = null;
         this.radarMetadata = null;
@@ -177,35 +178,46 @@ class PropViewMap {
         this.mapTileConfig = next;
     }
 
-    setMyPosition(lat, lng, callsign) {
+    setMyPosition(lat, lng, callsign, stationInfo = {}) {
         this.myPosition = { lat, lng };
         this.myCallsign = (callsign || '').toUpperCase();
+        const symTable = stationInfo?.symbol_table || '/';
+        const symCode = stationInfo?.symbol_code || '#';
+        const markerSprite = (typeof getAPRSSpriteHTML === 'function')
+            ? getAPRSSpriteHTML(symTable, symCode, 20)
+            : 'MY';
+        const popupSprite = (typeof getAPRSSpriteHTML === 'function')
+            ? getAPRSSpriteHTML(symTable, symCode, 32)
+            : '';
+        const symName = (typeof getAPRSSymbolName === 'function')
+            ? getAPRSSymbolName(symTable, symCode)
+            : '';
+        const icon = L.divIcon({
+            className: 'aprs-icon-wrapper my-station-icon-wrapper',
+            html: `<div class="aprs-emoji-marker aprs-emoji-my">${markerSprite}</div>`,
+            iconSize: [28, 28],
+            iconAnchor: [14, 14],
+            popupAnchor: [0, -14],
+        });
+        const popup = `
+            <div class="popup-header">
+                ${popupSprite ? `<span class="popup-sym-inline">${popupSprite}</span>` : ''}
+                <span class="popup-call" style="color: #39d5ff;">${this._escapeHtml(callsign || 'My Station')}</span>
+            </div>
+            <div class="popup-detail">
+                ${lat.toFixed(4)}, ${lng.toFixed(4)}<br>
+                ${this._escapeHtml(symName || 'My Station')}
+            </div>
+        `;
 
         if (this.myMarker) {
             this.myMarker.setLatLng([lat, lng]);
+            this.myMarker.setIcon(icon);
+            this.myMarker.setPopupContent(popup);
         } else {
-            const icon = L.divIcon({
-                className: 'my-station-marker',
-                html: `<div style="
-                    background: #39d5ff;
-                    width: 18px; height: 18px;
-                    border-radius: 50%;
-                    border: 3px solid #fff;
-                    box-shadow: 0 0 12px rgba(57,213,255,0.6), 0 0 24px rgba(57,213,255,0.3);
-                "></div>`,
-                iconSize: [18, 18],
-                iconAnchor: [9, 9],
-            });
-
             this.myMarker = L.marker([lat, lng], { icon, zIndexOffset: 1000 })
                 .addTo(this.map)
-                .bindPopup(`
-                    <div class="popup-call" style="color: #39d5ff;">${callsign || 'My Station'}</div>
-                    <div class="popup-detail">
-                        ${lat.toFixed(4)}, ${lng.toFixed(4)}<br>
-                        Digipeater / IGate
-                    </div>
-                `);
+                .bindPopup(popup);
         }
 
         // Add range circles
@@ -1588,8 +1600,9 @@ class PropViewMap {
             this._clearRadarOverlay();
             return;
         }
-        if ((cfg.radar_provider || 'rainviewer') !== 'rainviewer') {
-            this._clearRadarOverlay();
+        const provider = cfg.radar_provider || 'rainviewer';
+        if (provider !== 'rainviewer') {
+            this._updateStaticRadarOverlay(provider);
             return;
         }
 
@@ -1608,6 +1621,50 @@ class PropViewMap {
         if (needsRebuild) this._rebuildRadarLayers();
         this._applyRadarOpacity();
         this._startRadarAnimationIfNeeded();
+    }
+
+    _updateStaticRadarOverlay(provider) {
+        this._clearRadarOverlay();
+        const cfg = this.weatherOverlayConfig || {};
+        let layer = null;
+        const opacity = cfg.radar_opacity || 0.55;
+
+        if (provider === 'iem_nexrad') {
+            layer = L.tileLayer.wms('https://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad/n0q.cgi', {
+                pane: 'weatherRadarPane',
+                layers: 'nexrad-n0q-900913',
+                format: 'image/png',
+                transparent: true,
+                opacity,
+                attribution: 'Radar: Iowa State IEM',
+            });
+        } else if (provider === 'custom_wms' && cfg.radar_custom_url && cfg.radar_custom_layer) {
+            layer = L.tileLayer.wms(this._radarUrlWithKey(cfg.radar_custom_url), {
+                pane: 'weatherRadarPane',
+                layers: cfg.radar_custom_layer,
+                format: 'image/png',
+                transparent: true,
+                opacity,
+                attribution: cfg.radar_custom_attribution || '',
+            });
+        } else if (provider === 'custom_xyz' && cfg.radar_custom_url) {
+            layer = L.tileLayer(this._radarUrlWithKey(cfg.radar_custom_url), {
+                pane: 'weatherRadarPane',
+                opacity,
+                maxZoom: 19,
+                attribution: cfg.radar_custom_attribution || '',
+                className: 'weather-radar-tile-layer',
+            });
+        }
+
+        if (layer) {
+            this.radarStaticLayer = layer.addTo(this.map);
+        }
+    }
+
+    _radarUrlWithKey(url) {
+        const key = this.weatherOverlayConfig?.radar_custom_api_key || '';
+        return String(url || '').replaceAll('{key}', encodeURIComponent(key));
     }
 
     async _getRadarFrames(force = false) {
@@ -1700,6 +1757,10 @@ class PropViewMap {
         this._stopRadarAnimation();
         this.radarTileLayers.forEach((layer) => layer.remove());
         this.radarTileLayers = [];
+        if (this.radarStaticLayer) {
+            this.radarStaticLayer.remove();
+            this.radarStaticLayer = null;
+        }
         if (!preserveFrames) {
             this.radarFrames = [];
         }

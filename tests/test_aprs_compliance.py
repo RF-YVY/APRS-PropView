@@ -66,6 +66,57 @@ class APRSParserComplianceTests(unittest.TestCase):
         self.assertEqual(packet.weather["humidity"], 26)
         self.assertEqual(packet.weather["pressure_mb"], 1008.8)
 
+    def test_positionless_weather_timestamp_is_parsed(self):
+        packet = parse_packet(
+            "K5ABC-13>APPRPV:_05250942c067s000g...t074P...h99b09977",
+            source="aprs_is",
+        )
+
+        self.assertEqual(packet.packet_type, "weather")
+        self.assertEqual(packet.timestamp, "05250942")
+        self.assertEqual(packet.comment, "c067s000g...t074P...h99b09977")
+        self.assertEqual(packet.weather["wind_direction"], 67)
+        self.assertEqual(packet.weather["wind_speed_mph"], 0)
+        self.assertEqual(packet.weather["temperature_f"], 74)
+        self.assertEqual(packet.weather["humidity"], 99)
+        self.assertEqual(packet.weather["pressure_mb"], 997.7)
+
+    def test_positionless_weather_without_timestamp_is_parsed(self):
+        packet = parse_packet(
+            "K5ABC-13>APPRPV:_272/010g006t069r010p030P020h61b10150",
+            source="rf",
+        )
+
+        self.assertEqual(packet.packet_type, "weather")
+        self.assertEqual(packet.weather["wind_direction"], 272)
+        self.assertEqual(packet.weather["wind_speed_mph"], 10)
+        self.assertEqual(packet.weather["wind_gust_mph"], 6)
+        self.assertEqual(packet.weather["rain_1h_in"], 0.1)
+
+    def test_position_weather_forms_are_explicitly_supported(self):
+        bodies = [
+            "!3345.28N/11146.40W_119/002g003t086r000p000P000h15b10038Ambient Weather WS-2902",
+            "=3345.28N/11146.40W_119/002g003t086r000p000P000h15b10038Ambient Weather WS-2902",
+            "@261750z3345.28N/11146.40W_119/002g003t086r000p000P000h15b10038Ambient Weather WS-2902",
+            "/261750z3345.28N/11146.40W_119/002g003t086r000p000P000h15b10038Ambient Weather WS-2902",
+        ]
+
+        for body in bodies:
+            with self.subTest(body=body[:8]):
+                packet = parse_packet(f"KK7PZE-13>APDW18:{body}", source="rf")
+
+                self.assertEqual(packet.packet_type, "weather")
+                self.assertAlmostEqual(packet.latitude, 33.754666666666665)
+                self.assertAlmostEqual(packet.longitude, -111.77333333333333)
+                self.assertEqual(packet.symbol_table, "/")
+                self.assertEqual(packet.symbol_code, "_")
+                self.assertEqual(packet.weather["wind_direction"], 119)
+                self.assertEqual(packet.weather["wind_speed_mph"], 2)
+                self.assertEqual(packet.weather["wind_gust_mph"], 3)
+                self.assertEqual(packet.weather["temperature_f"], 86)
+                self.assertEqual(packet.weather["humidity"], 15)
+                self.assertEqual(packet.weather["pressure_mb"], 1003.8)
+
     def test_compressed_position_keeps_full_comment(self):
         packet = parse_packet("CALL>APRS:!/5L!!<*e7Pxyzcomment", source="rf")
 
@@ -80,6 +131,16 @@ class APRSParserComplianceTests(unittest.TestCase):
         self.assertEqual(packet.packet_type, "position")
         self.assertEqual(packet.symbol_table, "A")
         self.assertEqual(packet.comment, "overlay")
+
+    def test_compressed_weather_symbol_parses_weather_body(self):
+        packet = parse_packet("CALL>APRS:!/5L!!<*e7_xyzg011t098h36b10139", source="rf")
+
+        self.assertEqual(packet.packet_type, "weather")
+        self.assertEqual(packet.symbol_code, "_")
+        self.assertEqual(packet.weather["wind_gust_mph"], 11)
+        self.assertEqual(packet.weather["temperature_f"], 98)
+        self.assertEqual(packet.weather["humidity"], 36)
+        self.assertEqual(packet.weather["pressure_mb"], 1013.9)
 
     def test_double_bang_telemetry_is_not_compressed_position(self):
         packet = parse_packet(
@@ -121,9 +182,9 @@ class APRSISComplianceTests(unittest.TestCase):
         config = Config()
         config.station.callsign = "K5ABC"
         config.aprs_is.passcode = "12345"
-        client = APRSISClient(config, lambda packet: None, app_version="1.5.3")
+        client = APRSISClient(config, lambda packet: None, app_version="1.5.4")
 
-        self.assertIn("vers APRSPropView 1.5.3", client._build_login())
+        self.assertIn("vers APRSPropView 1.5.4", client._build_login())
 
 
 class ConfigTests(unittest.TestCase):
@@ -191,7 +252,7 @@ class WxNowTests(unittest.TestCase):
 
         self.assertEqual(
             build_wxnow_info(config, reading),
-            "@071400z3530.00N/09745.00W_292/004g011t098h36b10139jDvs9",
+            "/071400z3530.00N/09745.00W_292/004g011t098h36b10139jDvs9",
         )
 
     def test_build_positionless_wx_packet(self):
@@ -214,7 +275,7 @@ class WxNowTests(unittest.TestCase):
         self.assertEqual(reading.weather_body, "180/000t074P...h99b09976")
         self.assertEqual(
             build_wxnow_info(config, reading),
-            "@250935z3531.93N/07945.00W_180/000t074P...h99b09976",
+            "/250935z3531.93N/07945.00W_180/000t074P...h99b09976",
         )
 
     def test_build_positionless_wx_packet_inserts_missing_temperature_tag(self):
@@ -573,6 +634,45 @@ class MessagePersistenceTests(unittest.TestCase):
 
         asyncio.run(run_test())
 
+    def test_own_wx_packet_is_logged_but_not_tracked_as_station(self):
+        class FakeWebSocketManager:
+            def __init__(self):
+                self.messages = []
+
+            async def broadcast(self, message):
+                self.messages.append(message)
+
+        async def run_test(source):
+            with tempfile.TemporaryDirectory() as tmp:
+                config = Config()
+                config.station.callsign = "KK7PZE"
+                config.station.ssid = 1
+                config.wxnow.ssid = 13
+                db = Database(f"{tmp}/test.db")
+                await db.initialize()
+                try:
+                    ws = FakeWebSocketManager()
+                    tracker = StationTracker(db, config, ws)
+                    packet = parse_packet(
+                        "KK7PZE-13>APDW18,W7MOT-10,KK7PZE-1*:/261750z3345.28N/11146.40W_119/002g003t086r000p000P000h15b10038Ambient Weather WS-2902",
+                        source=source,
+                    )
+
+                    await tracker.track_packet(packet)
+                    station = await db.get_station("KK7PZE-13", source)
+                    packets = await db.get_recent_packets(limit=10)
+                finally:
+                    await db.close()
+
+            self.assertIsNone(station)
+            self.assertEqual(len(packets), 1)
+            self.assertEqual(packets[0]["packet_type"], "weather")
+            self.assertEqual(packets[0]["from_call"], "KK7PZE-13")
+            self.assertTrue(any(msg.get("type") == "packet" for msg in ws.messages))
+
+        asyncio.run(run_test("rf"))
+        asyncio.run(run_test("aprs_is"))
+
     def test_rf_packet_port_name_is_stored(self):
         async def run_test():
             with tempfile.TemporaryDirectory() as tmp:
@@ -650,6 +750,24 @@ class StationCallsignValidationTests(unittest.TestCase):
     def test_rejects_only_packet_unsafe_station_identifiers(self):
         for callsign in ("", "TOO-LONG10", "BAD/CALL", "CALL-7", "CALL SIGN"):
             self.assertFalse(_is_valid_station_callsign(callsign))
+
+
+class APRSISFilterValidationTests(unittest.TestCase):
+    def test_accepts_whole_degree_and_decimal_range_filters(self):
+        for filter_text in (
+            "r/35/-79/80",
+            "r/35.5322/-79.75/80",
+            "r/33.7547/-111.7733/80 b/KK7PZE-13",
+            "m/80 b/KK7PZE-13",
+        ):
+            with self.subTest(filter_text=filter_text):
+                self.assertIsNone(_validate_config({"aprs_is": {"filter": filter_text}}))
+
+    def test_rejects_leading_filter_command_word(self):
+        self.assertEqual(
+            _validate_config({"aprs_is": {"filter": "filter r/35/-79/80"}}),
+            "Enter only the APRS-IS filter tokens, not the leading 'filter' command word.",
+        )
 
 
 class GPSIngestionTests(unittest.TestCase):

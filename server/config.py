@@ -152,6 +152,10 @@ alert_range_miles = 50
 refresh_minutes = 15
 radar_enabled = false
 radar_provider = "rainviewer"
+radar_custom_url = ""
+radar_custom_layer = ""
+radar_custom_attribution = ""
+radar_custom_api_key = ""
 radar_opacity = 0.55
 radar_animate = true
 alert_overlay_enabled = false
@@ -162,6 +166,7 @@ elevated_alert_polling_enabled = false
 elevated_alert_polling_seconds = 60
 elevated_alert_cooldown_minutes = 15
 elevated_trigger_events = ["Tornado Watch", "Severe Thunderstorm Watch"]
+weather_alert_symbol_enabled = false
 
 [wxnow]
 enabled = false
@@ -381,6 +386,10 @@ class WeatherConfig:
     refresh_minutes: int = 15      # How often to refresh weather data
     radar_enabled: bool = False
     radar_provider: str = "rainviewer"
+    radar_custom_url: str = ""
+    radar_custom_layer: str = ""
+    radar_custom_attribution: str = ""
+    radar_custom_api_key: str = ""
     radar_opacity: float = 0.55
     radar_animate: bool = True
     alert_overlay_enabled: bool = False
@@ -395,6 +404,7 @@ class WeatherConfig:
     elevated_trigger_events: List[str] = field(default_factory=lambda: [
         "Tornado Watch", "Severe Thunderstorm Watch",
     ])
+    weather_alert_symbol_enabled: bool = False
 
 
 @dataclass
@@ -685,6 +695,10 @@ class Config:
             f"refresh_minutes = {int(self.weather.refresh_minutes)}",
             f"radar_enabled = {'true' if self.weather.radar_enabled else 'false'}",
             f'radar_provider = "{esc(self.weather.radar_provider)}"',
+            f'radar_custom_url = "{esc(self.weather.radar_custom_url)}"',
+            f'radar_custom_layer = "{esc(self.weather.radar_custom_layer)}"',
+            f'radar_custom_attribution = "{esc(self.weather.radar_custom_attribution)}"',
+            f'radar_custom_api_key = "{esc(self.weather.radar_custom_api_key)}"',
             f"radar_opacity = {float(self.weather.radar_opacity)}",
             f"radar_animate = {'true' if self.weather.radar_animate else 'false'}",
             f"alert_overlay_enabled = {'true' if self.weather.alert_overlay_enabled else 'false'}",
@@ -695,6 +709,7 @@ class Config:
             f"elevated_alert_polling_seconds = {int(self.weather.elevated_alert_polling_seconds)}",
             f"elevated_alert_cooldown_minutes = {int(self.weather.elevated_alert_cooldown_minutes)}",
             'elevated_trigger_events = [' + ', '.join('"' + self._toml_escape(v) + '"' for v in self.weather.elevated_trigger_events) + ']',
+            f"weather_alert_symbol_enabled = {'true' if self.weather.weather_alert_symbol_enabled else 'false'}",
             "",
             "[wxnow]",
             f"enabled = {'true' if self.wxnow.enabled else 'false'}",

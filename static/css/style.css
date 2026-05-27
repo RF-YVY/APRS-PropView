@@ -483,9 +483,9 @@ body {
 
 .map-search {
     position: absolute;
-    top: 74px;
-    left: 12px;
-    z-index: 500;
+    top: 12px;
+    left: 56px;
+    z-index: 650;
     display: flex;
     gap: 6px;
     padding: 6px;
@@ -1459,6 +1459,15 @@ canvas {
     box-shadow: 0 0 8px rgba(88, 166, 255, 0.35);
 }
 
+.aprs-emoji-my {
+    width: 26px;
+    height: 26px;
+    line-height: 26px;
+    border-color: #39d5ff;
+    background: rgba(13, 17, 23, 0.92);
+    box-shadow: 0 0 12px rgba(57, 213, 255, 0.6), 0 0 24px rgba(57, 213, 255, 0.3);
+}
+
 /* Ghosted station markers (stale / not heard recently) */
 .aprs-emoji-marker.ghosted {
     opacity: 0.35;
@@ -2387,16 +2396,20 @@ canvas {
 }
 
 .first-run-item::before {
-    content: "";
-    width: 8px;
-    height: 8px;
-    flex: 0 0 8px;
-    border-radius: 50%;
-    background: var(--text-muted);
+    content: "X";
+    width: 14px;
+    height: 14px;
+    flex: 0 0 14px;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 14px;
+    text-align: center;
 }
 
 .first-run-item.done::before {
-    background: var(--accent-green);
+    content: "✓";
+    color: var(--accent-green);
 }
 
 .transmit-history-list {
@@ -2509,6 +2522,55 @@ canvas {
 }
 
 /* ── Icon Picker ────────────────────────────────────────────────── */
+
+.inline-field-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    width: 100%;
+}
+
+.inline-field-actions input,
+.inline-field-actions select {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.phg-calculator-modal {
+    max-width: 520px;
+}
+
+.phg-calculator-grid {
+    padding: 16px 18px;
+    display: grid;
+    gap: 10px;
+}
+
+.phg-result {
+    margin: 0 18px 12px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-primary);
+}
+
+.phg-result strong {
+    font-size: 24px;
+    letter-spacing: 0;
+    color: var(--accent-green);
+    font-family: Consolas, "Courier New", monospace;
+}
+
+.wx-radar-custom {
+    display: none;
+}
+
+.wx-radar-custom.visible {
+    display: flex;
+}
 
 .icon-picker-trigger {
     display: flex;

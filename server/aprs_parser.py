@@ -8,6 +8,19 @@ from typing import Optional, Dict, Any
 
 logger = logging.getLogger("propview.parser")
 
+POSITION_WX_RE = re.compile(
+    r"^(?P<lat>\d{4}\.\d{2}[NSns])(?P<table>.)(?P<lon>\d{5}\.\d{2}[EWew])_(?P<body>.*)$",
+    re.DOTALL,
+)
+TIMESTAMPED_POSITION_WX_RE = re.compile(
+    r"^(?P<timestamp>\d{6}[zZhH/])(?P<position>.*)$",
+    re.DOTALL,
+)
+POSITIONLESS_WX_TIMESTAMP_RE = re.compile(
+    r"^(?P<timestamp>\d{8})(?P<body>.*)$",
+    re.DOTALL,
+)
+
 
 @dataclass
 class APRSPacket:
@@ -152,8 +165,7 @@ def parse_packet(raw: str, source: str = "rf") -> APRSPacket:
             _parse_mic_e(pkt, info)
             pkt.packet_type = "mic_e"
         elif dti == "_":
-            pkt.comment = info[1:].strip()
-            pkt.weather = _parse_weather_telemetry(info[1:])
+            _parse_positionless_weather(pkt, info[1:])
             pkt.packet_type = "weather"
         elif dti == "T":
             pkt.packet_type = "telemetry"
@@ -271,12 +283,17 @@ def _parse_position(pkt: APRSPacket, info: str, with_messaging: bool = False):
     if not info:
         return
 
+    if _parse_position_weather(pkt, info):
+        return
+
     # Try compressed first (symbol table/overlay char followed by base-91)
     if _looks_like_compressed_position(info):
         result = _parse_compressed_lat_lon(info)
         if result:
             pkt.latitude, pkt.longitude, rest, pkt.symbol_table, pkt.symbol_code = result
             pkt.comment = rest.strip()
+            if pkt.symbol_code == "_":
+                pkt.weather = _parse_weather_telemetry(rest)
             _extract_altitude(pkt)
             return
 
@@ -297,8 +314,44 @@ def _parse_position_with_timestamp(pkt: APRSPacket, info: str, with_messaging: b
     if len(info) < 7:
         return
 
+    timestamped_wx = TIMESTAMPED_POSITION_WX_RE.match(info)
+    if timestamped_wx and _parse_position_weather(pkt, timestamped_wx.group("position")):
+        pkt.timestamp = timestamped_wx.group("timestamp")
+        return
+
     pkt.timestamp = info[0:7]
     _parse_position(pkt, info[7:], with_messaging)
+
+
+def _parse_position_weather(pkt: APRSPacket, info: str) -> bool:
+    """Parse explicit APRS weather stations with position and '_' symbol."""
+    if not POSITION_WX_RE.match(info):
+        return False
+
+    result = _parse_lat_lon(info)
+    if not result:
+        return False
+
+    pkt.latitude, pkt.longitude, rest, pkt.symbol_table, pkt.symbol_code = result
+    if pkt.symbol_code != "_":
+        return False
+
+    pkt.comment = rest.strip()
+    pkt.weather = _parse_weather_telemetry(rest)
+    _extract_altitude(pkt)
+    return True
+
+
+def _parse_positionless_weather(pkt: APRSPacket, info: str):
+    """Parse APRS positionless weather reports, including MMDDHHMM timestamps."""
+    body = (info or "").strip()
+    timestamped = POSITIONLESS_WX_TIMESTAMP_RE.match(body)
+    if timestamped:
+        pkt.timestamp = timestamped.group("timestamp")
+        body = timestamped.group("body").strip()
+
+    pkt.comment = body
+    pkt.weather = _parse_weather_telemetry(body)
 
 
 def _parse_message(pkt: APRSPacket, info: str):
@@ -509,6 +562,9 @@ def _parse_weather_telemetry(text: str) -> Dict[str, Any]:
     if not text:
         return {}
     raw = str(text).strip()
+    timestamped = POSITIONLESS_WX_TIMESTAMP_RE.match(raw)
+    if timestamped:
+        raw = timestamped.group("body").strip()
     wx: Dict[str, Any] = {}
 
     wind = re.match(r"^(\d{3})/(\d{3})(.*)$", raw)

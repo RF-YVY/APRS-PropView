@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>APRS PropView MQTT Setup Guide</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg: #0d1117;
+            --panel: #161b22;
+            --border: #30363d;
+            --text: #e6edf3;
+            --muted: #8b949e;
+            --accent: #58a6ff;
+            --good: #3fb950;
+        }
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+        }
+        main {
+            width: min(920px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 28px 0 48px;
+        }
+        h1, h2, h3 {
+            line-height: 1.2;
+            margin: 0 0 12px;
+        }
+        h1 {
+            font-size: 30px;
+        }
+        h2 {
+            margin-top: 28px;
+            font-size: 22px;
+            color: var(--accent);
+        }
+        h3 {
+            margin-top: 18px;
+            font-size: 17px;
+        }
+        p, li {
+            color: var(--text);
+        }
+        .lede, .note {
+            color: var(--muted);
+        }
+        .card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 14px 0;
+        }
+        code {
+            background: rgba(110, 118, 129, 0.22);
+            border: 1px solid rgba(110, 118, 129, 0.35);
+            border-radius: 4px;
+            padding: 1px 5px;
+            font-family: Consolas, "Courier New", monospace;
+        }
+        pre {
+            overflow-x: auto;
+            background: #010409;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+        }
+        pre code {
+            background: transparent;
+            border: 0;
+            padding: 0;
+        }
+        a {
+            color: var(--accent);
+        }
+        .ok {
+            color: var(--good);
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body>
+<main>
+    <h1>APRS PropView MQTT Setup Guide</h1>
+    <p class="lede">MQTT support publishes PropView propagation status and alert events to an MQTT broker. PropView is a publisher, not a broker, so Home Assistant, Node-RED, and dashboards need a broker such as Mosquitto between them and PropView.</p>
+
+    <section class="card">
+        <h2>How The Pieces Fit</h2>
+        <p><span class="ok">APRS PropView</span> connects to an MQTT broker and publishes topics. Other systems subscribe to those topics.</p>
+        <pre><code>APRS PropView  --->  MQTT broker  --->  Home Assistant / Node-RED / dashboard</code></pre>
+        <p class="note">If Home Assistant is your goal, the common path is to install the Mosquitto broker add-on, then point PropView at the Home Assistant host or IP on port 1883.</p>
+    </section>
+
+    <section>
+        <h2>PropView Settings</h2>
+        <p>In PropView Settings, open <b>MQTT Integration</b> and set:</p>
+        <ul>
+            <li><b>MQTT Enabled:</b> checked</li>
+            <li><b>Broker Host:</b> the broker hostname or IP, for example <code>homeassistant.local</code> or <code>192.168.1.25</code></li>
+            <li><b>Port:</b> usually <code>1883</code></li>
+            <li><b>Topic Prefix:</b> usually <code>aprs/propview</code></li>
+            <li><b>Username/Password:</b> the broker credentials, if your broker requires them</li>
+        </ul>
+        <p>Save settings and restart PropView. MQTT currently connects at startup, so broker changes need a restart.</p>
+    </section>
+
+    <section>
+        <h2>Topics Published</h2>
+        <p>With the default topic prefix <code>aprs/propview</code>, PropView publishes:</p>
+        <ul>
+            <li><code>aprs/propview/propagation</code> retained JSON with current propagation metrics</li>
+            <li><code>aprs/propview/score</code> retained numeric regional propagation score</li>
+            <li><code>aprs/propview/level</code> retained regional propagation level text</li>
+            <li><code>aprs/propview/alert</code> JSON event payload when alerts fire</li>
+        </ul>
+        <p>Example propagation payload:</p>
+        <pre><code>{
+  "my_score": 35.0,
+  "my_level": "fair",
+  "regional_score": 61.2,
+  "regional_level": "good",
+  "rf_stations_1h": 12,
+  "max_distance_km": 420.5,
+  "timestamp": 1779926400.0
+}</code></pre>
+    </section>
+
+    <section>
+        <h2>Home Assistant With Mosquitto</h2>
+        <ol>
+            <li>In Home Assistant, open <b>Settings</b>, <b>Add-ons</b>, <b>Add-on Store</b>.</li>
+            <li>Install <b>Mosquitto broker</b>.</li>
+            <li>Start the add-on and enable <b>Start on boot</b>.</li>
+            <li>Create or choose a Home Assistant user for MQTT authentication.</li>
+            <li>In PropView, set Broker Host to the Home Assistant host/IP, Port to <code>1883</code>, and enter that username/password.</li>
+            <li>Save PropView settings and restart PropView.</li>
+        </ol>
+        <p>To confirm messages are arriving, install a tool such as MQTT Explorer and subscribe to <code>aprs/propview/#</code>, or use Home Assistant's MQTT integration diagnostics.</p>
+    </section>
+
+    <section>
+        <h2>Manual Mosquitto Broker</h2>
+        <p>On Debian or Raspberry Pi OS:</p>
+        <pre><code>sudo apt update
+sudo apt install mosquitto mosquitto-clients
+sudo systemctl enable --now mosquitto</code></pre>
+        <p>For a quick local test from the broker machine:</p>
+        <pre><code>mosquitto_sub -h localhost -t 'aprs/propview/#' -v</code></pre>
+        <p>If PropView runs on another machine, use the broker machine's LAN IP as the Broker Host.</p>
+    </section>
+
+    <section>
+        <h2>Home Assistant Entities</h2>
+        <p>If Home Assistant does not auto-discover these topics, add MQTT sensors in <code>configuration.yaml</code>:</p>
+        <pre><code>mqtt:
+  sensor:
+    - name: "APRS PropView Score"
+      state_topic: "aprs/propview/score"
+    - name: "APRS PropView Level"
+      state_topic: "aprs/propview/level"
+    - name: "APRS PropView RF Stations 1h"
+      state_topic: "aprs/propview/propagation"
+      value_template: "{{ value_json.rf_stations_1h }}"
+    - name: "APRS PropView Max Distance km"
+      state_topic: "aprs/propview/propagation"
+      value_template: "{{ value_json.max_distance_km }}"</code></pre>
+        <p>Restart Home Assistant or reload MQTT entities after editing YAML.</p>
+    </section>
+
+    <section>
+        <h2>Node-RED Setup</h2>
+        <p>Node-RED also connects as an MQTT client. It subscribes to the same broker PropView publishes to, then routes the received messages into debug panels, dashboards, Home Assistant calls, or automations.</p>
+        <ol>
+            <li>Install Node-RED and confirm it can reach your MQTT broker. In Home Assistant, the Node-RED add-on can usually reach the Mosquitto add-on by using the Home Assistant host/IP and port <code>1883</code>.</li>
+            <li>Open the Node-RED editor, drag an <b>mqtt in</b> node onto the flow, and double-click it.</li>
+            <li>Add a new broker connection. Set Server to the broker host/IP, Port to <code>1883</code>, and enter the MQTT username/password if your broker requires them.</li>
+            <li>Set Topic to <code>aprs/propview/#</code> to receive all PropView topics, or use one exact topic such as <code>aprs/propview/propagation</code>.</li>
+            <li>Set Output to a parsed JSON object if your Node-RED version offers that option. Otherwise, wire the MQTT node into a <b>json</b> node.</li>
+            <li>Wire the output to a <b>debug</b> node, deploy the flow, then watch the debug sidebar for PropView messages.</li>
+        </ol>
+        <p>Useful starter flows:</p>
+        <ul>
+            <li><code>mqtt in</code> topic <code>aprs/propview/propagation</code> -> <code>json</code> -> <code>debug</code> to inspect the full propagation payload.</li>
+            <li><code>mqtt in</code> topic <code>aprs/propview/score</code> -> dashboard gauge/chart node to display the regional score.</li>
+            <li><code>mqtt in</code> topic <code>aprs/propview/alert</code> -> <code>json</code> -> notification, email, Home Assistant service call, or dashboard text node.</li>
+        </ul>
+        <p>When using the wildcard topic <code>aprs/propview/#</code>, Node-RED puts the actual topic in <code>msg.topic</code> and the value in <code>msg.payload</code>. That makes it easy to use a <b>switch</b> node to route score, level, propagation, and alert messages down different paths.</p>
+        <pre><code>// Function node example after aprs/propview/propagation
+msg.payload = {
+    score: msg.payload.regional_score,
+    level: msg.payload.regional_level,
+    rf_stations: msg.payload.rf_stations_1h,
+    max_distance_km: msg.payload.max_distance_km
+};
+return msg;</code></pre>
+    </section>
+
+    <section>
+        <h2>Troubleshooting</h2>
+        <ul>
+            <li>If PropView logs <code>MQTT: failed to connect</code>, confirm broker host, port, username, password, and firewall rules.</li>
+            <li>If Home Assistant does not show updates, first verify topics with <code>mosquitto_sub</code> or MQTT Explorer.</li>
+            <li>If Node-RED does not show messages, attach a debug node directly to the MQTT node, subscribe to <code>aprs/propview/#</code>, and confirm the broker connection says connected.</li>
+            <li>If using Docker or a VM, remember that <code>localhost</code> means inside that container or VM. Use the broker's reachable LAN host/IP instead.</li>
+            <li>PropView publishes propagation periodically, so wait for the next propagation update after startup.</li>
+        </ul>
+    </section>
+</main>
+</body>
+</html>

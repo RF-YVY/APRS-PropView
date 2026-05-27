@@ -161,7 +161,7 @@ class UpdateChecker:
                 "current_is_newer_than_release": current_is_newer,
                 "latest_version": latest_version or self.current_version,
                 "release_name": release.get("name") or release.get("tag_name") or "",
-                "release_url": release.get("html_url") or GITHUB_RELEASES_URL,
+                "release_url": GITHUB_RELEASES_URL,
                 "published_at": release.get("published_at") or "",
                 "prerelease": bool(release.get("prerelease")),
                 "checked_at": checked_at,

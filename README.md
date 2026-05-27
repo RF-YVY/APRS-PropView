@@ -1,6 +1,6 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.5.3** | May 26, 2026
+**Version 1.5.4** | May 27, 2026
 
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 
@@ -13,7 +13,7 @@
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
 
-Version 1.5.3 adds beacon preview and transmit-now workflows, transmit history, settings import/export, first-run setup guidance, APRS-IS fixed/mobile range filter helpers, metric/imperial display units, dynamic/status/MHeard/weather-alert beaconing, mobile message refresh/sorting improvements, WXnow condition fallback, and improved APRS weather parsing/display.
+Version 1.5.4 expands weather-packet compatibility, adds message-notification testing, improves first-run and messaging ergonomics, adds MQTT setup guidance, and broadens weather/radar settings with PHG and severe-weather symbol helpers.
 
 Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs/linux-raspberry-pi.md).
 
@@ -100,7 +100,7 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **GPS Ingestion** — Use browser/mobile GPS, own APRS position packets, or NMEA serial/TCP/UDP streams to move the map marker or update station coordinates
 - **APRS Symbol Picker** — Visual icon chooser with both primary and alternate symbol tables
 - **Callsign + SSID Selector** — Uppercase callsign input with SSID dropdown (0–15) and descriptions
-- **APRS-IS Filter Helpers** — Generate fixed `r/35/-79/80` or moving/mobile `m/80` range filters, with support for additional javAPRS filter tokens
+- **APRS-IS Filter Helpers** — Generate fixed `r/35/-79/80` or `r/35.5/-79.8/80` range filters, or moving/mobile `m/80` filters, with support for additional javAPRS filter tokens
 - **Metric System Option** — General unit preference controls distances, weather temperature, wind, and precipitation displays
 - **Collapsible Sidebar** — Toggle button to collapse/expand the sidebar for a larger map view
 - **Persistent Weather Banner** — Weather conditions stay visible on the map unless disabled in settings

@@ -104,7 +104,7 @@ def build_wxnow_info(config: Config, reading: WxNowReading) -> str:
         lat, lon = format_aprs_lat_lon(station.latitude, station.longitude)
         table = (wx.symbol_table or "/")[:1]
         code = (wx.symbol_code or "_")[:1]
-        return f"@{timestamp}{lat}{table}{lon}{code}{reading.weather_body}"
+        return f"/{timestamp}{lat}{table}{lon}{code}{reading.weather_body}"
 
     timestamp = reading.timestamp.strftime("%m%d%H%M")
     return f"_{timestamp}{format_positionless_weather_body(reading.weather_body)}"

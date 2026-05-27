@@ -4,7 +4,7 @@
 Launch this to start the application. The web interface opens automatically.
 """
 
-APP_VERSION = "1.5.3"
+APP_VERSION = "1.5.4"
 
 import asyncio
 import sys
@@ -281,6 +281,7 @@ async def main():
     # ── Weather ────────────────────────────────────────────────────
 
     weather_manager = WeatherManager(config)
+    handler.set_weather_manager(weather_manager)
     if config.weather.enabled and config.weather.location_code:
         logger.info(f"Weather: enabled, location={config.weather.location_code}")
     else:

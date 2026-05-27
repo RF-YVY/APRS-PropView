@@ -981,6 +981,10 @@ class WeatherManager:
             "map_overlays": {
                 "radar_enabled": self.config.weather.radar_enabled,
                 "radar_provider": self.config.weather.radar_provider,
+                "radar_custom_url": self.config.weather.radar_custom_url,
+                "radar_custom_layer": self.config.weather.radar_custom_layer,
+                "radar_custom_attribution": self.config.weather.radar_custom_attribution,
+                "radar_custom_api_key": self.config.weather.radar_custom_api_key,
                 "radar_opacity": self.config.weather.radar_opacity,
                 "radar_animate": self.config.weather.radar_animate,
                 "alert_overlay_enabled": self.config.weather.alert_overlay_enabled,

@@ -635,7 +635,53 @@ class AlertManager:
         text = msg.get("text", "")
         source = msg.get("source", "?")
 
-        alert = {
+        alert = self._message_notification_alert(msg)
+        channel_tasks, missing = self._message_channel_tasks(alert, from_call, text, source)
+
+        for channel, message in missing:
+            logger.warning("Message notification %s channel skipped: %s", channel, message)
+
+        if not channel_tasks:
+            return
+
+        results = await asyncio.gather(*(task for _, task in channel_tasks), return_exceptions=True)
+        for channel, result in zip((channel for channel, _ in channel_tasks), results):
+            if isinstance(result, Exception):
+                logger.error("Message notification %s channel failed: %s", channel, result, exc_info=result)
+
+    async def send_test_message_notification(self) -> Dict[str, Any]:
+        """Send a preformatted test message notification to configured message channels."""
+        msg = {
+            "from": "TEST-1",
+            "to": self.station_callsign or "N0CALL",
+            "text": "APRS PropView test message notification.",
+            "source": "test",
+        }
+        alert = self._message_notification_alert(msg)
+        tasks, missing = self._message_channel_tasks(alert, msg["from"], msg["text"], msg["source"])
+        results = [
+            {"channel": channel, "ok": False, "message": message}
+            for channel, message in missing
+        ]
+
+        if tasks:
+            sent = await asyncio.gather(*(task for _, task in tasks), return_exceptions=True)
+            for channel, result in zip((channel for channel, _ in tasks), sent):
+                if isinstance(result, Exception):
+                    results.append({"channel": channel, "ok": False, "message": str(result)})
+                else:
+                    results.append({"channel": channel, "ok": True, "message": "Sent"})
+
+        return {
+            "success": bool(results) and all(item["ok"] for item in results),
+            "results": results,
+        }
+
+    def _message_notification_alert(self, msg: Dict[str, Any]) -> Dict[str, Any]:
+        from_call = msg.get("from", "???")
+        text = msg.get("text", "")
+        source = msg.get("source", "?")
+        return {
             "type": "message_received",
             "timestamp": time.time(),
             "message": (
@@ -644,28 +690,41 @@ class AlertManager:
                 f"To: {self.station_callsign}\n"
                 f"Message: {text}"
             ),
-            # Fields needed by _send_discord embed
             "rf_stations": 0,
             "max_distance_km": 0,
             "score": 0,
             "level": "message",
         }
 
+    def _message_channel_tasks(
+        self,
+        alert: Dict[str, Any],
+        from_call: str,
+        text: str,
+        source: str,
+    ) -> tuple[list[tuple[str, Any]], list[tuple[str, str]]]:
         tasks = []
-        if self.config.msg_discord_enabled and self.config.discord_webhook_url:
-            tasks.append(self._send_discord_message(alert, from_call, text, source))
-        if self.config.msg_email_enabled and self.config.email_smtp_server:
-            tasks.append(self._send_email(alert))
-        if self.config.msg_sms_enabled and self.config.sms_gateway_address:
-            tasks.append(self._send_sms_message(from_call, text))
+        missing = []
 
-        if not tasks:
-            return
+        if self.config.msg_discord_enabled:
+            if self.config.discord_webhook_url:
+                tasks.append(("discord", self._send_discord_message(alert, from_call, text, source)))
+            else:
+                missing.append(("discord", "Discord webhook URL is required."))
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                logger.error(f"Message notification channel {i} failed: {result}", exc_info=result)
+        if self.config.msg_email_enabled:
+            if self.config.email_smtp_server and self.config.email_from and self.config.email_to:
+                tasks.append(("email", self._send_email(alert)))
+            else:
+                missing.append(("email", "SMTP server, from address, and to address are required."))
+
+        if self.config.msg_sms_enabled:
+            if self.config.email_smtp_server and self.config.email_from and self.config.sms_gateway_address:
+                tasks.append(("sms", self._send_sms_message(from_call, text)))
+            else:
+                missing.append(("sms", "SMTP server, from address, and SMS gateway address are required."))
+
+        return tasks, missing
 
     async def _send_discord_message(self, alert: Dict[str, Any], from_call: str, text: str, source: str):
         """Send incoming message notification to Discord."""

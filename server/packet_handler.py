@@ -43,6 +43,7 @@ class PacketHandler:
         self.ws = ws_manager
         self.aprs_is = None
         self.gps_manager = None
+        self.weather_manager = None
         self.rf_interfaces = []
         self._last_beacon_tx = 0.0
         self._last_beacon_info = ""
@@ -155,6 +156,10 @@ class PacketHandler:
         """Inject the GPS manager for status reporting."""
         self.gps_manager = gps_manager
 
+    def set_weather_manager(self, weather_manager):
+        """Inject the WeatherManager for alert-driven station symbol overrides."""
+        self.weather_manager = weather_manager
+
     def add_rf_interface(self, interface):
         """Register an RF interface (KISS client)."""
         self.rf_interfaces.append(interface)
@@ -162,6 +167,41 @@ class PacketHandler:
     def set_aprs_is(self, client):
         """Set the APRS-IS client."""
         self.aprs_is = client
+
+    def _weather_alert_symbol_override(self) -> Optional[Dict[str, str]]:
+        if not getattr(self.config.weather, "weather_alert_symbol_enabled", False):
+            return None
+        alerts = getattr(self.weather_manager, "_alerts", None) if self.weather_manager else None
+        if not alerts:
+            return None
+
+        now = time.time()
+        for alert in alerts:
+            expires = alert.get("expires")
+            if expires:
+                try:
+                    from datetime import datetime
+                    expires_at = datetime.fromisoformat(str(expires).replace("Z", "+00:00")).timestamp()
+                    if expires_at < now:
+                        continue
+                except Exception:
+                    pass
+            event = (alert.get("event") or "").lower()
+            if "tornado" in event:
+                return {"symbol_table": "\\", "symbol_code": "t", "reason": alert.get("event") or "Tornado alert"}
+            if "severe thunderstorm" in event or "thunderstorm" in event:
+                return {"symbol_table": "\\", "symbol_code": "T", "reason": alert.get("event") or "Thunderstorm alert"}
+        return None
+
+    def _station_symbol_for_beacon(self) -> Dict[str, str]:
+        override = self._weather_alert_symbol_override()
+        if override:
+            return override
+        return {
+            "symbol_table": self.config.station.symbol_table,
+            "symbol_code": self.config.station.symbol_code,
+            "reason": "",
+        }
 
     async def handle_rf_packet(self, raw_bytes: bytes, interface=None):
         """Handle a packet received from RF (KISS TNC)."""
@@ -746,14 +786,15 @@ class PacketHandler:
 
         status = self.get_beacon_status(mode=mode)
         cfg = self.config.station
+        symbol = self._station_symbol_for_beacon()
         info = ""
         if status["has_position"]:
             info = make_position_packet(
                 cfg.full_callsign,
                 cfg.latitude,
                 cfg.longitude,
-                cfg.symbol_table,
-                cfg.symbol_code,
+                symbol["symbol_table"],
+                symbol["symbol_code"],
                 build_station_beacon_comment(
                     comment=cfg.comment,
                     phg=cfg.phg,
@@ -768,6 +809,9 @@ class PacketHandler:
             "destination": "APPRPV",
             "path": path,
             "info": info,
+            "symbol_table": symbol["symbol_table"],
+            "symbol_code": symbol["symbol_code"],
+            "symbol_override_reason": symbol.get("reason", ""),
             "rf_packet": f"{cfg.full_callsign}>APPRPV{',' + path if path else ''}:{info}" if info else "",
             "aprs_is_packet": f"{cfg.full_callsign}>APPRPV,TCPIP*:{info}" if info else "",
         }
@@ -779,12 +823,13 @@ class PacketHandler:
             logger.debug("Beacon skipped — no position set (0,0)")
             return
 
+        symbol = self._station_symbol_for_beacon()
         info = make_position_packet(
             cfg.full_callsign,
             cfg.latitude,
             cfg.longitude,
-            cfg.symbol_table,
-            cfg.symbol_code,
+            symbol["symbol_table"],
+            symbol["symbol_code"],
             build_station_beacon_comment(
                 comment=cfg.comment,
                 phg=cfg.phg,
@@ -820,21 +865,10 @@ class PacketHandler:
 
         # Beacon on APRS-IS
         if mode in {"aprs_is", "both"} and self.aprs_is and self.aprs_is.connected:
-            if await self.aprs_is.send_position():
+            packet = f"{cfg.full_callsign}>APPRPV,TCPIP*:{info}"
+            if await self.aprs_is.send(packet):
                 transmitted = True
-                is_info = make_position_packet(
-                    cfg.full_callsign,
-                    cfg.latitude,
-                    cfg.longitude,
-                    cfg.symbol_table,
-                    cfg.symbol_code,
-                    build_station_beacon_comment(
-                        comment=cfg.comment,
-                        phg=cfg.phg,
-                        equipment=cfg.equipment,
-                    ),
-                )
-                await self._record_tx_packet(f"{cfg.full_callsign}>APPRPV,TCPIP*:{is_info}", "APRS-IS TX")
+                await self._record_tx_packet(packet, "APRS-IS TX")
             logger.info("Beacon APRS-IS TX")
 
         if mode == "rf" and not self.rf_interfaces:
@@ -877,6 +911,7 @@ class PacketHandler:
         uptime = time.time() - self.stats["start_time"]
         rf_connected = any(iface.connected for iface in self.rf_interfaces)
         is_connected = self.aprs_is.connected if self.aprs_is else False
+        symbol = self._station_symbol_for_beacon()
 
         return {
             "station": self.config.station.full_callsign,
@@ -884,6 +919,11 @@ class PacketHandler:
                 "callsign": self.config.station.full_callsign,
                 "latitude": self.config.station.latitude,
                 "longitude": self.config.station.longitude,
+                "symbol_table": symbol["symbol_table"],
+                "symbol_code": symbol["symbol_code"],
+                "base_symbol_table": self.config.station.symbol_table,
+                "base_symbol_code": self.config.station.symbol_code,
+                "symbol_override_reason": symbol.get("reason", ""),
             },
             "latitude": self.config.station.latitude,
             "longitude": self.config.station.longitude,

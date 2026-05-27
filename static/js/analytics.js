@@ -269,7 +269,7 @@
                     html += `<div class="best-hour-medal">${medals[i] || ''}</div>`;
                     html += `<div class="best-hour-time">${h.label}</div>`;
                     html += `<div class="best-hour-score">Score: ${h.composite_score}</div>`;
-                    html += `<div class="best-hour-detail">${h.avg_stations} avg stations \u00b7 ${window.formatDist(h.avg_max_distance_km, 0)} max</div>`;
+                    html += `<div class="best-hour-detail">${h.avg_stations} sample avg \u00b7 ${window.formatDist(h.avg_max_distance_km, 0)} avg max</div>`;
                     html += `</div>`;
                 });
                 html += '</div>';
@@ -288,8 +288,8 @@
                 data.day_of_week.forEach(d => {
                     html += `<div class="dow-card">`;
                     html += `<div class="dow-name">${d.name.substring(0, 3)}</div>`;
-                    html += `<div class="dow-val">${d.avg_stations} stn</div>`;
-                    html += `<div class="dow-val">${d.avg_max_distance_km} km</div>`;
+                    html += `<div class="dow-val">${d.avg_stations} sample avg</div>`;
+                    html += `<div class="dow-val">${window.formatDist(d.avg_max_distance_km, 0)} avg max</div>`;
                     html += `</div>`;
                 });
                 html += '</div>';

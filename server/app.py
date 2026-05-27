@@ -1191,6 +1191,50 @@ def create_app(
         message = "Test alert sent." if result.get("success") else "One or more test destinations failed."
         return JSONResponse(status_code=status_code, content={**result, "message": message})
 
+    @app.post("/api/messages/test-notification")
+    async def test_message_notification_destinations(request: Request):
+        """Send a test message notification to the selected message notification destinations."""
+        body = await request.json()
+        al = body.get("alerts", body) if isinstance(body, dict) else {}
+        if not isinstance(al, dict):
+            return JSONResponse(status_code=400, content={"success": False, "message": "Invalid alert settings."})
+
+        selected = {
+            "discord": bool(al.get("msg_discord_enabled", False)),
+            "email": bool(al.get("msg_email_enabled", False)),
+            "sms": bool(al.get("msg_sms_enabled", False)),
+        }
+        if not any(selected.values()):
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": "Select at least one message notification destination to test."},
+            )
+
+        email_password = al.get("email_password", "")
+        if not email_password or "*" in str(email_password):
+            email_password = config.alerts.email_password
+
+        test_config = AlertConfig(
+            enabled=True,
+            msg_notify_enabled=True,
+            msg_discord_enabled=selected["discord"],
+            msg_email_enabled=selected["email"],
+            msg_sms_enabled=selected["sms"],
+            discord_webhook_url=(al.get("discord_webhook_url", config.alerts.discord_webhook_url) or "").strip(),
+            email_smtp_server=(al.get("email_smtp_server", config.alerts.email_smtp_server) or "").strip(),
+            email_smtp_port=int(al.get("email_smtp_port", config.alerts.email_smtp_port) or 587),
+            email_from=(al.get("email_from", config.alerts.email_from) or "").strip(),
+            email_to=(al.get("email_to", config.alerts.email_to) or "").strip(),
+            email_password=email_password,
+            sms_gateway_address=(al.get("sms_gateway_address", config.alerts.sms_gateway_address) or "").strip(),
+        )
+
+        manager = AlertManager(test_config, station_callsign=config.station.full_callsign)
+        result = await manager.send_test_message_notification()
+        status_code = 200 if result.get("success") else 400
+        message = "Test message notification sent." if result.get("success") else "One or more message notification destinations failed."
+        return JSONResponse(status_code=status_code, content={**result, "message": message})
+
     # ── Weather API ─────────────────────────────────────────────
 
     @app.get("/api/weather")
@@ -1376,6 +1420,7 @@ def create_app(
                 "server": config.aprs_is.server,
                 "port": config.aprs_is.port,
                 "passcode": _mask_passcode(config.aprs_is.passcode),
+                "passcode_configured": bool(config.aprs_is.passcode and config.aprs_is.passcode != "-1"),
                 "filter": config.aprs_is.filter,
             },
             "kiss_serial": {
@@ -1487,6 +1532,10 @@ def create_app(
                 "refresh_minutes": config.weather.refresh_minutes,
                 "radar_enabled": config.weather.radar_enabled,
                 "radar_provider": config.weather.radar_provider,
+                "radar_custom_url": config.weather.radar_custom_url,
+                "radar_custom_layer": config.weather.radar_custom_layer,
+                "radar_custom_attribution": config.weather.radar_custom_attribution,
+                "radar_custom_api_key": _mask_passcode(config.weather.radar_custom_api_key),
                 "radar_opacity": config.weather.radar_opacity,
                 "radar_animate": config.weather.radar_animate,
                 "alert_overlay_enabled": config.weather.alert_overlay_enabled,
@@ -1497,6 +1546,7 @@ def create_app(
                 "elevated_alert_polling_seconds": config.weather.elevated_alert_polling_seconds,
                 "elevated_alert_cooldown_minutes": config.weather.elevated_alert_cooldown_minutes,
                 "elevated_trigger_events": config.weather.elevated_trigger_events,
+                "weather_alert_symbol_enabled": config.weather.weather_alert_symbol_enabled,
             },
             "wxnow": {
                 "enabled": config.wxnow.enabled,
@@ -1909,7 +1959,14 @@ def create_app(
                 config.weather.refresh_minutes = max(5, int(wc.get("refresh_minutes", config.weather.refresh_minutes)))
                 config.weather.radar_enabled = bool(wc.get("radar_enabled", config.weather.radar_enabled))
                 provider = (wc.get("radar_provider", config.weather.radar_provider) or "rainviewer").strip().lower()
-                config.weather.radar_provider = provider if provider in {"rainviewer"} else "rainviewer"
+                valid_radar_providers = {"rainviewer", "iem_nexrad", "custom_xyz", "custom_wms"}
+                config.weather.radar_provider = provider if provider in valid_radar_providers else "rainviewer"
+                config.weather.radar_custom_url = (wc.get("radar_custom_url", config.weather.radar_custom_url) or "").strip()
+                config.weather.radar_custom_layer = (wc.get("radar_custom_layer", config.weather.radar_custom_layer) or "").strip()
+                config.weather.radar_custom_attribution = (wc.get("radar_custom_attribution", config.weather.radar_custom_attribution) or "").strip()
+                new_radar_key = wc.get("radar_custom_api_key", "")
+                if new_radar_key and "*" not in new_radar_key:
+                    config.weather.radar_custom_api_key = new_radar_key.strip()
                 config.weather.radar_opacity = min(1.0, max(0.1, float(wc.get("radar_opacity", config.weather.radar_opacity))))
                 config.weather.radar_animate = bool(wc.get("radar_animate", config.weather.radar_animate))
                 config.weather.alert_overlay_enabled = bool(wc.get("alert_overlay_enabled", config.weather.alert_overlay_enabled))
@@ -1930,6 +1987,10 @@ def create_app(
                 config.weather.elevated_trigger_events = [
                     str(event).strip() for event in trigger_events if str(event).strip()
                 ]
+                config.weather.weather_alert_symbol_enabled = bool(wc.get(
+                    "weather_alert_symbol_enabled",
+                    config.weather.weather_alert_symbol_enabled,
+                ))
                 live_applied.append("weather")
 
             if "wxnow" in body:
