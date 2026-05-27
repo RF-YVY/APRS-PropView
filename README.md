@@ -6,7 +6,7 @@
 
 *Thanks to Contributions and Suggestions from many that emailed or submitted issues.*
 
-*Special thanks to Kyle (galaxie67w) for many suggestions and bug finds.*
+*Special thanks to Kyle (galaxie67w) and Joe M. for many suggestions and bug finds.*
 
 <img width="1536" height="1024" alt="APRS PropView promo img" src="https://github.com/user-attachments/assets/9942c9df-1599-485c-80a2-4f475c9ff2ae" />
 
