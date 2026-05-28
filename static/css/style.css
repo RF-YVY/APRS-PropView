@@ -483,7 +483,7 @@ body {
 
 .map-search {
     position: absolute;
-    top: 12px;
+    top: var(--map-overlay-top, 12px);
     left: 56px;
     z-index: 650;
     display: flex;
@@ -2162,6 +2162,23 @@ canvas {
     min-width: 92px;
 }
 
+.rf-port-check-row {
+    grid-column: 1 / -1;
+}
+
+.rf-port-checkboxes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.rf-port-checkboxes label {
+    min-width: 0;
+    gap: 5px;
+}
+
 .rf-port-fields .settings-row input[type="text"],
 .rf-port-fields .settings-row input[type="number"],
 .rf-port-fields .settings-row select {
@@ -2809,6 +2826,20 @@ canvas {
     font-size: 11px;
     margin-bottom: 8px;
     line-height: 1.4;
+}
+
+.weather-analytics-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.weather-analytics-grid canvas {
+    width: 100%;
+    height: 160px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
 }
 
 .analytics-section h4 {
@@ -3560,8 +3591,19 @@ canvas {
     font-size: 12px;
 }
 
+.msg-source-select {
+    width: 86px;
+    padding: 6px 8px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+}
+
 .msg-input-call:focus,
-.msg-input-text:focus {
+.msg-input-text:focus,
+.msg-source-select:focus {
     outline: none;
     border-color: var(--accent-blue);
     box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.15);

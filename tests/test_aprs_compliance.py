@@ -182,9 +182,9 @@ class APRSISComplianceTests(unittest.TestCase):
         config = Config()
         config.station.callsign = "K5ABC"
         config.aprs_is.passcode = "12345"
-        client = APRSISClient(config, lambda packet: None, app_version="1.5.4")
+        client = APRSISClient(config, lambda packet: None, app_version="1.5.4.2")
 
-        self.assertIn("vers APRSPropView 1.5.4", client._build_login())
+        self.assertIn("vers APRSPropView 1.5.4.2", client._build_login())
 
 
 class ConfigTests(unittest.TestCase):
@@ -634,7 +634,7 @@ class MessagePersistenceTests(unittest.TestCase):
 
         asyncio.run(run_test())
 
-    def test_own_wx_packet_is_logged_but_not_tracked_as_station(self):
+    def test_own_wx_packet_is_logged_and_tracked_as_station(self):
         class FakeWebSocketManager:
             def __init__(self):
                 self.messages = []
@@ -664,11 +664,14 @@ class MessagePersistenceTests(unittest.TestCase):
                 finally:
                     await db.close()
 
-            self.assertIsNone(station)
+            self.assertIsNotNone(station)
+            self.assertEqual(station["callsign"], "KK7PZE-13")
+            self.assertEqual(station["symbol_code"], "_")
             self.assertEqual(len(packets), 1)
             self.assertEqual(packets[0]["packet_type"], "weather")
             self.assertEqual(packets[0]["from_call"], "KK7PZE-13")
             self.assertTrue(any(msg.get("type") == "packet" for msg in ws.messages))
+            self.assertTrue(any(msg.get("type") == "station_update" for msg in ws.messages))
 
         asyncio.run(run_test("rf"))
         asyncio.run(run_test("aprs_is"))

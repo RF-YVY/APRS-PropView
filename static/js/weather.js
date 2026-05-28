@@ -11,6 +11,8 @@ window.pvWeather = (function () {
     let lastWeatherData = null;
 
     function init() {
+        updateMapSearchOffset();
+        window.addEventListener('resize', updateMapSearchOffset);
         // Refresh button
         document.getElementById('wx-refresh-btn')?.addEventListener('click', () => {
             fetchWeather(true);
@@ -73,6 +75,7 @@ window.pvWeather = (function () {
         if (!data || !data.enabled || !data.configured || !data.current) {
             if (banner) banner.style.display = 'none';
             if (alertsContainer) alertsContainer.innerHTML = '';
+            updateMapSearchOffset();
             return;
         }
 
@@ -108,6 +111,16 @@ window.pvWeather = (function () {
 
         // Render severe weather alerts
         renderAlerts(data.alerts || []);
+        updateMapSearchOffset();
+    }
+
+    function updateMapSearchOffset() {
+        requestAnimationFrame(() => {
+            const panel = document.getElementById('map-panel');
+            const map = document.getElementById('map');
+            if (!panel || !map) return;
+            panel.style.setProperty('--map-overlay-top', `${map.offsetTop + 12}px`);
+        });
     }
 
     function syncMapOverlays(data) {

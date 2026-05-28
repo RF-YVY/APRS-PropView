@@ -57,7 +57,7 @@ port = 8001
 
 # Optional multi-port RF configuration. If any [[rf_ports]] entries are
 # present, APRS PropView uses them instead of the legacy [kiss_serial]/[kiss_tcp]
-# blocks above. Add as many serial and TCP KISS ports as needed.
+# blocks above. Add as many serial KISS/TNC2 and TCP KISS/AGWPE ports as needed.
 #[[rf_ports]]
 #name = "Vertical"
 #enabled = true
@@ -68,13 +68,18 @@ port = 8001
 #flow_control = "none"
 #init_profile = "none"
 #init_commands = ""
+#rx_only_rf = false  # disables local RF transmissions on this port
+#rx_only_is = false  # disables APRS-IS-to-RF gated transmissions on this port
 #
 #[[rf_ports]]
-#name = "Yagi"
+#name = "Yagi KISS"
 #enabled = true
 #type = "tcp"
 #host = "127.0.0.1"
 #tcp_port = 8001
+#protocol = "kiss"  # "kiss" or "agwpe"
+#rx_only_rf = false
+#rx_only_is = false
 
 [web]
 host = "127.0.0.1"

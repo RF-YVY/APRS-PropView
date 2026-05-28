@@ -35,7 +35,7 @@
     };
     const RF_PORT_TYPES = {
         serial: 'Serial KISS/TNC2',
-        tcp: 'TCP KISS',
+        tcp: 'TCP Server',
     };
     const ELEVATED_EVENT_CHOICES = [
         'Tornado Warning',
@@ -1515,7 +1515,7 @@
 
     function renderUpdateStatus(data, els) {
         const { messageEl, detailEl, linkEl, footerEl } = els;
-        const currentVersion = data?.current_version || '1.5.4';
+        const currentVersion = data?.current_version || '1.5.4.2';
         const latestVersion = data?.latest_version || currentVersion;
         const releaseUrl = 'https://github.com/RF-YVY/APRS-PropView/releases';
         const publishedAt = data?.published_at ? formatReleaseDate(data.published_at) : '';
@@ -1790,7 +1790,10 @@
                 type: 'tcp',
                 host: '127.0.0.1',
                 tcp_port: 8001,
+                protocol: 'kiss',
                 mode: 'kiss',
+                rx_only_rf: false,
+                rx_only_is: false,
             };
         }
         return {
@@ -1803,6 +1806,8 @@
             flow_control: 'none',
             init_profile: 'none',
             init_commands: '',
+            rx_only_rf: false,
+            rx_only_is: false,
         };
     }
 
@@ -1891,6 +1896,13 @@
                                 <option value="tcp" ${type === 'tcp' ? 'selected' : ''}>${RF_PORT_TYPES.tcp}</option>
                             </select>
                         </div>
+                        <div class="settings-row rf-port-check-row">
+                            <label>Receive Only</label>
+                            <div class="rf-port-checkboxes">
+                                <label><input type="checkbox" class="rf-port-field" data-field="rx_only_rf" ${port.rx_only_rf ? 'checked' : ''}> RF TX off</label>
+                                <label><input type="checkbox" class="rf-port-field" data-field="rx_only_is" ${port.rx_only_is ? 'checked' : ''}> IS gated TX off</label>
+                            </div>
+                        </div>
                         ${type === 'tcp' ? rfPortTcpFields(port) : rfPortSerialFields(port)}
                     </div>
                 </div>
@@ -1969,6 +1981,13 @@
                 <label>TCP Port</label>
                 <input type="number" class="rf-port-field" data-field="tcp_port" value="${parseInt(port.tcp_port, 10) || 8001}" min="1" max="65535">
             </div>
+            <div class="settings-row">
+                <label>Protocol</label>
+                <select class="rf-port-field" data-field="protocol">
+                    <option value="kiss" ${(port.protocol || 'kiss') === 'kiss' ? 'selected' : ''}>KISS server port</option>
+                    <option value="agwpe" ${port.protocol === 'agwpe' ? 'selected' : ''}>AGWPE server port</option>
+                </select>
+            </div>
         `;
     }
 
@@ -1985,6 +2004,9 @@
                     type,
                     host: (field('host')?.value || '127.0.0.1').trim(),
                     tcp_port: parseInt(field('tcp_port')?.value, 10) || 8001,
+                    protocol: field('protocol')?.value || 'kiss',
+                    rx_only_rf: !!field('rx_only_rf')?.checked,
+                    rx_only_is: !!field('rx_only_is')?.checked,
                 };
             }
             return {
@@ -1997,6 +2019,8 @@
                 flow_control: field('flow_control')?.value || 'none',
                 init_profile: field('init_profile')?.value || 'none',
                 init_commands: field('init_commands')?.value || '',
+                rx_only_rf: !!field('rx_only_rf')?.checked,
+                rx_only_is: !!field('rx_only_is')?.checked,
             };
         });
     }

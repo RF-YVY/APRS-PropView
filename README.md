@@ -1,6 +1,6 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.5.4** | May 27, 2026
+**Version 1.5.4.2** | May 28, 2026
 
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 
@@ -13,7 +13,7 @@
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
 
-Version 1.5.4 expands weather-packet compatibility, adds message-notification testing, improves first-run and messaging ergonomics, adds MQTT setup guidance, and broadens weather/radar settings with PHG and severe-weather symbol helpers.
+Version 1.5.4.2 adds AGWPE TCP port support, receive-only RF port controls, message route selection, weather analytics graphs, and better handling for same-base weather station callsigns.
 
 Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs/linux-raspberry-pi.md).
 

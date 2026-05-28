@@ -310,12 +310,13 @@ window.pvMessages = (function () {
     async function sendMessage() {
         const toEl = document.getElementById('msg-to-call');
         const textEl = document.getElementById('msg-text');
+        const sourceEl = document.getElementById('msg-send-source');
         const btn = document.getElementById('btn-send-msg');
         if (!toEl || !textEl) return;
 
         const to = toEl.value.trim().toUpperCase();
         const text = textEl.value.trim();
-        const replySource = replyContext && replyContext.to === to ? replyContext.source : '';
+        const selectedSource = sourceEl?.value || 'both';
 
         if (!to) { toEl.focus(); return; }
         if (!text) { textEl.focus(); return; }
@@ -326,7 +327,7 @@ window.pvMessages = (function () {
             const resp = await fetch('/api/messages/send', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ to, text, reply_source: replySource || undefined }),
+                body: JSON.stringify({ to, text, source: selectedSource }),
             });
             const result = await resp.json();
 

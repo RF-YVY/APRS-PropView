@@ -162,15 +162,18 @@ class StationTracker:
             )
 
         is_own_packet = callsign.upper() in self._propview_transmit_callsigns()
+        is_own_weather_packet = is_own_packet and packet.packet_type == "weather"
         if is_own_packet:
-            await self._log_packet_only(packet, port_name)
-            logger.info(
-                "%s: %s [%s] logged as own PropView packet; not added to station list",
-                "RF" if source == "rf" else "APRS-IS",
-                callsign,
-                packet.packet_type or "other",
-            )
-            return
+            if not is_own_weather_packet:
+                await self._log_packet_only(packet, port_name)
+                logger.info(
+                    "%s: %s [%s] logged as own PropView packet; not added to station list",
+                    "RF" if source == "rf" else "APRS-IS",
+                    callsign,
+                    packet.packet_type or "other",
+                )
+                return
+            logger.info("%s: %s weather packet allowed into station list", "RF" if source == "rf" else "APRS-IS", callsign)
 
         # Calculate distance if we have both positions
         distance_km = None

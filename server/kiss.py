@@ -1,6 +1,7 @@
 """KISS and legacy TNC protocol handlers for RF connections."""
 
 import asyncio
+import struct
 import logging
 from typing import Callable, Optional, Awaitable
 
@@ -306,6 +307,90 @@ class KISSTCPClient:
         if self.writer and self.connected:
             frame = make_kiss_frame(ax25_data)
             self.writer.write(frame)
+            await self.writer.drain()
+            logger.debug(f"{self._name}: Sent {len(ax25_data)} bytes")
+
+    async def close(self):
+        if self.writer:
+            self.writer.close()
+            self.connected = False
+
+
+def _agwpe_header(kind: str, data_len: int = 0, port: int = 0, pid: int = 0) -> bytes:
+    """Build the fixed 36-byte AGWPE TCP API header."""
+    kind_byte = (kind or " ").encode("ascii", errors="ignore")[:1] or b" "
+    return struct.pack("<B3sBBBB10s10sII", port & 0xFF, b"\x00\x00\x00", kind_byte[0], 0, pid & 0xFF, 0, b"", b"", data_len, 0)
+
+
+class AGWPETCPClient:
+    """AGWPE server-port connection using raw AX.25 frames."""
+
+    can_transmit = True
+
+    def __init__(self, host: str, port: int, on_frame: Callable, name: str = ""):
+        self.host = host
+        self.port = port
+        self.on_frame = on_frame
+        self.writer: Optional[asyncio.StreamWriter] = None
+        self.reader: Optional[asyncio.StreamReader] = None
+        self.connected = False
+        self._name = name or f"AGWPE({host}:{port})"
+        self._reconnect_delay = 5
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    async def connect(self):
+        delay = self._reconnect_delay
+        while True:
+            try:
+                self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
+                self.connected = True
+                delay = self._reconnect_delay
+                logger.info(f"{self._name}: Connected")
+                await self._enable_raw_frames()
+                await self._read_loop()
+            except Exception as e:
+                logger.error(f"{self._name}: Connection failed: {e}")
+                self.connected = False
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 60)
+
+    async def _enable_raw_frames(self):
+        if not self.writer:
+            return
+        self.writer.write(_agwpe_header("k"))
+        await self.writer.drain()
+
+    async def _read_loop(self):
+        try:
+            while True:
+                header = await self.reader.readexactly(36)
+                port, _reserved1, kind, _reserved2, _pid, _reserved3, _from, _to, data_len, _user = struct.unpack("<B3sBBBB10s10sII", header)
+                data = await self.reader.readexactly(data_len) if data_len else b""
+                kind_ch = chr(kind)
+                if kind_ch in {"K", "k"} and data:
+                    try:
+                        await self.on_frame(data, self)
+                    except Exception as e:
+                        logger.error(f"{self._name}: Frame handler error: {e}")
+                elif kind_ch in {"U", "M"} and data:
+                    line = data.decode("latin-1", errors="ignore").strip("\x00\r\n ")
+                    logger.debug("%s: monitor frame on AGWPE port %s ignored: %s", self._name, port, line)
+        except asyncio.IncompleteReadError:
+            pass
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"{self._name}: Read error: {e}")
+        finally:
+            self.connected = False
+            logger.info(f"{self._name}: Disconnected")
+
+    async def send(self, ax25_data: bytes):
+        if self.writer and self.connected:
+            self.writer.write(_agwpe_header("K", len(ax25_data)) + ax25_data)
             await self.writer.drain()
             logger.debug(f"{self._name}: Sent {len(ax25_data)} bytes")
 

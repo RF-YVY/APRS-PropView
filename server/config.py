@@ -274,10 +274,13 @@ class RFPortConfig:
     baudrate: int = 9600
     host: str = "127.0.0.1"
     tcp_port: int = 8001
+    protocol: str = "kiss"  # tcp only: kiss or agwpe
     mode: str = "kiss"
     flow_control: str = "none"
     init_profile: str = "none"
     init_commands: str = ""
+    rx_only_rf: bool = False
+    rx_only_is: bool = False
 
 
 @dataclass
@@ -576,7 +579,7 @@ class Config:
             "# Modern multi-port RF configuration. If any entries are present here,",
             "# APRS PropView uses them instead of the legacy [kiss_serial]/[kiss_tcp] blocks.",
             "# type = \"serial\" supports KISS frames or receive-only TNC2 monitor text.",
-            "# type = \"tcp\" supports KISS-over-TCP.",
+            "# type = \"tcp\" supports KISS-over-TCP or AGWPE server ports.",
             "",
         ]
         for port in self.rf_ports:
@@ -591,6 +594,7 @@ class Config:
                 port_lines.extend([
                     f'host = "{esc(port.host)}"',
                     f"tcp_port = {int(port.tcp_port)}",
+                    f'protocol = "{esc(port.protocol or "kiss")}"',
                 ])
             else:
                 port_lines.extend([
@@ -601,6 +605,10 @@ class Config:
                     f'init_profile = "{esc(port.init_profile)}"',
                     f'init_commands = "{esc(port.init_commands)}"',
                 ])
+            port_lines.extend([
+                f"rx_only_rf = {'true' if port.rx_only_rf else 'false'}",
+                f"rx_only_is = {'true' if port.rx_only_is else 'false'}",
+            ])
             port_lines.append("")
             lines.extend(port_lines)
         lines.extend([

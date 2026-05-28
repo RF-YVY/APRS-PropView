@@ -4,7 +4,7 @@
 Launch this to start the application. The web interface opens automatically.
 """
 
-APP_VERSION = "1.5.4"
+APP_VERSION = "1.5.4.2"
 
 import asyncio
 import sys
@@ -30,7 +30,7 @@ from server.config import Config
 from server.app import create_app
 from server.database import Database
 from server.aprs_is import APRSISClient
-from server.kiss import KISSSerialClient, KISSTCPClient, TNC2MonitorSerialClient
+from server.kiss import KISSSerialClient, KISSTCPClient, TNC2MonitorSerialClient, AGWPETCPClient
 from server.digipeater import Digipeater
 from server.igate import IGate
 from server.station_tracker import StationTracker
@@ -246,6 +246,8 @@ async def main():
                 callsign=config.station.full_callsign,
                 name=port_name,
             )
+            serial_client.rx_only_rf = bool(_port_value(port_cfg, "rx_only_rf", False)) or serial_mode == "tnc2_monitor"
+            serial_client.rx_only_is = bool(_port_value(port_cfg, "rx_only_is", False)) or serial_mode == "tnc2_monitor"
             handler.add_rf_interface(serial_client)
             logger.info(
                 "RF port %s: serial %s @ %s mode=%s flow=%s profile=%s",
@@ -259,14 +261,18 @@ async def main():
         elif port_type == "tcp":
             host = _port_value(port_cfg, "host", "127.0.0.1")
             tcp_port = int(_port_value(port_cfg, "tcp_port", 8001) or 8001)
-            tcp_client = KISSTCPClient(
+            protocol = (_port_value(port_cfg, "protocol", "kiss") or "kiss").strip().lower()
+            tcp_cls = AGWPETCPClient if protocol == "agwpe" else KISSTCPClient
+            tcp_client = tcp_cls(
                 host,
                 tcp_port,
                 handler.handle_rf_packet,
                 name=port_name,
             )
+            tcp_client.rx_only_rf = bool(_port_value(port_cfg, "rx_only_rf", False))
+            tcp_client.rx_only_is = bool(_port_value(port_cfg, "rx_only_is", False))
             handler.add_rf_interface(tcp_client)
-            logger.info("RF port %s: KISS TCP %s:%s", port_name, host, tcp_port)
+            logger.info("RF port %s: %s TCP %s:%s", port_name, protocol.upper(), host, tcp_port)
         else:
             logger.warning("Skipping RF port %s with unknown type %s", port_name, port_type)
 

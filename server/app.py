@@ -28,6 +28,7 @@ from server.packet_handler import PacketHandler
 from server.analytics import AnalyticsEngine
 from server.alerts import AlertConfig, AlertManager
 from server.aprs_is import APRSISClient
+from server.aprs_parser import parse_packet
 from server.weather import WeatherManager
 from server.update_checker import UpdateChecker
 
@@ -276,8 +277,11 @@ def _validate_config(body: Dict[str, Any]) -> Optional[str]:
                 profile = (port_cfg.get("init_profile", "none") or "none").strip().lower()
                 if profile not in {"none", "kenwood_thd7", "kenwood_tmd700", "kenwood_thd72", "generic_tnc2_kiss"}:
                     return "Unknown RF serial init profile."
-            if port_type == "tcp":
-                host = port_cfg.get("host", "")
+            else:
+                protocol = (port_cfg.get("protocol", "kiss") or "kiss").strip().lower()
+                if protocol not in {"kiss", "agwpe"}:
+                    return "RF TCP protocol must be kiss or agwpe."
+                host = (port_cfg.get("host", "") or "").strip()
                 if host and not _HOSTNAME_RE.match(host):
                     return "Invalid RF TCP hostname."
                 try:
@@ -286,7 +290,6 @@ def _validate_config(body: Dict[str, Any]) -> Optional[str]:
                         return "RF TCP port must be 1-65535."
                 except (ValueError, TypeError):
                     return "RF TCP port must be a number."
-
     if "web" in body:
         w = body["web"]
         host = w.get("host", "")
@@ -760,7 +763,8 @@ def create_app(
             body = await request.json()
             to_call = (body.get("to", "") or "").strip().upper()
             text = (body.get("text", "") or "").strip()
-            reply_source = (body.get("reply_source", "") or "").strip().lower()
+            route = (body.get("source", "") or body.get("route", "") or "").strip().lower()
+            reply_source = route or (body.get("reply_source", "") or "").strip().lower()
 
             if not to_call:
                 return JSONResponse(
@@ -782,7 +786,7 @@ def create_app(
                     status_code=400,
                     content={"success": False, "message": "Invalid APRS message addressee."},
                 )
-            if reply_source and reply_source not in {"rf", "aprs_is"}:
+            if reply_source and reply_source not in {"rf", "aprs_is", "both"}:
                 return JSONResponse(
                     status_code=400,
                     content={"success": False, "message": "Invalid reply source."},
@@ -1062,6 +1066,45 @@ def create_app(
         if not analytics:
             return {"sectors": [], "max_range_km": 0}
         return await analytics.get_observed_range(hours=hours)
+
+    @app.get("/api/analytics/weather")
+    async def get_weather_analytics(hours: int = Query(24, ge=1, le=168)):
+        cutoff = time.time() - hours * 3600
+        samples = []
+        if weather_manager:
+            current = await weather_manager.get_current_weather()
+            if current:
+                samples.append({
+                    "timestamp": time.time(),
+                    "source": current.get("location_name") or current.get("location_code") or "Current weather",
+                    "temperature_f": current.get("temperature_f"),
+                    "humidity": current.get("humidity"),
+                    "pressure_mb": current.get("pressure_mb"),
+                    "wind_speed_mph": current.get("wind_speed_mph"),
+                    "wind_gust_mph": current.get("wind_gusts_mph"),
+                    "rain_1h_in": current.get("precipitation_in"),
+                })
+        cursor = await db.db.execute(
+            """SELECT timestamp, source, from_call, raw
+               FROM packets
+               WHERE timestamp >= ?
+                 AND packet_type = 'weather'
+               ORDER BY timestamp ASC
+               LIMIT 1000""",
+            (cutoff,),
+        )
+        rows = await cursor.fetchall()
+        for row in rows:
+            pkt = parse_packet(row["raw"], source=row["source"])
+            if not pkt.weather:
+                continue
+            samples.append({
+                "timestamp": row["timestamp"],
+                "source": row["from_call"],
+                **pkt.weather,
+            })
+        samples.sort(key=lambda item: item.get("timestamp") or 0)
+        return {"samples": samples, "count": len(samples), "hours": hours}
 
     @app.get("/api/analytics/path-quality/{callsign}")
     async def get_path_quality(callsign: str):
@@ -1446,10 +1489,13 @@ def create_app(
                     "baudrate": port.baudrate,
                     "host": port.host,
                     "tcp_port": port.tcp_port,
+                    "protocol": port.protocol,
                     "mode": port.mode,
                     "flow_control": port.flow_control,
                     "init_profile": port.init_profile,
                     "init_commands": port.init_commands,
+                    "rx_only_rf": port.rx_only_rf,
+                    "rx_only_is": port.rx_only_is,
                 }
                 for port in config.rf_ports
             ],
@@ -1782,7 +1828,10 @@ def create_app(
                             type="tcp",
                             host=host,
                             tcp_port=tcp_port,
+                            protocol=(item.get("protocol", "kiss") or "kiss").strip().lower(),
                             mode="kiss",
+                            rx_only_rf=bool(item.get("rx_only_rf", False)),
+                            rx_only_is=bool(item.get("rx_only_is", False)),
                         ))
                     else:
                         serial_port = (item.get("port", "COM3") or "COM3").strip()
@@ -1797,6 +1846,8 @@ def create_app(
                             flow_control=(item.get("flow_control", "none") or "none").strip().lower(),
                             init_profile=(item.get("init_profile", "none") or "none").strip().lower(),
                             init_commands=item.get("init_commands", "") or "",
+                            rx_only_rf=bool(item.get("rx_only_rf", False)),
+                            rx_only_is=bool(item.get("rx_only_is", False)),
                         ))
                 config.rf_ports = rf_ports
                 config.kiss_serial.enabled = False

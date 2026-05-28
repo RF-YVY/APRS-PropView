@@ -264,6 +264,11 @@
                     <input type="text" id="msg-to-call" class="msg-input-call" placeholder="TO CALL" maxlength="9" list="msg-contact-options" title="Recipient station, APRS addressee, or bot such as WXBOT">
                     <datalist id="msg-contact-options"></datalist>
                     <input type="text" id="msg-text" class="msg-input-text" placeholder="Type message... (max 67 chars)" maxlength="67">
+                    <select id="msg-send-source" class="msg-source-select" title="Message transmit route">
+                        <option value="both">RF + IS</option>
+                        <option value="rf">RF</option>
+                        <option value="aprs_is">IS</option>
+                    </select>
                     <button id="btn-send-msg" class="btn-primary btn-send-msg" title="Send APRS Message">📨 Send</button>
                     <button id="btn-save-contact" class="btn-small" title="Save recipient to contacts">Save Contact</button>
                 </div>
@@ -361,6 +366,7 @@
                         <button class="analytics-subtab" data-section="sec-historical">📊 History</button>
                         <button class="analytics-subtab" data-section="sec-sporadic-e">⚡ Sporadic-E</button>
                         <button class="analytics-subtab" data-section="sec-first-heard">🆕 First Heard</button>
+                        <button class="analytics-subtab" data-section="sec-weather">WX Graphs</button>
                         <button class="analytics-subtab" data-section="sec-export">💾 Export</button>
                         <button class="analytics-subtab" data-section="sec-alerts">🚨 Alerts</button>
                     </div>
@@ -524,6 +530,27 @@
                         <div id="first-heard-list" class="first-heard-list">
                             <div class="analytics-empty">No new stations heard yet.</div>
                         </div>
+                    </div>
+
+                    <!-- Weather Graphs -->
+                    <div id="sec-weather" class="analytics-section">
+                        <div class="analytics-header">
+                            <h3>Weather Graphs</h3>
+                            <select id="weather-analytics-hours">
+                                <option value="6">6h</option>
+                                <option value="12">12h</option>
+                                <option value="24" selected>24h</option>
+                                <option value="48">48h</option>
+                                <option value="168">7d</option>
+                            </select>
+                        </div>
+                        <div class="weather-analytics-grid">
+                            <canvas id="weather-temp-chart" width="380" height="160"></canvas>
+                            <canvas id="weather-wind-chart" width="380" height="160"></canvas>
+                            <canvas id="weather-pressure-chart" width="380" height="160"></canvas>
+                            <canvas id="weather-humidity-chart" width="380" height="160"></canvas>
+                        </div>
+                        <div id="weather-analytics-summary" class="analytics-empty">No weather data loaded yet.</div>
                     </div>
 
                     <!-- Data Export -->
@@ -1477,7 +1504,7 @@
                 <div class="about-panel">
                     <div class="about-header">
                         <h2>APRS PropView</h2>
-                        <span id="about-version" class="about-version">v1.5.4</span>
+                        <span id="about-version" class="about-version">v1.5.4.2</span>
                     </div>
                     <div class="about-section">
                         <p>A real-time APRS digipeater and IGate focused on VHF propagation, live mapping, APRS messaging, analytics, and weather-aware situational awareness.</p>
@@ -1493,7 +1520,7 @@
                     </div>
                     <div class="about-section">
                         <h3>Build Info</h3>
-                        <p>Version: <span id="about-version-detail">1.5.4</span></p>
+                        <p>Version: <span id="about-version-detail">1.5.4.2</span></p>
                         <p>Release Date: <span id="about-date">May 27, 2026</span></p>
                         <p>Highlights: beacon preview/transmit controls, transmit history, settings backup/import, first-run guidance, APRS-IS filter helpers, metric units, WXnow improvements, and dynamic/status/MHeard/weather-alert beacons.</p>
                     </div>

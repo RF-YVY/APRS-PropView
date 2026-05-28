@@ -32,6 +32,7 @@
         document.getElementById('bearing-hours')?.addEventListener('change', () => loadBearingSectors());
         document.getElementById('first-heard-hours')?.addEventListener('change', () => loadFirstHeard());
         document.getElementById('first-heard-direct-only')?.addEventListener('change', () => loadFirstHeard());
+        document.getElementById('weather-analytics-hours')?.addEventListener('change', () => loadWeatherGraphs());
 
         const savedSection = localStorage.getItem(ANALYTICS_SECTION_KEY);
         if (savedSection && document.getElementById(savedSection)) {
@@ -59,6 +60,7 @@
             case 'sec-historical': loadHistorical(); break;
             case 'sec-sporadic-e': loadSporadicE(); break;
             case 'sec-first-heard': loadFirstHeard(); break;
+            case 'sec-weather': loadWeatherGraphs(); break;
         }
     }
 
@@ -782,6 +784,89 @@
         }
     }
 
+    // ── Weather Graphs ────────────────────────────────────────────
+
+    async function loadWeatherGraphs() {
+        const hours = document.getElementById('weather-analytics-hours')?.value || 24;
+        const summary = document.getElementById('weather-analytics-summary');
+        try {
+            const resp = await fetch(`/api/analytics/weather?hours=${hours}`);
+            const data = await resp.json();
+            const samples = data.samples || [];
+            drawWeatherLineChart('weather-temp-chart', samples, 'temperature_f', 'Temperature', 'F');
+            drawWeatherLineChart('weather-wind-chart', samples, 'wind_speed_mph', 'Wind', 'mph');
+            drawWeatherLineChart('weather-pressure-chart', samples, 'pressure_mb', 'Pressure', 'mb');
+            drawWeatherLineChart('weather-humidity-chart', samples, 'humidity', 'Humidity', '%');
+            if (summary) {
+                const sources = [...new Set(samples.map(s => s.source).filter(Boolean))].slice(0, 6);
+                summary.textContent = samples.length
+                    ? `${samples.length} weather sample${samples.length === 1 ? '' : 's'} from ${sources.join(', ')}`
+                    : 'No weather samples in this time window.';
+            }
+        } catch (e) {
+            console.error('Weather analytics error:', e);
+            if (summary) summary.textContent = 'Failed to load weather graphs.';
+        }
+    }
+
+    function drawWeatherLineChart(canvasId, samples, field, title, unit) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const w = canvas.width;
+        const h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = '#8b949e';
+        ctx.font = '12px sans-serif';
+        ctx.fillText(title, 10, 18);
+
+        const points = (samples || [])
+            .filter(s => s[field] !== undefined && s[field] !== null && Number.isFinite(Number(s[field])))
+            .map(s => ({ t: Number(s.timestamp || 0), v: Number(s[field]) }));
+        if (!points.length) {
+            ctx.fillText('No data', 10, h / 2);
+            return;
+        }
+
+        const pad = { left: 38, right: 12, top: 28, bottom: 24 };
+        const minT = Math.min(...points.map(p => p.t));
+        const maxT = Math.max(...points.map(p => p.t));
+        let minV = Math.min(...points.map(p => p.v));
+        let maxV = Math.max(...points.map(p => p.v));
+        if (minV === maxV) {
+            minV -= 1;
+            maxV += 1;
+        }
+        const chartW = w - pad.left - pad.right;
+        const chartH = h - pad.top - pad.bottom;
+        const xFor = (t) => pad.left + ((t - minT) / Math.max(1, maxT - minT)) * chartW;
+        const yFor = (v) => pad.top + (1 - ((v - minV) / (maxV - minV))) * chartH;
+
+        ctx.strokeStyle = 'rgba(139, 148, 158, 0.35)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(pad.left, pad.top);
+        ctx.lineTo(pad.left, pad.top + chartH);
+        ctx.lineTo(pad.left + chartW, pad.top + chartH);
+        ctx.stroke();
+
+        ctx.strokeStyle = '#58a6ff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        points.forEach((p, i) => {
+            const x = xFor(p.t);
+            const y = yFor(p.v);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+
+        ctx.fillStyle = '#8b949e';
+        ctx.font = '10px sans-serif';
+        ctx.fillText(`${Math.round(maxV * 10) / 10}${unit}`, 4, pad.top + 4);
+        ctx.fillText(`${Math.round(minV * 10) / 10}${unit}`, 4, pad.top + chartH);
+    }
+
     // ── Data Export ───────────────────────────────────────────────
 
     async function exportData(type, format) {
@@ -829,6 +914,7 @@
         loadHistorical,
         loadSporadicE,
         loadFirstHeard,
+        loadWeatherGraphs,
         exportData,
     };
 

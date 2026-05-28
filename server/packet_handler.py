@@ -105,14 +105,17 @@ class PacketHandler:
     def _can_send_via(self, source: str) -> bool:
         """Check whether the requested transport is currently available."""
         if source == "rf":
-            return any(
-                getattr(iface, "connected", False)
-                and getattr(iface, "can_transmit", True)
-                for iface in self.rf_interfaces
-            )
+            return any(self._iface_can_transmit(iface, "rf") for iface in self.rf_interfaces)
         if source == "aprs_is":
             return bool(self.aprs_is and self.aprs_is.connected)
         return False
+
+    def _iface_can_transmit(self, iface, purpose: str = "rf") -> bool:
+        if not getattr(iface, "connected", False) or not getattr(iface, "can_transmit", True):
+            return False
+        if purpose == "is":
+            return not getattr(iface, "rx_only_is", False)
+        return not getattr(iface, "rx_only_rf", False)
 
     def _resolve_message_source(
         self,
@@ -121,6 +124,8 @@ class PacketHandler:
     ) -> str:
         """Choose the outbound transport for a message."""
         if preferred_source:
+            if preferred_source == "both":
+                return "both"
             if not self._can_send_via(preferred_source):
                 if preferred_source == "rf":
                     raise ValueError("Cannot reply over RF because no RF interface is available.")
@@ -321,7 +326,7 @@ class PacketHandler:
                 frame.destination = AX25Address.from_string("APRS")
                 frame.digipeaters = []
                 frame.info = gated_info.encode("latin-1")
-                await self._transmit_rf(frame)
+                await self._transmit_rf(frame, purpose="is")
                 self.stats["gated_is_to_rf"] += 1
                 self.stats["rf_tx"] += 1
 
@@ -556,12 +561,12 @@ class PacketHandler:
         await self.tracker.db.delete_old_messages(days * 86400)
         await self.load_message_history()
 
-    async def _transmit_rf(self, frame: AX25Frame):
+    async def _transmit_rf(self, frame: AX25Frame, purpose: str = "rf"):
         """Transmit an AX.25 frame on all RF interfaces."""
         encoded = frame.encode()
         sent = 0
         for iface in self.rf_interfaces:
-            if not getattr(iface, "can_transmit", True):
+            if not self._iface_can_transmit(iface, purpose):
                 logger.debug(f"Skipping RF TX on receive-only interface {iface.name}")
                 continue
             try:
@@ -667,11 +672,7 @@ class PacketHandler:
         }
 
     def _rf_can_transmit(self) -> bool:
-        return any(
-            getattr(iface, "connected", False)
-            and getattr(iface, "can_transmit", True)
-            for iface in self.rf_interfaces
-        )
+        return any(self._iface_can_transmit(iface, "rf") for iface in self.rf_interfaces)
 
     async def beacon_loop(self):
         """Periodically transmit our station beacon."""
@@ -934,6 +935,8 @@ class PacketHandler:
                     "name": iface.name,
                     "connected": iface.connected,
                     "can_transmit": getattr(iface, "can_transmit", True),
+                    "rx_only_rf": bool(getattr(iface, "rx_only_rf", False)),
+                    "rx_only_is": bool(getattr(iface, "rx_only_is", False)),
                 }
                 for iface in self.rf_interfaces
             ],
