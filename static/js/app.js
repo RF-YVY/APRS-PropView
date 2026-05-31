@@ -58,6 +58,7 @@
     let settingsDirty = false;
     let lastNonSettingsTab = 'tab-rf';
     let aprsIsPasscodeConfigured = false;
+    let pendingAlertRecommendations = null;
 
     async function loadConfig(force) {
         if (force || !window.pvConfigPromise) {
@@ -1553,7 +1554,7 @@
 
     function renderUpdateStatus(data, els) {
         const { messageEl, detailEl, linkEl, footerEl } = els;
-        const currentVersion = data?.current_version || '1.5.5.0';
+        const currentVersion = data?.current_version || '1.5.5.1';
         const latestVersion = data?.latest_version || currentVersion;
         const releaseUrl = 'https://github.com/RF-YVY/APRS-PropView/releases';
         const publishedAt = data?.published_at ? formatReleaseDate(data.published_at) : '';
@@ -2891,10 +2892,92 @@
 
     function initAlertTestControls() {
         document.getElementById('btn-alerts-test')?.addEventListener('click', sendAlertTest);
+        document.getElementById('btn-alerts-recommend')?.addEventListener('click', loadAlertRecommendations);
+        document.getElementById('btn-alerts-apply-recommendations')?.addEventListener('click', applyAlertRecommendations);
         document.getElementById('btn-alerts-msg-test')?.addEventListener('click', sendMessageNotificationTest);
         document.getElementById('btn-mqtt-guide')?.addEventListener('click', () => {
             window.open('/static/mqtt-guide.html', '_blank', 'noopener');
         });
+    }
+
+    function recommendationDistance(km) {
+        return window.formatDist(km, 0).replace('N/A', `0 ${window.distLabel()}`);
+    }
+
+    function renderAlertRecommendations(data) {
+        const rec = data?.recommendations || {};
+        const row = (label, item, formatter = (v) => v) => {
+            if (!item) return '';
+            const current = formatter(item.current);
+            const suggested = formatter(item.suggested);
+            const stats = item.stats || {};
+            return `
+                <div class="alert-rec-row">
+                    <div class="alert-rec-title">${escapeHtml(label)}</div>
+                    <div class="alert-rec-values">Current ${escapeHtml(current)} -> Suggested ${escapeHtml(suggested)}</div>
+                    <div class="alert-rec-detail">Median ${escapeHtml(formatter(stats.median || 0))}, p90 ${escapeHtml(formatter(stats.p90 || 0))}, max ${escapeHtml(formatter(stats.max || 0))}. ${escapeHtml(item.reason || '')}</div>
+                </div>
+            `;
+        };
+        const cooldown = rec.cooldown_minutes
+            ? `
+                <div class="alert-rec-row">
+                    <div class="alert-rec-title">Cooldown</div>
+                    <div class="alert-rec-values">Current ${escapeHtml(rec.cooldown_minutes.current_minutes)} min -> Suggested ${escapeHtml(rec.cooldown_minutes.suggested_minutes)} min</div>
+                    <div class="alert-rec-detail">${escapeHtml(rec.cooldown_minutes.reason || '')}</div>
+                </div>
+            `
+            : '';
+        return `
+            <div class="alert-rec-summary">
+                ${data.enough_data ? 'Recommendations from recent RF path history.' : 'Limited RF history found; suggestions keep current values where needed.'}
+                Samples: ${escapeHtml(data.sample_count || 0)}, events: ${escapeHtml(data.event_count || 0)}.
+            </div>
+            ${row('Direct stations', rec.my_min_stations)}
+            ${row('Direct max distance', rec.my_min_distance_km, recommendationDistance)}
+            ${row('Regional stations', rec.regional_min_stations)}
+            ${row('Regional max distance', rec.regional_min_distance_km, recommendationDistance)}
+            ${cooldown}
+        `;
+    }
+
+    async function loadAlertRecommendations() {
+        const button = document.getElementById('btn-alerts-recommend');
+        const applyBtn = document.getElementById('btn-alerts-apply-recommendations');
+        const status = document.getElementById('cfg-alerts-recommendations');
+        if (button) button.disabled = true;
+        if (applyBtn) applyBtn.disabled = true;
+        pendingAlertRecommendations = null;
+        if (status) {
+            status.textContent = 'Analyzing recent RF path history...';
+            status.title = '';
+        }
+        try {
+            const resp = await fetch('/api/alerts/recommendations?hours=24&sample_minutes=15');
+            const result = await resp.json();
+            if (!resp.ok || !result.success) throw new Error(result.message || 'Recommendation request failed.');
+            pendingAlertRecommendations = result.recommendations || null;
+            if (status) status.innerHTML = renderAlertRecommendations(result);
+            if (applyBtn) applyBtn.disabled = !pendingAlertRecommendations;
+        } catch (e) {
+            console.error('Failed to load alert recommendations:', e);
+            if (status) status.textContent = e.message || 'Could not analyze alert recommendations.';
+            showSystemNotification('Could not analyze alert recommendations.', 'error');
+        } finally {
+            if (button) button.disabled = false;
+        }
+    }
+
+    function applyAlertRecommendations() {
+        const rec = pendingAlertRecommendations;
+        if (!rec) return;
+        if (rec.my_min_stations) setVal('cfg-alerts-my-min-stations', rec.my_min_stations.suggested);
+        if (rec.my_min_distance_km) setVal('cfg-alerts-my-min-dist', Math.round(window.distToDisplay(rec.my_min_distance_km.suggested || 0)));
+        if (rec.regional_min_stations) setVal('cfg-alerts-reg-min-stations', rec.regional_min_stations.suggested);
+        if (rec.regional_min_distance_km) setVal('cfg-alerts-reg-min-dist', Math.round(window.distToDisplay(rec.regional_min_distance_km.suggested || 0)));
+        if (rec.cooldown_minutes) setVal('cfg-alerts-cooldown', rec.cooldown_minutes.suggested_minutes);
+        markSettingsDirty('Alert helper suggestions applied. Save Configuration to keep them.');
+        showSystemNotification('Alert tuning suggestions applied. Save Configuration to keep them.', 'info');
     }
 
     function formatChannelResults(result, fallback) {

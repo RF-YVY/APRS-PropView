@@ -1282,6 +1282,29 @@ def create_app(
             return {"alerts": []}
         return {"alerts": alert_manager.get_alert_history()}
 
+    @app.get("/api/alerts/recommendations")
+    async def get_alert_recommendations(
+        hours: int = Query(24, ge=6, le=168),
+        sample_minutes: int = Query(15, ge=5, le=60),
+    ):
+        if not analytics:
+            return JSONResponse(
+                status_code=503,
+                content={"success": False, "message": "Analytics are not available."},
+            )
+        try:
+            return await analytics.get_alert_threshold_recommendations(
+                config.alerts,
+                hours=hours,
+                sample_minutes=sample_minutes,
+            )
+        except Exception as e:
+            logger.error("Failed to build alert recommendations: %s", e)
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "message": "Could not build alert recommendations."},
+            )
+
     @app.post("/api/alerts/test")
     async def test_alert_destinations(request: Request):
         """Send a test alert to the selected alert notification destinations."""

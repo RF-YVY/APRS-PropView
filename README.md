@@ -1,6 +1,6 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.5.5.0** | May 31, 2026
+**Version 1.5.5.1** | May 31, 2026
 
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 
@@ -13,7 +13,7 @@
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
 
-Version 1.5.5.0 adds scheduled APRS bulletins and objects, map-created objects, smart beaconing, private/local APRS-IS receive compatibility, configurable station-to-station map lines, routed digipeater paths, and AGWPE raw-frame handling fixes.
+Version 1.5.5.1 adds the Band Opening Alert Tuning Helper on top of the v1.5.5.0 scheduled packets, smart beaconing, private APRS-IS receive compatibility, configurable map lines, routed digipeater paths, and AGWPE raw-frame handling fixes.
 
 Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs/linux-raspberry-pi.md).
 
@@ -51,6 +51,7 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 ### Alerts
 
 - **Band Opening Detection** — Automatic alerts when propagation thresholds are exceeded
+- **Alert Tuning Helper** — Analyze recent RF path history and recommend more selective band-opening thresholds from your local baseline
 - **Status/DX Reports** — Optional compact APRS status beacons with the best direct DX station, bearing, counts, and propagation level
 - **Dynamic, MHeard, and Weather Alert Beacons** — Rotate preset status messages, beacon direct-heard RF stations, or beacon severe weather alert text with preview-before-transmit controls
 - **Scheduled Bulletins and APRS Objects** — Periodically transmit configured BLN bulletins and APRS objects over RF, APRS-IS, or both, with preview and one-shot transmit controls

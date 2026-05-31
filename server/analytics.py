@@ -17,6 +17,213 @@ class AnalyticsEngine:
     def __init__(self, db):
         self.db = db
 
+    @staticmethod
+    def _percentile(values: List[float], pct: float) -> float:
+        """Return a simple interpolated percentile for a sorted or unsorted list."""
+        clean = sorted(float(v) for v in values if v is not None)
+        if not clean:
+            return 0.0
+        if len(clean) == 1:
+            return clean[0]
+        rank = (len(clean) - 1) * max(0.0, min(100.0, pct)) / 100.0
+        low = math.floor(rank)
+        high = math.ceil(rank)
+        if low == high:
+            return clean[int(rank)]
+        return clean[low] + (clean[high] - clean[low]) * (rank - low)
+
+    @staticmethod
+    def _summarize_series(values: List[float]) -> Dict[str, Any]:
+        clean = [float(v) for v in values if v is not None]
+        if not clean:
+            return {
+                "min": 0,
+                "median": 0,
+                "p75": 0,
+                "p90": 0,
+                "max": 0,
+                "average": 0,
+            }
+        return {
+            "min": round(min(clean), 1),
+            "median": round(AnalyticsEngine._percentile(clean, 50), 1),
+            "p75": round(AnalyticsEngine._percentile(clean, 75), 1),
+            "p90": round(AnalyticsEngine._percentile(clean, 90), 1),
+            "max": round(max(clean), 1),
+            "average": round(sum(clean) / len(clean), 1),
+        }
+
+    @staticmethod
+    def _recommend_count(values: List[int], current: int) -> Dict[str, Any]:
+        stats = AnalyticsEngine._summarize_series(values)
+        p75 = int(math.ceil(stats["p75"]))
+        p90 = int(math.ceil(stats["p90"]))
+        maximum = int(math.ceil(stats["max"]))
+        suggested = max(1, p90 + 1)
+        if maximum <= 0:
+            suggested = max(1, int(current or 1))
+        suggested = min(100, suggested)
+        if current and current > suggested:
+            suggested = int(current)
+        if current and current <= stats["median"] and maximum > 0:
+            reason = (
+                f"Current threshold {current} is at or below the normal baseline "
+                f"median of {stats['median']:.0f}; use above the 90th percentile."
+            )
+        elif current and current <= p75 and maximum > 0:
+            reason = (
+                f"Current threshold {current} is within normal 75th-percentile traffic; "
+                "raise it to reduce routine alerts."
+            )
+        elif maximum <= 0:
+            reason = "Not enough station activity was found, so the current value is retained."
+        else:
+            reason = "Current threshold is already above typical recent traffic."
+        return {
+            "current": int(current or 0),
+            "suggested": int(suggested),
+            "stats": stats,
+            "reason": reason,
+        }
+
+    @staticmethod
+    def _recommend_distance(values: List[float], current_km: float) -> Dict[str, Any]:
+        stats = AnalyticsEngine._summarize_series(values)
+        p90 = float(stats["p90"])
+        maximum = float(stats["max"])
+        suggested = math.ceil((p90 * 1.1) / 5.0) * 5.0 if p90 > 0 else float(current_km or 0)
+        suggested = max(1.0, min(3219.0, suggested))
+        if current_km and current_km > suggested:
+            suggested = float(current_km)
+        if current_km and current_km <= stats["median"] and maximum > 0:
+            reason = (
+                f"Current threshold {current_km:.0f} km is at or below the normal "
+                f"median of {stats['median']:.0f} km; use a value above recent peaks."
+            )
+        elif current_km and current_km <= p90 and maximum > 0:
+            reason = "Current distance is reached during normal recent conditions; raise it slightly."
+        elif maximum <= 0:
+            reason = "Not enough distance history was found, so the current value is retained."
+        else:
+            reason = "Current distance threshold is already above typical recent traffic."
+        return {
+            "current": round(float(current_km or 0), 1),
+            "suggested": round(float(suggested), 1),
+            "stats": stats,
+            "reason": reason,
+        }
+
+    @staticmethod
+    def _recommend_cooldown(samples_per_hour: float, current_seconds: int) -> Dict[str, Any]:
+        current_minutes = max(1, int(round((current_seconds or 0) / 60)))
+        suggested_minutes = current_minutes
+        reason = "Current cooldown looks reasonable for the amount of recent sample data."
+        if samples_per_hour >= 8 and current_minutes < 45:
+            suggested_minutes = 45
+            reason = "Recent data is dense enough that a longer cooldown can reduce repeated alerts."
+        elif samples_per_hour >= 16 and current_minutes < 60:
+            suggested_minutes = 60
+            reason = "Recent data is very dense; a 60-minute cooldown is safer for noise control."
+        return {
+            "current_minutes": current_minutes,
+            "suggested_minutes": suggested_minutes,
+            "reason": reason,
+        }
+
+    async def get_alert_threshold_recommendations(
+        self,
+        alert_config: Any,
+        hours: int = 24,
+        sample_minutes: int = 15,
+    ) -> Dict[str, Any]:
+        """Recommend band-opening alert thresholds from recent RF path history.
+
+        Each sample evaluates the previous one-hour window, matching the live
+        alert thresholds that also use one-hour station counts and distances.
+        """
+        hours = max(6, min(168, int(hours or 24)))
+        sample_minutes = max(5, min(60, int(sample_minutes or 15)))
+        now = time.time()
+        start = now - hours * 3600
+        history_start = start - 3600
+
+        cursor = await self.db.db.execute(
+            """SELECT timestamp, callsign, distance_km, is_direct
+               FROM path_history
+               WHERE timestamp >= ?
+               ORDER BY timestamp ASC""",
+            (history_start,),
+        )
+        rows = [dict(r) for r in await cursor.fetchall()]
+
+        step = sample_minutes * 60
+        sample_times = []
+        t = start
+        while t <= now:
+            sample_times.append(t)
+            t += step
+
+        direct_counts: List[int] = []
+        direct_distances: List[float] = []
+        regional_counts: List[int] = []
+        regional_distances: List[float] = []
+
+        for end_ts in sample_times:
+            window_start = end_ts - 3600
+            direct_seen = set()
+            regional_seen = set()
+            direct_max = 0.0
+            regional_max = 0.0
+            for row in rows:
+                ts = float(row.get("timestamp") or 0)
+                if ts < window_start or ts > end_ts:
+                    continue
+                call = (row.get("callsign") or "").upper()
+                if not call:
+                    continue
+                dist = float(row.get("distance_km") or 0)
+                if int(row.get("is_direct") or 0) == 1:
+                    direct_seen.add(call)
+                    direct_max = max(direct_max, dist)
+                else:
+                    regional_seen.add(call)
+                    regional_max = max(regional_max, dist)
+            direct_counts.append(len(direct_seen))
+            direct_distances.append(direct_max)
+            regional_counts.append(len(regional_seen))
+            regional_distances.append(regional_max)
+
+        usable_samples = len(sample_times)
+        samples_per_hour = usable_samples / max(hours, 1)
+        current_my_count = int(getattr(alert_config, "my_min_stations", 3) or 3)
+        current_my_dist = float(getattr(alert_config, "my_min_distance_km", 100.0) or 100.0)
+        current_reg_count = int(getattr(alert_config, "regional_min_stations", 5) or 5)
+        current_reg_dist = float(getattr(alert_config, "regional_min_distance_km", 100.0) or 100.0)
+        current_cooldown = int(getattr(alert_config, "cooldown_seconds", 1800) or 1800)
+
+        enough_data = bool(rows) and usable_samples >= 4
+        return {
+            "success": True,
+            "enough_data": enough_data,
+            "hours": hours,
+            "sample_minutes": sample_minutes,
+            "sample_count": usable_samples,
+            "event_count": len(rows),
+            "generated_at": now,
+            "recommendations": {
+                "my_min_stations": self._recommend_count(direct_counts, current_my_count),
+                "my_min_distance_km": self._recommend_distance(direct_distances, current_my_dist),
+                "regional_min_stations": self._recommend_count(regional_counts, current_reg_count),
+                "regional_min_distance_km": self._recommend_distance(regional_distances, current_reg_dist),
+                "cooldown_minutes": self._recommend_cooldown(samples_per_hour, current_cooldown),
+            },
+            "summary": (
+                "Recommendations are based on rolling one-hour RF path windows. "
+                "Suggested station counts sit above the recent 90th percentile so baseline traffic "
+                "does not trigger routine band-opening alerts."
+            ),
+        }
+
     # ── Longest Path Today ──────────────────────────────────────
 
     async def get_longest_paths(self, hours: int = 24, limit: int = 25) -> List[Dict[str, Any]]:

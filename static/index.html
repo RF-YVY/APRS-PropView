@@ -23,7 +23,7 @@
     </script>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css" />
-    <link rel="stylesheet" href="/static/css/style.css?v=1.5.5.0" />
+    <link rel="stylesheet" href="/static/css/style.css?v=1.5.5.1" />
     <!-- Leaflet JS -->
     <script defer src="/static/vendor/leaflet/leaflet.js"></script>
 </head>
@@ -1522,6 +1522,15 @@
                             <label for="cfg-alerts-cooldown">Cooldown (min)</label>
                             <input type="number" id="cfg-alerts-cooldown" min="1" max="1440" step="1" value="30">
                         </div>
+                        <div class="settings-row settings-row-stacked">
+                            <label>Alert Tuning Helper</label>
+                            <div id="cfg-alerts-recommendations" class="status-preview alert-recommendations">Run the helper after collecting RF data for 24 hours.</div>
+                        </div>
+                        <div class="settings-row">
+                            <label></label>
+                            <button type="button" class="btn-small" id="btn-alerts-recommend">Analyze Last 24h</button>
+                            <button type="button" class="btn-small" id="btn-alerts-apply-recommendations" disabled>Apply Suggestions</button>
+                        </div>
                         <div class="settings-row">
                             <label for="cfg-alerts-quiet-start">Quiet Hours Start</label>
                             <input type="time" id="cfg-alerts-quiet-start" placeholder="22:00">
@@ -1664,7 +1673,7 @@
                 <div class="about-panel">
                     <div class="about-header">
                         <h2>APRS PropView</h2>
-                        <span id="about-version" class="about-version">v1.5.5.0</span>
+                        <span id="about-version" class="about-version">v1.5.5.1</span>
                     </div>
                     <div class="about-section">
                         <p>A real-time APRS digipeater and IGate focused on VHF propagation, live mapping, APRS messaging, analytics, and weather-aware situational awareness.</p>
@@ -1680,9 +1689,9 @@
                     </div>
                     <div class="about-section">
                         <h3>Build Info</h3>
-                        <p>Version: <span id="about-version-detail">1.5.5.0</span></p>
+                        <p>Version: <span id="about-version-detail">1.5.5.1</span></p>
                         <p>Release Date: <span id="about-date">May 31, 2026</span></p>
-                        <p>Highlights: scheduled bulletins and APRS objects, map-created objects, smart beaconing, private APRS-IS receive compatibility, configurable map lines, routed digipeater paths, and AGWPE raw-frame fixes.</p>
+                        <p>Highlights: Band Opening Alert Tuning Helper, scheduled bulletins and APRS objects, map-created objects, smart beaconing, private APRS-IS receive compatibility, configurable map lines, routed digipeater paths, and AGWPE raw-frame fixes.</p>
                     </div>
                     <div class="about-section">
                         <h3>Video Guide</h3>
@@ -1935,6 +1944,7 @@
                     <p><b>Max Station Age</b> — How long (minutes) to keep a station in the database before cleanup removes it. <b>Cleanup Interval</b> — How often (minutes) to run the cleanup process.</p>
                     <h4>Alerts — Band Opening Channels</h4>
                     <p>Trigger an alert when propagation exceeds thresholds (min RF stations + min distance). Cooldown prevents repeated alerts. Quiet hours suppress alerts during specified times. Channels: Discord webhook, Email (SMTP), and SMS via email gateway.</p>
+                    <p>The Alert Tuning Helper analyzes recent RF path history as rolling one-hour windows and recommends direct/regional station count, distance, and cooldown values that sit above your normal local baseline.</p>
                     <p>Use <b>Send Test Alert</b> to send a preformatted test message to selected Discord, Email, and SMS destinations without waiting for a real alert trigger.</p>
                     <h4>Alerts — Message Notification Channels</h4>
                     <p>Separate channel toggles for forwarding incoming APRS messages to Discord, Email, or SMS — independent from band-opening channels.</p>
@@ -1976,12 +1986,12 @@
 
     <!-- ── Scripts ────────────────────────────────────────────── -->
     <script defer src="/static/js/websocket.js"></script>
-    <script defer src="/static/js/map.js?v=1.5.5.0"></script>
-    <script defer src="/static/js/stations.js?v=1.5.5.0"></script>
+    <script defer src="/static/js/map.js?v=1.5.5.1"></script>
+    <script defer src="/static/js/stations.js?v=1.5.5.1"></script>
     <script defer src="/static/js/icons.js"></script>
-    <script defer src="/static/js/analytics.js?v=1.5.5.0"></script>
-    <script defer src="/static/js/messages.js?v=1.5.5.0"></script>
+    <script defer src="/static/js/analytics.js?v=1.5.5.1"></script>
+    <script defer src="/static/js/messages.js?v=1.5.5.1"></script>
     <script defer src="/static/js/weather.js"></script>
-    <script defer src="/static/js/app.js?v=1.5.5.0"></script>
+    <script defer src="/static/js/app.js?v=1.5.5.1"></script>
 </body>
 </html>

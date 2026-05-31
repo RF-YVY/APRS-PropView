@@ -2466,6 +2466,42 @@ canvas {
     overflow-wrap: anywhere;
 }
 
+.alert-recommendations {
+    font-family: inherit;
+    display: grid;
+    gap: 8px;
+}
+
+.alert-rec-summary {
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.alert-rec-row {
+    border-top: 1px solid var(--border);
+    padding-top: 7px;
+}
+
+.alert-rec-title {
+    color: var(--text-primary);
+    font-weight: 700;
+    font-size: 12px;
+}
+
+.alert-rec-values {
+    color: var(--accent-cyan);
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 12px;
+    margin-top: 2px;
+}
+
+.alert-rec-detail {
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.35;
+    margin-top: 2px;
+}
+
 .settings-row .lock-check {
     flex: 0 0 auto;
     max-width: none;

@@ -3,6 +3,7 @@ import asyncio
 import tempfile
 from pathlib import Path
 
+import server.analytics as analytics_module
 from server.aprs_is import APRSISClient
 from server.aprs_parser import make_message_packet, parse_packet
 from server.app import _is_valid_message_addressee, _is_valid_station_callsign, _validate_config
@@ -182,9 +183,9 @@ class APRSISComplianceTests(unittest.TestCase):
         config = Config()
         config.station.callsign = "K5ABC"
         config.aprs_is.passcode = "12345"
-        client = APRSISClient(config, lambda packet: None, app_version="1.5.5.0")
+        client = APRSISClient(config, lambda packet: None, app_version="1.5.5.1")
 
-        self.assertIn("vers APRSPropView 1.5.5.0", client._build_login())
+        self.assertIn("vers APRSPropView 1.5.5.1", client._build_login())
 
     def test_packet_sent_instead_of_logresp_is_not_dropped(self):
         async def run_test():
@@ -957,6 +958,68 @@ class SporadicEDetectionTests(unittest.TestCase):
                 result["candidates"][0]["es_score"],
                 result["candidates"][1]["es_score"],
             )
+
+        asyncio.run(run_test())
+
+
+class AlertRecommendationTests(unittest.TestCase):
+    def test_recommends_count_above_constant_direct_baseline(self):
+        async def run_test():
+            with tempfile.TemporaryDirectory() as tmp:
+                db = Database(f"{tmp}/test.db")
+                await db.initialize()
+                try:
+                    now = 1_700_000_000.0
+                    start = now - 24 * 3600
+                    for i in range(96):
+                        ts = start + i * 900
+                        for idx, dist in enumerate((40.0, 55.0, 70.0), start=1):
+                            await db.db.execute(
+                                """INSERT INTO path_history
+                                   (timestamp, callsign, distance_km, heading, path, hop_count, is_direct)
+                                   VALUES (?, ?, ?, 0, '', 0, 1)""",
+                                (ts, f"DIRECT{idx}", dist),
+                            )
+                        if i >= 88:
+                            for idx, dist in enumerate((135.0, 150.0), start=4):
+                                await db.db.execute(
+                                    """INSERT INTO path_history
+                                       (timestamp, callsign, distance_km, heading, path, hop_count, is_direct)
+                                       VALUES (?, ?, ?, 0, '', 0, 1)""",
+                                    (ts, f"DIRECT{idx}", dist),
+                                )
+                        if i % 4 == 0:
+                            await db.db.execute(
+                                """INSERT INTO path_history
+                                   (timestamp, callsign, distance_km, heading, path, hop_count, is_direct)
+                                   VALUES (?, 'DIGI1', 110.0, 0, 'WIDE1-1*', 1, 0)""",
+                                (ts,),
+                            )
+                    await db.commit()
+                    engine = AnalyticsEngine(db)
+                    original_time = analytics_module.time.time
+                    try:
+                        analytics_module.time.time = lambda: now
+                        result = await engine.get_alert_threshold_recommendations(
+                            AlertConfig(
+                                my_min_stations=3,
+                                my_min_distance_km=50,
+                                regional_min_stations=1,
+                                regional_min_distance_km=100,
+                                cooldown_seconds=1800,
+                            ),
+                            hours=24,
+                            sample_minutes=15,
+                        )
+                    finally:
+                        analytics_module.time.time = original_time
+                finally:
+                    await db.close()
+
+            self.assertTrue(result["enough_data"])
+            self.assertGreater(result["recommendations"]["my_min_stations"]["suggested"], 3)
+            self.assertGreater(result["recommendations"]["my_min_distance_km"]["suggested"], 70)
+            self.assertIn("baseline", result["recommendations"]["my_min_stations"]["reason"])
 
         asyncio.run(run_test())
 
