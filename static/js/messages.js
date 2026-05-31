@@ -137,6 +137,17 @@ window.pvMessages = (function () {
         document.getElementById('tab-messages')?.classList.add('active');
     }
 
+    function startNewMessage(callsign) {
+        const call = normalizeCall(callsign);
+        if (!call) return;
+        switchToMessagesTab();
+        selectConversation(call);
+        const toEl = document.getElementById('msg-to-call');
+        const textEl = document.getElementById('msg-text');
+        if (toEl) toEl.value = call;
+        if (textEl) textEl.focus();
+    }
+
     async function loadMessages() {
         try {
             loadReadTimestamps();
@@ -575,6 +586,7 @@ window.pvMessages = (function () {
         handleAck,
         handleRej,
         switchToMessagesTab,
+        startNewMessage,
         render: renderMessages,
     };
 })();

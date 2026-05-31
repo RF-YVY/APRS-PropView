@@ -112,12 +112,24 @@ class KISSFrameParser:
     def __init__(self):
         self.buffer = bytearray()
         self.in_frame = False
+        self.text_buffer = bytearray()
 
     def feed(self, data: bytes) -> list:
         """Feed raw bytes and return list of extracted KISS data frames."""
+        frames, _text_lines = self.feed_with_text(data)
+        return frames
+
+    def feed_with_text(self, data: bytes) -> tuple[list, list[str]]:
+        """Feed raw bytes and return KISS frames plus out-of-frame text lines."""
         frames = []
+        text_lines = []
         for b in data:
             if b == FEND:
+                if self.text_buffer:
+                    line = self.text_buffer.decode("ascii", errors="ignore").strip()
+                    if line:
+                        text_lines.append(line)
+                    self.text_buffer.clear()
                 if self.in_frame and len(self.buffer) > 0:
                     # End of frame
                     frame_data = kiss_unescape(bytes(self.buffer))
@@ -130,7 +142,18 @@ class KISSFrameParser:
                 self.buffer.clear()
             elif self.in_frame:
                 self.buffer.append(b)
-        return frames
+            elif b in (10, 13):
+                line = self.text_buffer.decode("ascii", errors="ignore").strip()
+                if line:
+                    text_lines.append(line)
+                self.text_buffer.clear()
+            elif 32 <= b <= 126:
+                self.text_buffer.append(b)
+                if len(self.text_buffer) > 120:
+                    self.text_buffer.clear()
+            elif self.text_buffer:
+                self.text_buffer.clear()
+        return frames, text_lines
 
 
 class KISSSerialClient:
@@ -143,6 +166,7 @@ class KISSSerialClient:
         port: str,
         baudrate: int,
         on_frame: Callable,
+        on_text_line: Optional[Callable] = None,
         flow_control: str = "none",
         init_profile: str = "none",
         init_commands: str = "",
@@ -152,6 +176,7 @@ class KISSSerialClient:
         self.port = port
         self.baudrate = baudrate
         self.on_frame = on_frame
+        self.on_text_line = on_text_line
         self.flow_control = normalize_flow_control(flow_control)
         self.init_profile = init_profile
         self.init_commands = init_commands
@@ -199,7 +224,15 @@ class KISSSerialClient:
                 data = await self.reader.read(1024)
                 if not data:
                     break
-                frames = self.parser.feed(data)
+                frames, text_lines = self.parser.feed_with_text(data)
+                for line in text_lines:
+                    if not line.startswith("$"):
+                        continue
+                    try:
+                        if self.on_text_line:
+                            await self.on_text_line(line, self)
+                    except Exception as e:
+                        logger.error(f"{self._name}: Text line handler error: {e}")
                 for frame in frames:
                     try:
                         await self.on_frame(frame, self)
@@ -322,6 +355,37 @@ def _agwpe_header(kind: str, data_len: int = 0, port: int = 0, pid: int = 0) -> 
     return struct.pack("<B3sBBBB10s10sII", port & 0xFF, b"\x00\x00\x00", kind_byte[0], 0, pid & 0xFF, 0, b"", b"", data_len, 0)
 
 
+def _looks_like_ax25_address(data: bytes) -> bool:
+    """Return True when bytes appear to begin with AX.25 destination/source addresses."""
+    if len(data) < 16:
+        return False
+
+    def valid_call(addr: bytes) -> bool:
+        if len(addr) < 7:
+            return False
+        call = "".join(chr((b >> 1) & 0x7F) for b in addr[:6]).strip()
+        if not call or len(call) > 6:
+            return False
+        return all(c.isalnum() or c == " " for c in call)
+
+    return valid_call(data[0:7]) and valid_call(data[7:14])
+
+
+def _agwpe_raw_payload_to_ax25(data: bytes, port: int = 0) -> bytes:
+    """Strip the AGWPE raw-frame TNC byte when present."""
+    if not data:
+        return data
+    if _looks_like_ax25_address(data):
+        return data
+
+    # AGWPE raw K frames include a leading TNC byte before the AX.25 frame:
+    # 0x00 for port 1, 0x10 for port 2, etc. Some servers echo the API port
+    # number instead, so prefer structural validation over one exact value.
+    if len(data) > 1 and _looks_like_ax25_address(data[1:]):
+        return data[1:]
+    return data
+
+
 class AGWPETCPClient:
     """AGWPE server-port connection using raw AX.25 frames."""
 
@@ -371,8 +435,9 @@ class AGWPETCPClient:
                 data = await self.reader.readexactly(data_len) if data_len else b""
                 kind_ch = chr(kind)
                 if kind_ch in {"K", "k"} and data:
+                    frame_data = _agwpe_raw_payload_to_ax25(data, port)
                     try:
-                        await self.on_frame(data, self)
+                        await self.on_frame(frame_data, self)
                     except Exception as e:
                         logger.error(f"{self._name}: Frame handler error: {e}")
                 elif kind_ch in {"U", "M"} and data:
@@ -390,7 +455,8 @@ class AGWPETCPClient:
 
     async def send(self, ax25_data: bytes):
         if self.writer and self.connected:
-            self.writer.write(_agwpe_header("K", len(ax25_data)) + ax25_data)
+            payload = bytes([0]) + ax25_data
+            self.writer.write(_agwpe_header("K", len(payload)) + payload)
             await self.writer.drain()
             logger.debug(f"{self._name}: Sent {len(ax25_data)} bytes")
 

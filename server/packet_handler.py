@@ -293,6 +293,27 @@ class PacketHandler:
 
         await self._broadcast_stats()
 
+    async def handle_rf_text_line(self, raw_str: str, interface=None):
+        """Handle plain text that shares a KISS serial port, such as NMEA passthrough."""
+        line = (raw_str or "").strip()
+        if not line:
+            return
+        if line.startswith("$"):
+            gps_cfg = getattr(self.config, "gps", None)
+            gps_accepts_serial = bool(
+                self.gps_manager
+                and gps_cfg
+                and gps_cfg.enabled
+                and (gps_cfg.source or "").strip().lower() in {"nmea_serial", "any"}
+            )
+            if gps_accepts_serial:
+                result = await self.gps_manager.update_from_nmea(line, "nmea_serial")
+                if result:
+                    logger.debug("GPS NMEA RX on %s: %s", getattr(interface, "name", "RF serial"), line)
+            return
+        if ">" in line and ":" in line:
+            await self.handle_rf_aprs_packet(line, interface)
+
     async def handle_is_packet(self, raw_str: str):
         """Handle a packet received from APRS-IS."""
         self.stats["is_rx"] += 1
@@ -703,6 +724,7 @@ class PacketHandler:
                     )
                     interval = 600
 
+                interval = self._smart_beacon_interval(interval)
                 logger.info(f"Sending beacon (next in {interval}s / {interval // 60}min)")
                 await self._send_beacon()
                 await asyncio.sleep(interval)
@@ -711,6 +733,17 @@ class PacketHandler:
             except Exception as e:
                 logger.error(f"Beacon error: {e}", exc_info=True)
                 await asyncio.sleep(60)
+
+    def _smart_beacon_interval(self, default_interval: int) -> int:
+        cfg = getattr(self.config, "smart_beaconing", None)
+        if not cfg or not cfg.enabled:
+            return default_interval
+        gps = self.gps_manager.get_status() if self.gps_manager else {}
+        current = gps.get("current") or {}
+        speed = current.get("speed_mph")
+        if speed is None:
+            return max(int(cfg.slow_interval or default_interval), 600)
+        return int(cfg.fast_interval if float(speed) >= float(cfg.speed_threshold_mph or 0) else cfg.slow_interval)
 
     def get_beacon_status(self, mode: str = "both") -> Dict[str, Any]:
         """Return whether a beacon can be transmitted right now."""

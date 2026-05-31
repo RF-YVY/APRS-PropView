@@ -140,6 +140,26 @@ dynamic_messages = []
 weather_alert_beacon_enabled = false
 weather_alert_cooldown_minutes = 30
 
+[smart_beaconing]
+enabled = false
+slow_interval = 1800
+fast_interval = 120
+speed_threshold_mph = 10.0
+
+[bulletins]
+enabled = false
+interval = 1800
+mode = "both"
+path = "WIDE1-1"
+items = []
+
+[aprs_objects]
+enabled = false
+interval = 1800
+mode = "both"
+path = "WIDE1-1"
+items = []
+
 [weather]
 enabled = false
 location_code = ""
@@ -377,6 +397,32 @@ class StatusConfig:
 
 
 @dataclass
+class SmartBeaconingConfig:
+    enabled: bool = False
+    slow_interval: int = 1800
+    fast_interval: int = 120
+    speed_threshold_mph: float = 10.0
+
+
+@dataclass
+class BulletinsConfig:
+    enabled: bool = False
+    interval: int = 1800
+    mode: str = "both"
+    path: str = "WIDE1-1"
+    items: List[dict] = field(default_factory=list)
+
+
+@dataclass
+class APRSObjectsConfig:
+    enabled: bool = False
+    interval: int = 1800
+    mode: str = "both"
+    path: str = "WIDE1-1"
+    items: List[dict] = field(default_factory=list)
+
+
+@dataclass
 class WeatherConfig:
     enabled: bool = False
     location_code: str = ""       # US zip code or ICAO code
@@ -465,6 +511,9 @@ class Config:
     alerts: AlertsConfig = field(default_factory=AlertsConfig)
     propagation: PropagationConfig = field(default_factory=PropagationConfig)
     status: StatusConfig = field(default_factory=StatusConfig)
+    smart_beaconing: SmartBeaconingConfig = field(default_factory=SmartBeaconingConfig)
+    bulletins: BulletinsConfig = field(default_factory=BulletinsConfig)
+    aprs_objects: APRSObjectsConfig = field(default_factory=APRSObjectsConfig)
     weather: WeatherConfig = field(default_factory=WeatherConfig)
     wxnow: WxNowConfig = field(default_factory=WxNowConfig)
     gps: GPSConfig = field(default_factory=GPSConfig)
@@ -495,6 +544,9 @@ class Config:
             "alerts": (AlertsConfig, "alerts"),
             "propagation": (PropagationConfig, "propagation"),
             "status": (StatusConfig, "status"),
+            "smart_beaconing": (SmartBeaconingConfig, "smart_beaconing"),
+            "bulletins": (BulletinsConfig, "bulletins"),
+            "aprs_objects": (APRSObjectsConfig, "aprs_objects"),
             "weather": (WeatherConfig, "weather"),
             "wxnow": (WxNowConfig, "wxnow"),
             "gps": (GPSConfig, "gps"),
@@ -690,6 +742,57 @@ class Config:
             'dynamic_messages = [' + ', '.join('"' + self._toml_escape(v) + '"' for v in self.status.dynamic_messages) + ']',
             f"weather_alert_beacon_enabled = {'true' if self.status.weather_alert_beacon_enabled else 'false'}",
             f"weather_alert_cooldown_minutes = {int(self.status.weather_alert_cooldown_minutes)}",
+            "",
+            "[smart_beaconing]",
+            f"enabled = {'true' if self.smart_beaconing.enabled else 'false'}",
+            f"slow_interval = {int(self.smart_beaconing.slow_interval)}",
+            f"fast_interval = {int(self.smart_beaconing.fast_interval)}",
+            f"speed_threshold_mph = {float(self.smart_beaconing.speed_threshold_mph)}",
+            "",
+            "[bulletins]",
+            f"enabled = {'true' if self.bulletins.enabled else 'false'}",
+            f"interval = {int(self.bulletins.interval)}",
+            f'mode = "{esc(self.bulletins.mode)}"',
+            f'path = "{esc(self.bulletins.path)}"',
+            "items = [",
+            *[
+                "  { id = \"" + esc(str(item.get("id", ""))[:5]) + "\", text = \"" + esc(str(item.get("text", ""))[:67]) + "\" },"
+                for item in self.bulletins.items
+                if str(item.get("text", "")).strip()
+            ],
+            "]",
+            "",
+            "[aprs_objects]",
+            f"enabled = {'true' if self.aprs_objects.enabled else 'false'}",
+            f"interval = {int(self.aprs_objects.interval)}",
+            f'mode = "{esc(self.aprs_objects.mode)}"',
+            f'path = "{esc(self.aprs_objects.path)}"',
+            "items = [",
+            *[
+                "  { name = \"" + esc(str(item.get("name", ""))[:9]) +
+                "\", enabled = " + ("true" if item.get("enabled", True) else "false") +
+                ", active = " + ("true" if item.get("active", item.get("live", True)) else "false") +
+                ", permanent = " + ("true" if item.get("permanent", False) else "false") +
+                ", scope = \"" + esc(str(item.get("scope", "global"))[:12]) +
+                "\", latitude = " + str(float(item.get("latitude", 0) or 0)) +
+                ", longitude = " + str(float(item.get("longitude", 0) or 0)) +
+                ", symbol_table = \"" + esc(str(item.get("symbol_table", "/"))[:1] or "/") +
+                "\", symbol_code = \"" + esc(str(item.get("symbol_code", "\\"))[:1] or "\\") +
+                "\", overlay = \"" + esc(str(item.get("overlay", ""))[:1]) +
+                "\", speed_mph = " + str(int(float(item.get("speed_mph", 0) or 0))) +
+                ", course_deg = " + str(int(float(item.get("course_deg", 0) or 0)) % 360) +
+                ", signpost = \"" + esc(str(item.get("signpost", ""))[:20]) +
+                "\", frequency = \"" + esc(str(item.get("frequency", ""))[:12]) +
+                "\", duplex = \"" + esc(str(item.get("duplex", ""))[:3]) +
+                "\", tone = \"" + esc(str(item.get("tone", ""))[:8]) +
+                "\", qru = \"" + esc(str(item.get("qru", ""))[:12]) +
+                "\", path = \"" + esc(str(item.get("path", ""))[:40]) +
+                "\", mode = \"" + esc(str(item.get("mode", ""))[:12]) +
+                "\", comment = \"" + esc(str(item.get("comment", ""))[:80]) + "\" },"
+                for item in self.aprs_objects.items
+                if str(item.get("name", "")).strip()
+            ],
+            "]",
             "",
             "[weather]",
             f"enabled = {'true' if self.weather.enabled else 'false'}",

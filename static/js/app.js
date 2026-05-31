@@ -232,6 +232,7 @@
         initPhgCalculator();
         initWxNowControls();
         initStatusDxControls();
+        initScheduledPacketControls();
         initAlertTestControls();
         initRfPortsControls();
         initUpdateCheckerUi();
@@ -402,6 +403,7 @@
         const panel = document.querySelector('.settings-panel');
         if (!panel) return;
 
+        reorderSettingsSections(panel);
         const collapsed = new Set(_loadCollapsedSettings());
         const sections = Array.from(panel.querySelectorAll('.settings-section'));
         if (!sections.length) return;
@@ -566,6 +568,42 @@
         panel.insertBefore(noResults, anchor);
         updateStickyOffsets();
         window.addEventListener('resize', updateStickyOffsets);
+    }
+
+    function reorderSettingsSections(panel) {
+        const order = [
+            'station',
+            'aprsis',
+            'rf-ports',
+            'igate',
+            'digipeater',
+            'web',
+            'smart-beaconing',
+            'bulletins',
+            'aprs-objects',
+            'status-dx',
+            'wxnow',
+            'weather',
+            'alerts',
+            'propagation',
+            'tracking',
+            'messaging',
+            'mqtt',
+        ];
+        const sections = new Map(
+            Array.from(panel.querySelectorAll('.settings-section')).map((section) => [
+                section.dataset.settingsKey,
+                section,
+            ])
+        );
+        let anchor = panel.querySelector('.settings-section');
+        if (!anchor) return;
+        [...order].reverse().forEach((key) => {
+            const section = sections.get(key);
+            if (!section) return;
+            panel.insertBefore(section, anchor);
+            anchor = section;
+        });
     }
 
     function _syncSettingsSectionState(section, toggle, collapsedSet, updateStorage = true) {
@@ -1515,7 +1553,7 @@
 
     function renderUpdateStatus(data, els) {
         const { messageEl, detailEl, linkEl, footerEl } = els;
-        const currentVersion = data?.current_version || '1.5.4.2';
+        const currentVersion = data?.current_version || '1.5.5.0';
         const latestVersion = data?.latest_version || currentVersion;
         const releaseUrl = 'https://github.com/RF-YVY/APRS-PropView/releases';
         const publishedAt = data?.published_at ? formatReleaseDate(data.published_at) : '';
@@ -1742,6 +1780,7 @@
         }
         updateFirstRunChecklist();
     }
+    window.pvMarkSettingsDirty = markSettingsDirty;
 
     function escapeHtml(text) {
         return String(text ?? '').replace(/[&<>"']/g, (ch) => ({
@@ -2192,6 +2231,44 @@
             setVal('cfg-status-path', cfg.status?.path || 'WIDE1-1');
             refreshStatusDxPreview();
 
+            setChk('cfg-smart-enabled', cfg.smart_beaconing?.enabled);
+            setVal('cfg-smart-slow', Math.round((cfg.smart_beaconing?.slow_interval || 1800) / 60));
+            setVal('cfg-smart-fast', Math.round((cfg.smart_beaconing?.fast_interval || 120) / 60));
+            setVal('cfg-smart-speed', cfg.smart_beaconing?.speed_threshold_mph ?? 10);
+
+            setChk('cfg-bulletins-enabled', cfg.bulletins?.enabled);
+            setVal('cfg-bulletins-interval', Math.round((cfg.bulletins?.interval || 1800) / 60));
+            setVal('cfg-bulletins-mode', cfg.bulletins?.mode || 'both');
+            setVal('cfg-bulletins-path', cfg.bulletins?.path || 'WIDE1-1');
+            setVal('cfg-bulletins-items', (cfg.bulletins?.items || []).map((item) => `${item.id || '1'}|${item.text || ''}`).join('\n'));
+
+            setChk('cfg-objects-enabled', cfg.aprs_objects?.enabled);
+            setVal('cfg-objects-interval', Math.round((cfg.aprs_objects?.interval || 1800) / 60));
+            setVal('cfg-objects-mode', cfg.aprs_objects?.mode || 'both');
+            setVal('cfg-objects-path', cfg.aprs_objects?.path || 'WIDE1-1');
+            setVal('cfg-objects-items', (cfg.aprs_objects?.items || []).map((item) => [
+                item.name || '',
+                item.latitude ?? 0,
+                item.longitude ?? 0,
+                item.symbol_table || '/',
+                item.symbol_code || 'r',
+                item.comment || '',
+                item.enabled ?? true,
+                item.active ?? item.live ?? true,
+                item.permanent ?? false,
+                item.scope || 'global',
+                item.speed_mph ?? 0,
+                item.course_deg ?? 0,
+                item.frequency || '',
+                item.tone || '',
+                item.duplex || '',
+                item.qru || '',
+                item.path || '',
+                item.mode || '',
+                item.overlay || '',
+            ].join('|')).join('\n'));
+            refreshScheduledControls();
+
             setChk('cfg-wxnow-enabled', cfg.wxnow?.enabled);
             setVal('cfg-wxnow-file', cfg.wxnow?.file_path || '');
             setVal('cfg-wxnow-ssid', cfg.wxnow?.ssid ?? 13);
@@ -2423,6 +2500,26 @@
                 weather_alert_beacon_enabled: getChk('cfg-status-weather-alerts'),
                 weather_alert_cooldown_minutes: parseInt(getVal('cfg-status-weather-cooldown')) || 30,
             },
+            smart_beaconing: {
+                enabled: getChk('cfg-smart-enabled'),
+                slow_interval: (parseInt(getVal('cfg-smart-slow')) || 30) * 60,
+                fast_interval: (parseInt(getVal('cfg-smart-fast')) || 2) * 60,
+                speed_threshold_mph: parseFloat(getVal('cfg-smart-speed')) || 10,
+            },
+            bulletins: {
+                enabled: getChk('cfg-bulletins-enabled'),
+                interval: (parseInt(getVal('cfg-bulletins-interval')) || 30) * 60,
+                mode: getVal('cfg-bulletins-mode') || 'both',
+                path: getVal('cfg-bulletins-path') || '',
+                items: getVal('cfg-bulletins-items') || '',
+            },
+            aprs_objects: {
+                enabled: getChk('cfg-objects-enabled'),
+                interval: (parseInt(getVal('cfg-objects-interval')) || 30) * 60,
+                mode: getVal('cfg-objects-mode') || 'both',
+                path: getVal('cfg-objects-path') || '',
+                items: getVal('cfg-objects-items') || '',
+            },
             wxnow: {
                 enabled: getChk('cfg-wxnow-enabled'),
                 file_path: getVal('cfg-wxnow-file') || '',
@@ -2651,6 +2748,8 @@
             status: 'Status',
             mheard: 'MHeard',
             weather_alert: 'WX Alert',
+            bulletin: 'Bulletin',
+            object: 'Object',
         };
         return labels[feature] || feature || 'Transmit';
     }
@@ -2747,6 +2846,47 @@
             document.getElementById(id)?.addEventListener('change', refreshStatusDxPreview);
             document.getElementById(id)?.addEventListener('input', refreshStatusDxPreview);
         });
+    }
+
+    function initScheduledPacketControls() {
+        document.getElementById('btn-bulletins-preview')?.addEventListener('click', refreshScheduledControls);
+        document.getElementById('btn-objects-preview')?.addEventListener('click', refreshScheduledControls);
+        document.getElementById('btn-bulletins-test')?.addEventListener('click', () => transmitScheduledNow('bulletins'));
+        document.getElementById('btn-objects-test')?.addEventListener('click', () => transmitScheduledNow('objects'));
+    }
+
+    async function refreshScheduledControls() {
+        const bln = document.getElementById('cfg-bulletins-preview');
+        const obj = document.getElementById('cfg-objects-preview');
+        try {
+            const resp = await fetch('/api/scheduled/preview');
+            const data = await resp.json();
+            if (bln) bln.textContent = (data.bulletins || []).join('\n') || 'No bulletins configured.';
+            if (obj) obj.textContent = (data.objects || []).join('\n') || 'No APRS objects configured.';
+        } catch (e) {
+            if (bln) bln.textContent = 'Preview unavailable.';
+            if (obj) obj.textContent = 'Preview unavailable.';
+        }
+    }
+    window.pvRefreshScheduledControls = refreshScheduledControls;
+
+    async function transmitScheduledNow(kind) {
+        const isBulletin = kind === 'bulletins';
+        const status = document.getElementById(isBulletin ? 'cfg-bulletins-preview' : 'cfg-objects-preview');
+        const button = document.getElementById(isBulletin ? 'btn-bulletins-test' : 'btn-objects-test');
+        if (button) button.disabled = true;
+        if (status) status.textContent = 'Transmitting...';
+        try {
+            const resp = await fetch(isBulletin ? '/api/bulletins/transmit' : '/api/objects/transmit', { method: 'POST' });
+            const result = await resp.json();
+            if (status) status.textContent = result.message || 'Transmit complete.';
+            await loadTransmitHistory();
+            setTimeout(refreshScheduledControls, 1500);
+        } catch (e) {
+            if (status) status.textContent = 'Transmit failed.';
+        } finally {
+            if (button) button.disabled = false;
+        }
     }
 
     function initAlertTestControls() {

@@ -19,6 +19,14 @@ def _decode_aprs_line(raw_line: bytes) -> str:
     return raw_line.rstrip(b"\r\n").decode("latin-1")
 
 
+def _looks_like_aprs_packet(text: str) -> bool:
+    """Return True when a line has the basic TNC2 APRS packet shape."""
+    if not text or text.startswith("#"):
+        return False
+    header, sep, _info = text.partition(":")
+    return bool(sep and ">" in header)
+
+
 class APRSISClient:
     """Asynchronous APRS-IS client with auto-reconnect."""
 
@@ -33,6 +41,8 @@ class APRSISClient:
         self._reconnect_delay = 5
         self.server_banner = ""
         self._last_rx = 0.0
+        self._pending_rx_lines: list[str] = []
+        self._handshake_timeout = 3
 
     async def _reset_connection(self):
         """Clear connection state and close the current socket."""
@@ -41,6 +51,7 @@ class APRSISClient:
         self.writer = None
         self.connected = False
         self.verified = False
+        self._pending_rx_lines.clear()
 
         if writer:
             try:
@@ -85,10 +96,27 @@ class APRSISClient:
 
                 self.reader, self.writer = await asyncio.open_connection(server, port)
 
-                # Read server banner
-                banner = await asyncio.wait_for(self.reader.readline(), timeout=10)
-                self.server_banner = _decode_aprs_line(banner)
-                logger.info(f"APRS-IS banner: {self.server_banner}")
+                # Public APRS-IS servers send a banner and logresp, but some
+                # private/local TNC2 feeds do not. Treat early packet-looking
+                # lines as receive data instead of discarding them as handshake.
+                try:
+                    banner = await asyncio.wait_for(
+                        self.reader.readline(),
+                        timeout=self._handshake_timeout,
+                    )
+                except asyncio.TimeoutError:
+                    banner = b""
+
+                self.server_banner = _decode_aprs_line(banner) if banner else ""
+                if self.server_banner:
+                    if _looks_like_aprs_packet(self.server_banner):
+                        logger.info("APRS-IS server sent packet data before banner/logresp")
+                        self._pending_rx_lines.append(self.server_banner)
+                        self.server_banner = ""
+                    else:
+                        logger.info(f"APRS-IS banner: {self.server_banner}")
+                else:
+                    logger.info("APRS-IS server did not send an initial banner; continuing")
 
                 # Send login
                 login = self._build_login()
@@ -96,27 +124,8 @@ class APRSISClient:
                 await self.writer.drain()
                 logger.info(f"APRS-IS login sent: {login}")
 
-                # Read login response
-                response = await asyncio.wait_for(self.reader.readline(), timeout=10)
-                resp_str = _decode_aprs_line(response)
-                logger.info(f"APRS-IS response: {resp_str}")
-
-                if "logresp" in resp_str.lower() and "verified" in resp_str.lower():
-                    # Check for "unverified" first since it also contains "verified"
-                    if "unverified" in resp_str.lower():
-                        self.verified = False
-                        logger.warning(
-                            "APRS-IS login UNVERIFIED (read-only). "
-                            "Transmit/gating to APRS-IS is disabled. Check your passcode."
-                        )
-                    else:
-                        self.verified = True
-                        logger.info("APRS-IS login verified (read-write)")
-                else:
-                    self.verified = False
-                    logger.warning(f"APRS-IS unexpected response: {resp_str}")
-
                 self.connected = True
+                await self._read_login_response()
                 delay = self._reconnect_delay
                 await self._read_loop()
 
@@ -131,6 +140,9 @@ class APRSISClient:
     async def _read_loop(self):
         """Read packets from APRS-IS."""
         try:
+            while self._pending_rx_lines:
+                await self._handle_rx_line(self._pending_rx_lines.pop(0))
+
             while True:
                 line = await self.reader.readline()
                 if not line:
@@ -138,26 +150,63 @@ class APRSISClient:
 
                 text = _decode_aprs_line(line)
                 self._last_rx = time.time()
-
-                # Skip server comments
-                if text.startswith("#"):
-                    continue
-
-                if not text:
-                    continue
-
-                try:
-                    await self.on_packet(text)
-                except Exception as e:
-                    logger.error(f"APRS-IS packet handler error: {e}")
+                await self._handle_rx_line(text)
 
         except asyncio.CancelledError:
-            pass
+            raise
         except Exception as e:
             logger.error(f"APRS-IS read error: {e}")
         finally:
             await self._reset_connection()
             logger.info("APRS-IS disconnected")
+
+    async def _read_login_response(self):
+        """Read an optional APRS-IS logresp without dropping early packets."""
+        try:
+            response = await asyncio.wait_for(
+                self.reader.readline(),
+                timeout=self._handshake_timeout,
+            )
+        except asyncio.TimeoutError:
+            logger.info("APRS-IS server did not send a login response; using read-only mode")
+            self.verified = False
+            return
+
+        resp_str = _decode_aprs_line(response)
+        if not resp_str:
+            self.verified = False
+            return
+
+        if _looks_like_aprs_packet(resp_str):
+            self._pending_rx_lines.append(resp_str)
+            self.verified = False
+            logger.info("APRS-IS server sent packet data instead of logresp; using read-only mode")
+            return
+
+        logger.info(f"APRS-IS response: {resp_str}")
+        if "logresp" in resp_str.lower() and "verified" in resp_str.lower():
+            # Check for "unverified" first since it also contains "verified"
+            if "unverified" in resp_str.lower():
+                self.verified = False
+                logger.warning(
+                    "APRS-IS login UNVERIFIED (read-only). "
+                    "Transmit/gating to APRS-IS is disabled. Check your passcode."
+                )
+            else:
+                self.verified = True
+                logger.info("APRS-IS login verified (read-write)")
+        else:
+            self.verified = False
+            logger.warning(f"APRS-IS unexpected response: {resp_str}")
+
+    async def _handle_rx_line(self, text: str):
+        """Handle one decoded APRS-IS receive line."""
+        if not text or text.startswith("#"):
+            return
+        try:
+            await self.on_packet(text)
+        except Exception as e:
+            logger.error(f"APRS-IS packet handler error: {e}")
 
     async def send(self, packet: str):
         """Send a packet to APRS-IS (only if verified/read-write)."""

@@ -182,9 +182,58 @@ class APRSISComplianceTests(unittest.TestCase):
         config = Config()
         config.station.callsign = "K5ABC"
         config.aprs_is.passcode = "12345"
-        client = APRSISClient(config, lambda packet: None, app_version="1.5.4.2")
+        client = APRSISClient(config, lambda packet: None, app_version="1.5.5.0")
 
-        self.assertIn("vers APRSPropView 1.5.4.2", client._build_login())
+        self.assertIn("vers APRSPropView 1.5.5.0", client._build_login())
+
+    def test_packet_sent_instead_of_logresp_is_not_dropped(self):
+        async def run_test():
+            received = []
+            got_packet = asyncio.Event()
+            got_login = asyncio.Event()
+            packet_line = "K1ABC>APRS,TCPIP*:!3600.00N/09800.00W-Test"
+
+            async def handle_client(reader, writer):
+                login = await reader.readline()
+                if login.startswith(b"user K5ABC"):
+                    got_login.set()
+                writer.write((packet_line + "\r\n").encode("latin-1"))
+                await writer.drain()
+                await got_packet.wait()
+                writer.close()
+                await writer.wait_closed()
+
+            server = await asyncio.start_server(handle_client, "127.0.0.1", 0)
+            host, port = server.sockets[0].getsockname()[:2]
+            config = Config()
+            config.station.callsign = "K5ABC"
+            config.aprs_is.server = host
+            config.aprs_is.port = port
+            config.aprs_is.passcode = "-1"
+
+            async def on_packet(packet):
+                received.append(packet)
+                got_packet.set()
+
+            client = APRSISClient(config, on_packet)
+            client._handshake_timeout = 0.1
+            task = asyncio.create_task(client.connect())
+            try:
+                await asyncio.wait_for(got_login.wait(), timeout=2)
+                await asyncio.wait_for(got_packet.wait(), timeout=2)
+            finally:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+                server.close()
+                await server.wait_closed()
+
+            self.assertEqual(received, [packet_line])
+            self.assertFalse(client.verified)
+
+        import contextlib
+
+        asyncio.run(run_test())
 
 
 class ConfigTests(unittest.TestCase):

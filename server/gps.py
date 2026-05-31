@@ -43,11 +43,21 @@ def parse_nmea_position(sentence: str) -> Optional[Dict[str, Any]]:
         return None
 
     sentence_type = parts[0][-3:].upper()
+    speed_mph = None
+    course_deg = None
     if sentence_type == "RMC" and len(parts) >= 7:
         if parts[2].upper() != "A":
             return None
         lat = _nmea_coord(parts[3], parts[4])
         lon = _nmea_coord(parts[5], parts[6])
+        try:
+            speed_mph = float(parts[7] or 0) * 1.15078 if len(parts) > 7 else None
+        except (TypeError, ValueError):
+            speed_mph = None
+        try:
+            course_deg = float(parts[8]) if len(parts) > 8 and parts[8] else None
+        except (TypeError, ValueError):
+            course_deg = None
     elif sentence_type == "GGA" and len(parts) >= 6:
         if not parts[6] or parts[6] == "0":
             return None
@@ -58,7 +68,12 @@ def parse_nmea_position(sentence: str) -> Optional[Dict[str, Any]]:
 
     if lat is None or lon is None or not _valid_lat_lon(lat, lon):
         return None
-    return {"latitude": lat, "longitude": lon}
+    result = {"latitude": lat, "longitude": lon}
+    if speed_mph is not None:
+        result["speed_mph"] = speed_mph
+    if course_deg is not None:
+        result["course_deg"] = course_deg
+    return result
 
 
 class GPSManager:
@@ -113,6 +128,8 @@ class GPSManager:
         source: str,
         accuracy_m: Optional[float] = None,
         timestamp: Optional[float] = None,
+        speed_mph: Optional[float] = None,
+        course_deg: Optional[float] = None,
         update_station_position: Optional[bool] = None,
         station_position_locked: Optional[bool] = None,
     ) -> Dict[str, Any]:
@@ -130,6 +147,10 @@ class GPSManager:
             "timestamp": now,
             "applied_to_station": False,
         }
+        if speed_mph is not None:
+            self.current["speed_mph"] = float(speed_mph)
+        if course_deg is not None:
+            self.current["course_deg"] = float(course_deg)
         self.source_status[source] = {
             "state": "fix",
             "message": f"GPS fix received from {source}.",
@@ -163,7 +184,13 @@ class GPSManager:
         pos = parse_nmea_position(sentence)
         if not pos:
             return None
-        return await self.update_location(pos["latitude"], pos["longitude"], source=source)
+        return await self.update_location(
+            pos["latitude"],
+            pos["longitude"],
+            source=source,
+            speed_mph=pos.get("speed_mph"),
+            course_deg=pos.get("course_deg"),
+        )
 
     def get_status(self) -> Dict[str, Any]:
         cfg = self.config.gps

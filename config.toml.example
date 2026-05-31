@@ -164,6 +164,34 @@ dynamic_messages = []
 weather_alert_beacon_enabled = false
 weather_alert_cooldown_minutes = 30
 
+[smart_beaconing]
+enabled = false
+# Slow/parked station beacon interval in seconds. Minimum APRS-IS-safe value is 600.
+slow_interval = 1800
+# Fast/moving station beacon interval in seconds.
+fast_interval = 120
+# GPS speed at or above this value uses the fast interval.
+speed_threshold_mph = 10.0
+
+[bulletins]
+enabled = false
+# Seconds between scheduled bulletin batches. Minimum is 600.
+interval = 1800
+mode = "both"  # both, rf, or aprs_is
+path = "WIDE1-1"
+# Example item: { id = "1", text = "Club net tonight 7PM" }
+items = []
+
+[aprs_objects]
+enabled = false
+# Seconds between scheduled APRS object batches. Minimum is 600.
+interval = 1800
+mode = "both"  # both, rf, or aprs_is
+path = "WIDE1-1"
+# Example item:
+# { name = "NET", latitude = 35.0, longitude = -80.0, symbol_table = "/", symbol_code = "r", comment = "Weekly net", mode = "both", path = "WIDE1-1" }
+items = []
+
 [weather]
 enabled = false
 location_code = ""

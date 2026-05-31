@@ -4,7 +4,7 @@
 Launch this to start the application. The web interface opens automatically.
 """
 
-APP_VERSION = "1.5.4.2"
+APP_VERSION = "1.5.5.0"
 
 import asyncio
 import sys
@@ -43,6 +43,7 @@ from server.update_checker import UpdateChecker
 from server.gps import GPSManager
 from server.wxnow import WxNowTransmitter
 from server.status_report import StatusReportTransmitter
+from server.scheduled_packets import ScheduledPacketTransmitter
 
 # Configure logging
 logging.basicConfig(
@@ -236,15 +237,20 @@ async def main():
             init_commands = _port_value(port_cfg, "init_commands", "")
             serial_cls = TNC2MonitorSerialClient if serial_mode == "tnc2_monitor" else KISSSerialClient
             frame_handler = handler.handle_rf_aprs_packet if serial_mode == "tnc2_monitor" else handler.handle_rf_packet
+            serial_kwargs = {
+                "flow_control": flow_control,
+                "init_profile": init_profile,
+                "init_commands": init_commands,
+                "callsign": config.station.full_callsign,
+                "name": port_name,
+            }
+            if serial_mode == "kiss":
+                serial_kwargs["on_text_line"] = handler.handle_rf_text_line
             serial_client = serial_cls(
                 serial_port,
                 baudrate,
                 frame_handler,
-                flow_control=flow_control,
-                init_profile=init_profile,
-                init_commands=init_commands,
-                callsign=config.station.full_callsign,
-                name=port_name,
+                **serial_kwargs,
             )
             serial_client.rx_only_rf = bool(_port_value(port_cfg, "rx_only_rf", False)) or serial_mode == "tnc2_monitor"
             serial_client.rx_only_is = bool(_port_value(port_cfg, "rx_only_is", False)) or serial_mode == "tnc2_monitor"
@@ -301,6 +307,7 @@ async def main():
 
     status_transmitter = StatusReportTransmitter(config, handler, tracker, weather_manager)
     logger.info("Status/DX transmit: %s", "enabled" if config.status.enabled else "disabled")
+    scheduled_transmitter = ScheduledPacketTransmitter(config, handler)
 
     update_checker = UpdateChecker(APP_VERSION)
     update_checker.configure(
@@ -342,6 +349,7 @@ async def main():
         weather_manager,
         wxnow_transmitter=wxnow_transmitter,
         status_transmitter=status_transmitter,
+        scheduled_transmitter=scheduled_transmitter,
         update_checker=update_checker,
         gps_manager=gps_manager,
         app_version=APP_VERSION,
@@ -369,6 +377,7 @@ async def main():
     tasks.append(asyncio.create_task(handler.beacon_loop()))
     tasks.append(asyncio.create_task(wxnow_transmitter.loop()))
     tasks.append(asyncio.create_task(status_transmitter.loop()))
+    tasks.append(asyncio.create_task(scheduled_transmitter.loop()))
 
     # ── Start web server ────────────────────────────────────────────
 

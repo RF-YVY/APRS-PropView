@@ -101,6 +101,51 @@ def _mask_passcode(passcode: str) -> str:
     return "*" * (len(passcode) - 1) + passcode[-1]
 
 
+def _clean_aprs_object_item(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Normalize a user-created APRS object/item config entry."""
+    def as_bool(value: Any, default: bool = False) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return default
+        return str(value).strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+    try:
+        name = str(item.get("name", "")).strip().upper()[:9]
+        if not name:
+            return None
+        scope = str(item.get("scope", "global")).strip().lower()
+        if scope not in {"private", "local", "global"}:
+            scope = "global"
+        mode = str(item.get("mode", "")).strip().lower()
+        if mode not in {"", "both", "rf", "aprs_is"}:
+            mode = ""
+        return {
+            "name": name,
+            "enabled": as_bool(item.get("enabled"), True),
+            "active": as_bool(item.get("active", item.get("live")), True),
+            "permanent": as_bool(item.get("permanent"), False),
+            "scope": scope,
+            "latitude": float(item.get("latitude", 0)),
+            "longitude": float(item.get("longitude", 0)),
+            "symbol_table": (str(item.get("symbol_table", "/")) or "/")[:1],
+            "symbol_code": (str(item.get("symbol_code", "\\")) or "\\")[:1],
+            "overlay": (str(item.get("overlay", "")) or "")[:1],
+            "speed_mph": max(0, int(float(item.get("speed_mph", 0) or 0))),
+            "course_deg": int(float(item.get("course_deg", 0) or 0)) % 360,
+            "signpost": str(item.get("signpost", "")).strip()[:20],
+            "frequency": str(item.get("frequency", "")).strip()[:12],
+            "duplex": str(item.get("duplex", "")).strip()[:3],
+            "tone": str(item.get("tone", "")).strip()[:8],
+            "qru": str(item.get("qru", "")).strip().upper()[:12],
+            "path": str(item.get("path", "")).strip()[:40],
+            "mode": mode,
+            "comment": str(item.get("comment", "")).strip()[:80],
+        }
+    except (TypeError, ValueError):
+        return None
+
+
 def _safe_alert_audio_filename(name: str) -> str:
     stem = Path(name or "alert").stem
     ext = Path(name or "").suffix.lower()
@@ -449,6 +494,7 @@ def create_app(
     weather_manager: WeatherManager = None,
     wxnow_transmitter = None,
     status_transmitter = None,
+    scheduled_transmitter = None,
     update_checker: UpdateChecker = None,
     gps_manager = None,
     app_version: str = "1.0.0",
@@ -997,6 +1043,51 @@ def create_app(
     @app.get("/api/transmit/history")
     async def transmit_history():
         return {"items": handler.get_transmit_history()}
+
+    @app.get("/api/scheduled/preview")
+    async def get_scheduled_preview():
+        if not scheduled_transmitter:
+            return {"success": False, "message": "Scheduled packets are not available.", "bulletins": [], "objects": []}
+        return {
+            "success": True,
+            "status": scheduled_transmitter.get_status(),
+            "bulletins": scheduled_transmitter.preview_bulletins(),
+            "objects": scheduled_transmitter.preview_objects(),
+        }
+
+    @app.post("/api/bulletins/transmit")
+    async def transmit_bulletins_now():
+        if not scheduled_transmitter:
+            return JSONResponse(status_code=503, content={"success": False, "message": "Scheduled packets are not available."})
+        result = await scheduled_transmitter.transmit_bulletins_once(force=True)
+        return {"success": True, **result}
+
+    @app.post("/api/objects/transmit")
+    async def transmit_objects_now():
+        if not scheduled_transmitter:
+            return JSONResponse(status_code=503, content={"success": False, "message": "Scheduled packets are not available."})
+        result = await scheduled_transmitter.transmit_objects_once(force=True)
+        return {"success": True, **result}
+
+    @app.post("/api/objects/create")
+    async def create_aprs_object(request: Request):
+        try:
+            body = await request.json()
+            item = _clean_aprs_object_item(body)
+            if not item:
+                return JSONResponse(status_code=400, content={"success": False, "message": "Object name is required."})
+            config.aprs_objects.items = [
+                existing for existing in config.aprs_objects.items
+                if str(existing.get("name", "")).strip().upper() != item["name"]
+            ]
+            config.aprs_objects.items.append(item)
+            config.save(Path("config.toml"))
+            if scheduled_transmitter:
+                await scheduled_transmitter.transmit_objects_once(force=True)
+            return {"success": True, "message": f"Object {item['name']} saved.", "item": item}
+        except Exception as e:
+            logger.warning("APRS object create failed: %s", e)
+            return JSONResponse(status_code=400, content={"success": False, "message": "Could not create APRS object."})
 
     @app.get("/api/analytics/longest-paths")
     async def get_longest_paths(
@@ -1638,6 +1729,26 @@ def create_app(
                 "weather_alert_beacon_enabled": config.status.weather_alert_beacon_enabled,
                 "weather_alert_cooldown_minutes": config.status.weather_alert_cooldown_minutes,
             },
+            "smart_beaconing": {
+                "enabled": config.smart_beaconing.enabled,
+                "slow_interval": config.smart_beaconing.slow_interval,
+                "fast_interval": config.smart_beaconing.fast_interval,
+                "speed_threshold_mph": config.smart_beaconing.speed_threshold_mph,
+            },
+            "bulletins": {
+                "enabled": config.bulletins.enabled,
+                "interval": config.bulletins.interval,
+                "mode": config.bulletins.mode,
+                "path": config.bulletins.path,
+                "items": config.bulletins.items,
+            },
+            "aprs_objects": {
+                "enabled": config.aprs_objects.enabled,
+                "interval": config.aprs_objects.interval,
+                "mode": config.aprs_objects.mode,
+                "path": config.aprs_objects.path,
+                "items": config.aprs_objects.items,
+            },
             "mqtt": {
                 "enabled": config.mqtt.enabled,
                 "broker": config.mqtt.broker,
@@ -2100,6 +2211,80 @@ def create_app(
                     config.status.weather_alert_cooldown_minutes,
                 )))
                 live_applied.append("Status/DX transmit")
+
+            if "smart_beaconing" in body:
+                sb = body["smart_beaconing"]
+                config.smart_beaconing.enabled = bool(sb.get("enabled", config.smart_beaconing.enabled))
+                config.smart_beaconing.slow_interval = max(600, int(sb.get("slow_interval", config.smart_beaconing.slow_interval)))
+                config.smart_beaconing.fast_interval = max(60, int(sb.get("fast_interval", config.smart_beaconing.fast_interval)))
+                config.smart_beaconing.speed_threshold_mph = max(0.0, float(sb.get("speed_threshold_mph", config.smart_beaconing.speed_threshold_mph)))
+                live_applied.append("smart beaconing")
+
+            if "bulletins" in body:
+                bln = body["bulletins"]
+                config.bulletins.enabled = bool(bln.get("enabled", config.bulletins.enabled))
+                config.bulletins.interval = max(600, int(bln.get("interval", config.bulletins.interval)))
+                mode = (bln.get("mode", config.bulletins.mode) or "both").strip().lower()
+                config.bulletins.mode = mode if mode in {"both", "rf", "aprs_is"} else "both"
+                config.bulletins.path = (bln.get("path", config.bulletins.path) or "").strip()
+                items = bln.get("items", config.bulletins.items)
+                if isinstance(items, str):
+                    parsed = []
+                    for line in items.splitlines():
+                        if not line.strip():
+                            continue
+                        ident, sep, text = line.partition("|")
+                        parsed.append({"id": ident.strip() or str(len(parsed) + 1), "text": text.strip() if sep else ident.strip()})
+                    items = parsed
+                config.bulletins.items = [
+                    {"id": str(item.get("id", "1")).strip()[:5], "text": str(item.get("text", "")).strip()[:67]}
+                    for item in (items if isinstance(items, list) else [])
+                    if str(item.get("text", "")).strip()
+                ][:10]
+                live_applied.append("bulletins")
+
+            if "aprs_objects" in body:
+                obj = body["aprs_objects"]
+                config.aprs_objects.enabled = bool(obj.get("enabled", config.aprs_objects.enabled))
+                config.aprs_objects.interval = max(600, int(obj.get("interval", config.aprs_objects.interval)))
+                mode = (obj.get("mode", config.aprs_objects.mode) or "both").strip().lower()
+                config.aprs_objects.mode = mode if mode in {"both", "rf", "aprs_is"} else "both"
+                config.aprs_objects.path = (obj.get("path", config.aprs_objects.path) or "").strip()
+                items = obj.get("items", config.aprs_objects.items)
+                if isinstance(items, str):
+                    parsed = []
+                    for line in items.splitlines():
+                        parts = [p.strip() for p in line.split("|")]
+                        if len(parts) >= 3:
+                            parsed.append({
+                                "name": parts[0],
+                                "latitude": parts[1],
+                                "longitude": parts[2],
+                                "symbol_table": parts[3] if len(parts) > 3 else "\\",
+                                "symbol_code": parts[4] if len(parts) > 4 else "\\",
+                                "comment": parts[5] if len(parts) > 5 else "",
+                                "enabled": parts[6].lower() != "false" if len(parts) > 6 else True,
+                                "active": parts[7].lower() != "false" if len(parts) > 7 else True,
+                                "permanent": parts[8].lower() == "true" if len(parts) > 8 else False,
+                                "scope": parts[9] if len(parts) > 9 else "global",
+                                "speed_mph": parts[10] if len(parts) > 10 else 0,
+                                "course_deg": parts[11] if len(parts) > 11 else 0,
+                                "frequency": parts[12] if len(parts) > 12 else "",
+                                "tone": parts[13] if len(parts) > 13 else "",
+                                "duplex": parts[14] if len(parts) > 14 else "",
+                                "qru": parts[15] if len(parts) > 15 else "",
+                                "path": parts[16] if len(parts) > 16 else "",
+                                "mode": parts[17] if len(parts) > 17 else "",
+                                "overlay": parts[18] if len(parts) > 18 else "",
+                            })
+                    items = parsed
+                cleaned = []
+                for item in (items if isinstance(items, list) else []):
+                    cleaned_item = _clean_aprs_object_item(item)
+                    if cleaned_item:
+                        cleaned.append(cleaned_item)
+                config.aprs_objects.items = cleaned[:50]
+                live_applied.append("APRS objects")
 
             # Update MQTT config
             if "mqtt" in body:

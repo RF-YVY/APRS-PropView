@@ -9,8 +9,13 @@ class StationManager {
         this.rfTimeFilter = 24;    // hours
         this.rfDistFilter = 0;     // km, 0 = any
         this.rfTypeFilter = '';    // '' = all, or category key
+        this.rfPathFilter = '';
+        this.rfCallFilter = '';
+        this.rfSortOrder = 'heard_desc';
         this.isTimeFilter = 24;    // hours
         this.isTypeFilter = '';    // '' = all, or category key
+        this.isCallFilter = '';
+        this.isSortOrder = 'heard_desc';
         this.packetBuffer = [];    // recent packets for display
         this.maxPackets = 500;
         this._listClickBound = false;
@@ -120,6 +125,9 @@ class StationManager {
         const timeFilter = isRF ? this.rfTimeFilter : this.isTimeFilter;
         const distFilter = isRF ? this.rfDistFilter : 0;
         const typeFilter = isRF ? this.rfTypeFilter : this.isTypeFilter;
+        const pathFilter = isRF ? this.rfPathFilter : '';
+        const callFilter = (isRF ? this.rfCallFilter : this.isCallFilter).trim().toUpperCase();
+        const sortOrder = isRF ? this.rfSortOrder : this.isSortOrder;
 
         const filtered = Object.values(stations)
             .filter((s) => {
@@ -135,9 +143,23 @@ class StationManager {
                         : 'other';
                     if (cat !== typeFilter) return false;
                 }
+                if (pathFilter) {
+                    const direct = this._isDirectHeard(s.last_path);
+                    if (pathFilter === 'direct' && !direct) return false;
+                    if (pathFilter === 'via' && direct) return false;
+                }
+                if (callFilter) {
+                    const haystack = [
+                        s.callsign,
+                        s.last_path,
+                        s.last_comment,
+                        s.last_port_name,
+                    ].join(' ').toUpperCase();
+                    if (!haystack.includes(callFilter)) return false;
+                }
                 return true;
             })
-            .sort((a, b) => (b.last_heard || 0) - (a.last_heard || 0));
+            .sort((a, b) => this._compareStations(a, b, sortOrder));
 
         if (countEl) {
             if (isRF) {
@@ -249,6 +271,31 @@ class StationManager {
 
         document.getElementById('is-type-filter')?.addEventListener('change', (e) => {
             this.isTypeFilter = e.target.value;
+            this._renderStationList('aprs_is');
+        });
+
+        document.getElementById('rf-path-filter')?.addEventListener('change', (e) => {
+            this.rfPathFilter = e.target.value;
+            this._renderStationList('rf');
+        });
+
+        document.getElementById('rf-sort-order')?.addEventListener('change', (e) => {
+            this.rfSortOrder = e.target.value || 'heard_desc';
+            this._renderStationList('rf');
+        });
+
+        document.getElementById('is-sort-order')?.addEventListener('change', (e) => {
+            this.isSortOrder = e.target.value || 'heard_desc';
+            this._renderStationList('aprs_is');
+        });
+
+        document.getElementById('rf-call-filter')?.addEventListener('input', (e) => {
+            this.rfCallFilter = e.target.value || '';
+            this._renderStationList('rf');
+        });
+
+        document.getElementById('is-call-filter')?.addEventListener('input', (e) => {
+            this.isCallFilter = e.target.value || '';
             this._renderStationList('aprs_is');
         });
 
@@ -430,6 +477,22 @@ class StationManager {
         const sectors = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
         const normalized = ((Number(heading) % 360) + 360) % 360;
         return sectors[Math.floor((normalized + 22.5) / 45) % 8];
+    }
+
+    _compareStations(a, b, sortOrder) {
+        switch (sortOrder) {
+            case 'distance_desc':
+                return (b.distance_km || -1) - (a.distance_km || -1);
+            case 'distance_asc':
+                return (a.distance_km || Number.MAX_SAFE_INTEGER) - (b.distance_km || Number.MAX_SAFE_INTEGER);
+            case 'packets_desc':
+                return (b.packet_count || 0) - (a.packet_count || 0);
+            case 'callsign_asc':
+                return String(a.callsign || '').localeCompare(String(b.callsign || ''));
+            case 'heard_desc':
+            default:
+                return (b.last_heard || 0) - (a.last_heard || 0);
+        }
     }
 }
 

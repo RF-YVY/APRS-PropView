@@ -8,6 +8,13 @@
     // ── State ──────────────────────────────────────────────────
     let _initialized = false;
     const ANALYTICS_SECTION_KEY = 'pvAnalyticsSection';
+    let lastWeatherSamples = [];
+    const WEATHER_CHARTS = {
+        'weather-temp-chart': ['temperature_f', 'Temperature', 'F', '#ff7b72'],
+        'weather-wind-chart': ['wind_speed_mph', 'Wind', 'mph', '#58a6ff'],
+        'weather-pressure-chart': ['pressure_mb', 'Pressure', 'mb', '#d2a8ff'],
+        'weather-humidity-chart': ['humidity', 'Humidity', '%', '#3fb950'],
+    };
 
     // ── Initialization ─────────────────────────────────────────
 
@@ -33,6 +40,10 @@
         document.getElementById('first-heard-hours')?.addEventListener('change', () => loadFirstHeard());
         document.getElementById('first-heard-direct-only')?.addEventListener('change', () => loadFirstHeard());
         document.getElementById('weather-analytics-hours')?.addEventListener('change', () => loadWeatherGraphs());
+        document.querySelector('.weather-analytics-grid')?.addEventListener('click', (e) => {
+            const canvas = e.target.closest('canvas');
+            if (canvas && WEATHER_CHARTS[canvas.id]) showWeatherGraphPopout(canvas.id);
+        });
 
         const savedSection = localStorage.getItem(ANALYTICS_SECTION_KEY);
         if (savedSection && document.getElementById(savedSection)) {
@@ -793,10 +804,10 @@
             const resp = await fetch(`/api/analytics/weather?hours=${hours}`);
             const data = await resp.json();
             const samples = data.samples || [];
-            drawWeatherLineChart('weather-temp-chart', samples, 'temperature_f', 'Temperature', 'F');
-            drawWeatherLineChart('weather-wind-chart', samples, 'wind_speed_mph', 'Wind', 'mph');
-            drawWeatherLineChart('weather-pressure-chart', samples, 'pressure_mb', 'Pressure', 'mb');
-            drawWeatherLineChart('weather-humidity-chart', samples, 'humidity', 'Humidity', '%');
+            lastWeatherSamples = samples;
+            Object.entries(WEATHER_CHARTS).forEach(([canvasId, args]) => {
+                drawWeatherLineChart(canvasId, samples, ...args);
+            });
             if (summary) {
                 const sources = [...new Set(samples.map(s => s.source).filter(Boolean))].slice(0, 6);
                 summary.textContent = samples.length
@@ -809,15 +820,15 @@
         }
     }
 
-    function drawWeatherLineChart(canvasId, samples, field, title, unit) {
+    function drawWeatherLineChart(canvasId, samples, field, title, unit, color = '#58a6ff') {
         const canvas = document.getElementById(canvasId);
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         const w = canvas.width;
         const h = canvas.height;
         ctx.clearRect(0, 0, w, h);
-        ctx.fillStyle = '#8b949e';
-        ctx.font = '12px sans-serif';
+        ctx.fillStyle = '#e6edf3';
+        ctx.font = '700 13px sans-serif';
         ctx.fillText(title, 10, 18);
 
         const points = (samples || [])
@@ -842,16 +853,51 @@
         const xFor = (t) => pad.left + ((t - minT) / Math.max(1, maxT - minT)) * chartW;
         const yFor = (v) => pad.top + (1 - ((v - minV) / (maxV - minV))) * chartH;
 
-        ctx.strokeStyle = 'rgba(139, 148, 158, 0.35)';
+        ctx.fillStyle = 'rgba(139, 148, 158, 0.08)';
+        ctx.fillRect(pad.left, pad.top, chartW, chartH);
+
+        ctx.strokeStyle = 'rgba(139, 148, 158, 0.2)';
         ctx.lineWidth = 1;
+        for (let i = 1; i <= 3; i += 1) {
+            const y = pad.top + (chartH / 4) * i;
+            ctx.beginPath();
+            ctx.moveTo(pad.left, y);
+            ctx.lineTo(pad.left + chartW, y);
+            ctx.stroke();
+        }
+
+        ctx.strokeStyle = 'rgba(139, 148, 158, 0.45)';
         ctx.beginPath();
         ctx.moveTo(pad.left, pad.top);
         ctx.lineTo(pad.left, pad.top + chartH);
         ctx.lineTo(pad.left + chartW, pad.top + chartH);
         ctx.stroke();
 
-        ctx.strokeStyle = '#58a6ff';
-        ctx.lineWidth = 2;
+        const lineGradient = ctx.createLinearGradient(pad.left, 0, pad.left + chartW, 0);
+        lineGradient.addColorStop(0, color);
+        lineGradient.addColorStop(1, '#ffd33d');
+
+        const fillGradient = ctx.createLinearGradient(0, pad.top, 0, pad.top + chartH);
+        fillGradient.addColorStop(0, `${color}66`);
+        fillGradient.addColorStop(1, `${color}08`);
+
+        ctx.beginPath();
+        points.forEach((p, i) => {
+            const x = xFor(p.t);
+            const y = yFor(p.v);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        });
+        ctx.lineTo(xFor(points[points.length - 1].t), pad.top + chartH);
+        ctx.lineTo(xFor(points[0].t), pad.top + chartH);
+        ctx.closePath();
+        ctx.fillStyle = fillGradient;
+        ctx.fill();
+
+        ctx.strokeStyle = 'rgba(1, 4, 9, 0.85)';
+        ctx.lineWidth = 6;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
         ctx.beginPath();
         points.forEach((p, i) => {
             const x = xFor(p.t);
@@ -861,10 +907,65 @@
         });
         ctx.stroke();
 
-        ctx.fillStyle = '#8b949e';
-        ctx.font = '10px sans-serif';
+        ctx.strokeStyle = lineGradient;
+        ctx.lineWidth = 3.5;
+        ctx.beginPath();
+        points.forEach((p, i) => {
+            const x = xFor(p.t);
+            const y = yFor(p.v);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+
+        const step = Math.max(1, Math.ceil(points.length / 18));
+        points.forEach((p, i) => {
+            if (i % step !== 0 && i !== points.length - 1) return;
+            const x = xFor(p.t);
+            const y = yFor(p.v);
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(x, y, 3.2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#0d1117';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        });
+
+        ctx.fillStyle = '#e6edf3';
+        ctx.font = '700 10px sans-serif';
         ctx.fillText(`${Math.round(maxV * 10) / 10}${unit}`, 4, pad.top + 4);
         ctx.fillText(`${Math.round(minV * 10) / 10}${unit}`, 4, pad.top + chartH);
+    }
+
+    function showWeatherGraphPopout(canvasId) {
+        const config = WEATHER_CHARTS[canvasId];
+        if (!config) return;
+
+        document.querySelector('.graph-popout-backdrop')?.remove();
+        const backdrop = document.createElement('div');
+        backdrop.className = 'graph-popout-backdrop';
+        backdrop.innerHTML = `
+            <div class="graph-popout" role="dialog" aria-modal="true">
+                <div class="graph-popout-header">
+                    <div class="graph-popout-title">${_esc(config[1])}</div>
+                    <button type="button" class="graph-popout-close" aria-label="Close">x</button>
+                </div>
+                <canvas id="weather-popout-chart" width="920" height="460"></canvas>
+            </div>
+        `;
+        const close = () => backdrop.remove();
+        backdrop.addEventListener('click', (e) => {
+            if (e.target === backdrop || e.target.closest('.graph-popout-close')) close();
+        });
+        document.addEventListener('keydown', function onKey(e) {
+            if (e.key === 'Escape') {
+                close();
+                document.removeEventListener('keydown', onKey);
+            }
+        });
+        document.body.appendChild(backdrop);
+        drawWeatherLineChart('weather-popout-chart', lastWeatherSamples, ...config);
     }
 
     // ── Data Export ───────────────────────────────────────────────

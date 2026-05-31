@@ -9,7 +9,7 @@ systemd. It works well on Raspberry Pi OS, Debian, and Ubuntu.
 - Raspberry Pi OS 64-bit, Debian, or Ubuntu
 - Network access for APRS-IS and the web dashboard
 - Optional KISS TNC over USB serial, Bluetooth serial, or TCP
-- Optional Direwolf KISS TCP service
+- Optional Direwolf KISS TCP or AGWPE TCP service
 
 ## Install System Packages
 
@@ -171,19 +171,97 @@ station_position_locked = true
 Keep `station_position_locked = true` if GPS should move only the map marker and
 not overwrite the configured station latitude/longitude.
 
-## Direwolf Or TCP KISS
+## Smart Beaconing
+
+Smart beaconing can vary the station beacon interval from GPS speed. This is
+useful for portable and mobile Pi installs where a stopped station should beacon
+slowly, but a moving station should update more often.
+
+```toml
+[smart_beaconing]
+enabled = true
+slow_interval = 1800
+fast_interval = 120
+speed_threshold_mph = 10.0
+```
+
+APRS PropView keeps APRS-IS-safe minimums when saving settings. Enable GPS
+ingestion first so the app has a current speed source.
+
+## Direwolf, AGWPE, Or TCP RF Ports
 
 For Direwolf or any TCP KISS source running on the same Pi:
 
 ```toml
-[kiss_tcp]
+[[rf_ports]]
+name = "Direwolf KISS"
 enabled = true
+type = "tcp"
 host = "127.0.0.1"
-port = 8001
+tcp_port = 8001
+protocol = "kiss"
+rx_only_rf = false
+rx_only_is = false
 ```
 
-For APRS-IS-only operation, leave both `[kiss_serial]` and `[kiss_tcp]`
-disabled.
+For an AGWPE-compatible TCP source:
+
+```toml
+[[rf_ports]]
+name = "AGWPE"
+enabled = true
+type = "tcp"
+host = "127.0.0.1"
+tcp_port = 8000
+protocol = "agwpe"
+rx_only_rf = false
+rx_only_is = false
+```
+
+The legacy `[kiss_tcp]` and `[kiss_serial]` blocks still load for older configs,
+but new Linux/Pi installs should prefer `[[rf_ports]]` so multiple receivers,
+transmit-capable ports, and receive-only ports can be managed together.
+
+For APRS-IS-only operation, leave `[kiss_serial]`, `[kiss_tcp]`, and all
+`[[rf_ports]]` entries disabled.
+
+## Private Or Local APRS-IS Servers
+
+APRS PropView can receive from private/local APRS-IS-style servers and simple
+TNC2 TCP feeds that do not send the usual public-server banner or `logresp`.
+Packets arriving immediately after login are treated as receive traffic instead
+of being discarded.
+
+If the server does not verify the login with a `logresp`, PropView keeps the
+connection read-only. This allows local packet collection and map population
+without accidentally enabling APRS-IS transmit or IS-to-RF gating on an
+unverified private feed.
+
+## Scheduled Bulletins And APRS Objects
+
+Scheduled packet settings work the same on Linux and Pi as on Windows. They can
+be edited from Settings or in `config.toml`:
+
+```toml
+[bulletins]
+enabled = true
+interval = 1800
+mode = "both"
+path = "WIDE1-1"
+items = [{ id = "1", text = "Club net tonight 7PM" }]
+
+[aprs_objects]
+enabled = true
+interval = 1800
+mode = "both"
+path = "WIDE1-1"
+items = [
+  { name = "NET", latitude = 35.0000, longitude = -80.0000, symbol_table = "/", symbol_code = "r", comment = "Weekly net" }
+]
+```
+
+The map `Obj` control can also create and save object entries after you click a
+map location. Use preview buttons before enabling scheduled transmit.
 
 ## MQTT Integration
 
@@ -256,6 +334,9 @@ sudo systemctl restart aprs-propview
 ```
 
 The installer preserves an existing `/opt/aprs-propview/config.toml`.
+New settings are added to `config.toml.example`; compare that file after
+updating if you want to adopt new sections such as smart beaconing, bulletins,
+or APRS objects in an older install.
 
 ## Uninstall
 

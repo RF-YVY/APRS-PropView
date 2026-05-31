@@ -23,6 +23,7 @@ class PropViewMap {
         this.rangeCircles = null;
         this.observedRangeLayer = null;
         this.pickMode = false;
+        this.objectMode = false;
         this.pickMarker = null;
         this.onLocationPicked = null; // callback(lat, lng)
         this.darkMode = true;
@@ -58,6 +59,14 @@ class PropViewMap {
         this.radarMetadataRequest = null;
         this.baseTileLayer = null;
         this.mapTileConfig = this._defaultTileConfig();
+        this.myStationInfo = { symbol_table: '/', symbol_code: '#' };
+        this.lineStyle = {
+            colorMode: 'distance',
+            customColor: '#58a6ff',
+            weight: 2,
+            pattern: 'solid',
+            opacity: 0.7,
+        };
     }
 
     init(lat, lng) {
@@ -183,6 +192,7 @@ class PropViewMap {
         this.myCallsign = (callsign || '').toUpperCase();
         const symTable = stationInfo?.symbol_table || '/';
         const symCode = stationInfo?.symbol_code || '#';
+        this.myStationInfo = { symbol_table: symTable, symbol_code: symCode };
         const markerSprite = (typeof getAPRSSpriteHTML === 'function')
             ? getAPRSSpriteHTML(symTable, symCode, 20)
             : 'MY';
@@ -219,6 +229,7 @@ class PropViewMap {
                 .addTo(this.map)
                 .bindPopup(popup);
         }
+        this.refreshLegend();
 
         // Add range circles
         if (this.rangeCircles) {
@@ -417,6 +428,9 @@ class PropViewMap {
                 ${heardViaHtml ? `<tr><td class="popup-lbl">Via</td><td>${heardViaHtml}</td></tr>` : ''}
                 <tr><td class="popup-lbl">Position</td><td>${lat.toFixed(4)}, ${lng.toFixed(4)}</td></tr>
             </table>
+            <div class="popup-actions">
+                <button type="button" class="popup-action-btn" onclick="window.pvMessages?.startNewMessage?.('${safeCall}')">Send Message</button>
+            </div>
         `;
 
         const borderColor = source === 'rf' ? '#f85149' : '#58a6ff';
@@ -459,6 +473,7 @@ class PropViewMap {
         if (source === 'rf' && this.myPosition) {
             this._updateLine(call, lat, lng, dist, station.last_heard, station.last_path);
         }
+        this._refreshLinesUsingStation(call);
 
         // Auto-fit if enabled
         if (this.autoFit && !this._userInteracted) this.autoFitNow();
@@ -473,22 +488,9 @@ class PropViewMap {
             delete markers[callsign];
         }
 
-        if (source === 'rf' && this.rfLines[callsign]) {
-            this.lineLayer.removeLayer(this.rfLines[callsign]);
-            delete this.rfLines[callsign];
+        if (source === 'rf') {
+            this._clearLineVisuals(callsign);
             delete this.rfLineData[callsign];
-        }
-
-        // Remove arrow markers
-        if (this.rfArrows[callsign]) {
-            this.rfArrows[callsign].forEach(m => this.lineLayer.removeLayer(m));
-            delete this.rfArrows[callsign];
-        }
-
-        // Remove hop markers
-        if (this.hopMarkers[callsign]) {
-            this.hopMarkers[callsign].forEach(m => this.lineLayer.removeLayer(m));
-            delete this.hopMarkers[callsign];
         }
 
         delete this.stationMeta[callsign];
@@ -539,7 +541,7 @@ class PropViewMap {
     }
 
     /**
-     * Parse a digipeater path string to extract real callsigns
+     * Parse a digipeater path string to extract real used digipeater callsigns
      * (skipping WIDE/RELAY/TRACE/TCPIP/qA aliases and own callsign).
      */
     _parseDigiPath(path) {
@@ -547,7 +549,9 @@ class PropViewMap {
         const aliasRe = /^(WIDE|RELAY|TRACE|TCPIP|qA[A-Z])\d?/i;
         const digis = [];
         for (const part of path.split(',')) {
-            const call = part.trim().replace(/\*$/, '');
+            const hop = part.trim();
+            if (!hop.endsWith('*')) continue;
+            const call = hop.replace(/\*$/, '');
             if (!call) continue;
             if (aliasRe.test(call)) continue;
             if (this.myCallsign && call.toUpperCase() === this.myCallsign) continue;
@@ -577,6 +581,7 @@ class PropViewMap {
             last_heard: lastHeard || (Date.now() / 1000),
             distance_km: distance || 0,
             lat, lng,
+            path: path || '',
         };
 
         // Build multi-hop points: origin station → digis → my station
@@ -585,49 +590,38 @@ class PropViewMap {
         const digis = this._parseDigiPath(path);
         const points = [stationPos];
         const hopPositions = [];
+        const missingDigis = [];
 
         for (const digi of digis) {
             const pos = this._getStationPosition(digi);
             if (pos) {
                 points.push(pos);
                 hopPositions.push({ call: digi, pos });
+            } else {
+                missingDigis.push(digi);
             }
+        }
+        if (missingDigis.length > 0) {
+            this._clearLineVisuals(callsign);
+            return;
         }
         points.push(myPos);
 
-        // Color based on distance
-        let color;
-        if (!distance) {
-            color = '#f85149';
-        } else if (distance > 200) {
-            color = '#bc8cff'; // Purple for long DX
-        } else if (distance > 100) {
-            color = '#3fb950'; // Green for good
-        } else if (distance > 50) {
-            color = '#d29922'; // Orange for medium
-        } else {
-            color = '#f85149'; // Red for close
-        }
-
-        const weight = distance && distance > 100 ? 2.5 : 1.5;
-        const opacity = 0.7;
+        const lineOptions = this._lineOptionsForDistance(distance);
+        const { color, weight, opacity } = lineOptions;
 
         if (this.rfLines[callsign]) {
             this.rfLines[callsign].setLatLngs(points);
-            this.rfLines[callsign].setStyle({ color, weight, opacity });
+            this.rfLines[callsign].setStyle(lineOptions);
         } else {
-            this.rfLines[callsign] = L.polyline(points, {
-                color,
-                weight,
-                opacity,
-            }).addTo(this.lineLayer);
+            this.rfLines[callsign] = L.polyline(points, lineOptions).addTo(this.lineLayer);
         }
 
         // Update arrowhead markers
         if (this.rfArrows[callsign]) {
             this.rfArrows[callsign].forEach(m => this.lineLayer.removeLayer(m));
         }
-        this.rfArrows[callsign] = this._createArrowheads(points, color, opacity);
+        this.rfArrows[callsign] = this._createArrowheads(points, color, opacity, weight);
 
         // Update hop waypoint markers
         if (this.hopMarkers[callsign]) {
@@ -646,6 +640,80 @@ class PropViewMap {
 
         // Apply time filter to this new/updated line
         this._applyLineTimeFilter(callsign);
+    }
+
+    _clearLineVisuals(callsign) {
+        if (this.rfLines[callsign]) {
+            this.lineLayer.removeLayer(this.rfLines[callsign]);
+            delete this.rfLines[callsign];
+        }
+        if (this.rfArrows[callsign]) {
+            this.rfArrows[callsign].forEach(m => this.lineLayer.removeLayer(m));
+            delete this.rfArrows[callsign];
+        }
+        if (this.hopMarkers[callsign]) {
+            this.hopMarkers[callsign].forEach(m => this.lineLayer.removeLayer(m));
+            delete this.hopMarkers[callsign];
+        }
+    }
+
+    _refreshLinesUsingStation(callsign) {
+        const normalized = (callsign || '').toUpperCase();
+        if (!normalized) return;
+        Object.entries(this.rfLineData).forEach(([lineCall, data]) => {
+            if (!data || lineCall.toUpperCase() === normalized) return;
+            const digis = this._parseDigiPath(data.path || '').map(call => call.toUpperCase());
+            if (!digis.includes(normalized)) return;
+            this._updateLine(
+                lineCall,
+                data.lat,
+                data.lng,
+                data.distance_km,
+                data.last_heard,
+                data.path || '',
+            );
+        });
+    }
+
+    _distanceLineColor(distance) {
+        if (!distance) return '#f85149';
+        if (distance > 200) return '#bc8cff';
+        if (distance > 100) return '#3fb950';
+        if (distance > 50) return '#d29922';
+        return '#f85149';
+    }
+
+    _lineOptionsForDistance(distance) {
+        const style = this.lineStyle || {};
+        const weight = Math.max(1, Math.min(8, parseFloat(style.weight) || 2));
+        const opacity = Math.max(0.2, Math.min(1, parseFloat(style.opacity) || 0.7));
+        const color = style.colorMode === 'custom'
+            ? (style.customColor || '#58a6ff')
+            : this._distanceLineColor(distance);
+        const dashArray = this._lineDashArray(style.pattern, weight);
+        return {
+            color,
+            weight,
+            opacity,
+            dashArray,
+            lineCap: style.pattern === 'dot' ? 'round' : 'butt',
+            lineJoin: 'round',
+        };
+    }
+
+    _lineDashArray(pattern, weight) {
+        const w = Math.max(1, parseFloat(weight) || 2);
+        switch (pattern) {
+            case 'dash':
+                return `${w * 4} ${w * 2.5}`;
+            case 'dot':
+                return `1 ${w * 2.4}`;
+            case 'dashdot':
+                return `${w * 4} ${w * 2} 1 ${w * 2}`;
+            case 'solid':
+            default:
+                return null;
+        }
     }
 
     /**
@@ -769,37 +837,46 @@ class PropViewMap {
 
     /**
      * Create arrowhead triangle markers along a polyline.
-     * Places an arrow at the midpoint of each segment, pointing toward myPos.
+     * Places arrows off-center so reverse-direction paths do not overlap.
      */
-    _createArrowheads(points, color, opacity) {
+    _createArrowheads(points, color, opacity, lineWeight = 2) {
         const arrows = [];
         for (let i = 0; i < points.length - 1; i++) {
             const from = L.latLng(points[i]);
             const to = L.latLng(points[i + 1]);
             const angle = this._bearing(from, to);
-            const mid = L.latLng(
-                (from.lat + to.lat) / 2,
-                (from.lng + to.lng) / 2
+            const fraction = this._arrowFractionForSegment(from, to);
+            const pos = L.latLng(
+                from.lat + (to.lat - from.lat) * fraction,
+                from.lng + (to.lng - from.lng) * fraction
             );
+            const arrowWidth = Math.max(10, Math.min(18, lineWeight * 4 + 4));
+            const arrowHeight = Math.max(9, Math.min(16, lineWeight * 4 + 3));
             const arrowIcon = L.divIcon({
                 className: 'arrow-icon',
                 html: `<div style="
                     width: 0; height: 0;
-                    border-left: 6px solid transparent;
-                    border-right: 6px solid transparent;
-                    border-bottom: 10px solid ${color};
+                    border-left: ${arrowWidth / 2}px solid transparent;
+                    border-right: ${arrowWidth / 2}px solid transparent;
+                    border-bottom: ${arrowHeight}px solid ${color};
                     opacity: ${opacity};
                     transform: rotate(${angle}deg);
                     transform-origin: center center;
                 "></div>`,
-                iconSize: [12, 10],
-                iconAnchor: [6, 5],
+                iconSize: [arrowWidth, arrowHeight],
+                iconAnchor: [arrowWidth / 2, arrowHeight / 2],
             });
             arrows.push(
-                L.marker(mid, { icon: arrowIcon, interactive: false }).addTo(this.lineLayer)
+                L.marker(pos, { icon: arrowIcon, interactive: false }).addTo(this.lineLayer)
             );
         }
         return arrows;
+    }
+
+    _arrowFractionForSegment(from, to) {
+        const fromKey = `${from.lat.toFixed(4)},${from.lng.toFixed(4)}`;
+        const toKey = `${to.lat.toFixed(4)},${to.lng.toFixed(4)}`;
+        return fromKey < toKey ? 0.42 : 0.58;
     }
 
     /**
@@ -810,6 +887,38 @@ class PropViewMap {
         this.lineTimeFilter = hours;
         this.applyAllLineTimeFilters();
         this._saveUIState();
+    }
+
+    setLineStyle(nextStyle = {}) {
+        const current = this.lineStyle || {};
+        const colorMode = nextStyle.colorMode || current.colorMode || 'distance';
+        const pattern = nextStyle.pattern || current.pattern || 'solid';
+        this.lineStyle = {
+            colorMode: colorMode === 'custom' ? 'custom' : 'distance',
+            customColor: /^#[0-9a-f]{6}$/i.test(nextStyle.customColor || '')
+                ? nextStyle.customColor
+                : (current.customColor || '#58a6ff'),
+            weight: Math.max(1, Math.min(8, parseFloat(nextStyle.weight ?? current.weight) || 2)),
+            pattern: ['solid', 'dash', 'dot', 'dashdot'].includes(pattern) ? pattern : 'solid',
+            opacity: Math.max(0.2, Math.min(1, parseFloat(nextStyle.opacity ?? current.opacity) || 0.7)),
+        };
+        this._syncLineStyleControls();
+        this._redrawAllLines();
+        this._saveUIState();
+    }
+
+    _redrawAllLines() {
+        Object.entries(this.rfLineData).forEach(([callsign, data]) => {
+            if (!data) return;
+            this._updateLine(
+                callsign,
+                data.lat,
+                data.lng,
+                data.distance_km,
+                data.last_heard,
+                data.path || '',
+            );
+        });
     }
 
     /**
@@ -1147,6 +1256,7 @@ class PropViewMap {
             autoFit: this.autoFit,
             darkMode: this.darkMode,
             lineTimeFilter: this.lineTimeFilter,
+            lineStyle: this.lineStyle,
             zoom: this.map?.getZoom(),
             center: this.map ? [this.map.getCenter().lat, this.map.getCenter().lng] : null,
             typeFilters: this.typeFilters.size > 0 ? [...this.typeFilters] : [],
@@ -1213,6 +1323,21 @@ class PropViewMap {
             const sel = document.getElementById('line-time-filter');
             if (sel) sel.value = String(state.lineTimeFilter);
         }
+
+        if (state.lineStyle) {
+            const savedStyle = state.lineStyle || {};
+            const pattern = savedStyle.pattern || 'solid';
+            this.lineStyle = {
+                colorMode: savedStyle.colorMode === 'custom' ? 'custom' : 'distance',
+                customColor: /^#[0-9a-f]{6}$/i.test(savedStyle.customColor || '')
+                    ? savedStyle.customColor
+                    : '#58a6ff',
+                weight: Math.max(1, Math.min(8, parseFloat(savedStyle.weight) || 2)),
+                pattern: ['solid', 'dash', 'dot', 'dashdot'].includes(pattern) ? pattern : 'solid',
+                opacity: Math.max(0.2, Math.min(1, parseFloat(savedStyle.opacity) || 0.7)),
+            };
+        }
+        this._syncLineStyleControls();
 
         // Restore type filters
         if (state.typeFilters && state.typeFilters.length > 0) {
@@ -1306,6 +1431,8 @@ class PropViewMap {
             this.setLineTimeFilter(hours);
         });
 
+        this._initLineStyleControls();
+
         // Callsign label toggle
         document.getElementById('btn-toggle-labels')?.addEventListener('click', (e) => {
             const active = this.toggleLabels();
@@ -1327,7 +1454,15 @@ class PropViewMap {
         });
 
         document.getElementById('btn-pick-location-settings')?.addEventListener('click', () => {
+            if (typeof window.pvCloseSettingsPane === 'function') {
+                window.pvCloseSettingsPane();
+            }
             this.enablePickMode();
+        });
+
+        document.getElementById('btn-create-object')?.addEventListener('click', (e) => {
+            this.enableObjectMode();
+            e.target.classList.add('active');
         });
 
         document.getElementById('btn-toggle-theme')?.addEventListener('click', (e) => {
@@ -1336,6 +1471,56 @@ class PropViewMap {
             e.target.textContent = dark ? '🌙' : '☀️';
             e.target.title = dark ? 'Switch to light map' : 'Switch to dark map';
         });
+    }
+
+    _initLineStyleControls() {
+        const btn = document.getElementById('line-style-btn');
+        const popover = document.getElementById('line-style-popover');
+        const colorMode = document.getElementById('line-color-mode');
+        const customColor = document.getElementById('line-custom-color');
+        const weight = document.getElementById('line-weight');
+        const pattern = document.getElementById('line-pattern');
+        const opacity = document.getElementById('line-opacity');
+        if (!btn || !popover) return;
+
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            popover.classList.toggle('open');
+        });
+        document.addEventListener('click', (e) => {
+            if (!popover.contains(e.target) && e.target !== btn) {
+                popover.classList.remove('open');
+            }
+        });
+
+        const update = () => this.setLineStyle({
+            colorMode: colorMode?.value,
+            customColor: customColor?.value,
+            weight: weight?.value,
+            pattern: pattern?.value,
+            opacity: opacity?.value,
+        });
+
+        [colorMode, customColor, weight, pattern, opacity].forEach((el) => {
+            el?.addEventListener('input', update);
+            el?.addEventListener('change', update);
+        });
+        this._syncLineStyleControls();
+    }
+
+    _syncLineStyleControls() {
+        const style = this.lineStyle || {};
+        const setValue = (id, value) => {
+            const el = document.getElementById(id);
+            if (el && el.value !== String(value)) el.value = String(value);
+        };
+        setValue('line-color-mode', style.colorMode || 'distance');
+        setValue('line-custom-color', style.customColor || '#58a6ff');
+        setValue('line-weight', style.weight || 2);
+        setValue('line-pattern', style.pattern || 'solid');
+        setValue('line-opacity', style.opacity || 0.7);
+        const customColor = document.getElementById('line-custom-color');
+        if (customColor) customColor.disabled = style.colorMode !== 'custom';
     }
 
     /**
@@ -1392,12 +1577,22 @@ class PropViewMap {
             const lngEl = document.getElementById('cfg-longitude');
             if (latEl) latEl.value = lat.toFixed(4);
             if (lngEl) lngEl.value = lng.toFixed(4);
+            latEl?.dispatchEvent(new Event('input', { bubbles: true }));
+            lngEl?.dispatchEvent(new Event('input', { bubbles: true }));
 
             // Fire callback if set
             if (this.onLocationPicked) {
                 this.onLocationPicked(lat, lng);
             }
 
+            setTimeout(() => {
+                if (typeof window.pvActivateTab === 'function') {
+                    window.pvActivateTab('tab-settings');
+                }
+                if (typeof window.pvMarkSettingsDirty === 'function') {
+                    window.pvMarkSettingsDirty('Station coordinates picked from map. Save Configuration to keep this location.');
+                }
+            }, 250);
             this.disablePickMode();
         };
         this.map.once('click', this._pickHandler);
@@ -1429,6 +1624,7 @@ class PropViewMap {
     _placePickMarker(lat, lng) {
         if (this.pickMarker) {
             this.pickMarker.setLatLng([lat, lng]);
+            this.pickMarker.setPopupContent(this._pickPopupHTML(lat, lng));
         } else {
             const icon = L.divIcon({
                 className: 'pick-marker',
@@ -1444,7 +1640,7 @@ class PropViewMap {
             });
             this.pickMarker = L.marker([lat, lng], { icon, zIndexOffset: 900 })
                 .addTo(this.map)
-                .bindPopup(`<b>Picked Location</b><br>${lat.toFixed(4)}, ${lng.toFixed(4)}<br><i>Save settings to apply</i>`);
+                .bindPopup(this._pickPopupHTML(lat, lng));
         }
         this.pickMarker.openPopup();
 
@@ -1455,6 +1651,209 @@ class PropViewMap {
                 this.pickMarker = null;
             }
         }, 10000);
+    }
+
+    enableObjectMode() {
+        this.objectMode = true;
+        this.map.getContainer().style.cursor = 'crosshair';
+        let banner = document.getElementById('pick-mode-banner');
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'pick-mode-banner';
+            document.getElementById('map-panel').appendChild(banner);
+        }
+        banner.innerHTML = 'Click on the map to create an APRS object <button id="pick-mode-cancel">Cancel</button>';
+        banner.style.display = 'flex';
+        document.getElementById('pick-mode-cancel')?.addEventListener('click', () => this.disableObjectMode());
+
+        this._objectHandler = (e) => {
+            const { lat, lng } = e.latlng;
+            this.disableObjectMode();
+            this._showObjectCreatePopup(lat, lng);
+        };
+        this.map.once('click', this._objectHandler);
+    }
+
+    disableObjectMode() {
+        this.objectMode = false;
+        this.map.getContainer().style.cursor = '';
+        document.getElementById('btn-create-object')?.classList.remove('active');
+        const banner = document.getElementById('pick-mode-banner');
+        if (banner) banner.style.display = 'none';
+        if (this._objectHandler) {
+            this.map.off('click', this._objectHandler);
+            this._objectHandler = null;
+        }
+    }
+
+    _showObjectCreatePopup(lat, lng) {
+        const symbolOptions = this._objectSymbolOptionsHTML('/', 'r');
+        const mapSize = this.map?.getSize?.();
+        const controlsHeight = document.getElementById('map-controls')?.offsetHeight || 0;
+        const wxBannerHeight = document.getElementById('wx-banner')?.offsetHeight || 0;
+        const alertHeight = document.getElementById('wx-alerts-container')?.offsetHeight || 0;
+        const reservedBottom = controlsHeight + 28;
+        const reservedTop = wxBannerHeight + alertHeight + 36;
+        const availableMapHeight = (mapSize?.y || window.innerHeight || 720) - reservedTop - reservedBottom;
+        const popupMaxHeight = Math.max(180, Math.min(520, availableMapHeight));
+        const popupMaxWidth = Math.max(300, Math.min(430, (mapSize?.x || window.innerWidth || 480) - 40));
+        const popup = L.popup({
+            autoPan: true,
+            autoPanPaddingTopLeft: [20, reservedTop],
+            autoPanPaddingBottomRight: [20, reservedBottom],
+            className: 'object-create-leaflet-popup',
+            keepInView: true,
+            maxWidth: popupMaxWidth,
+            minWidth: Math.min(320, popupMaxWidth),
+        })
+            .setLatLng([lat, lng])
+            .setContent(`
+                <div class="object-create-popup" style="--object-popup-max-height:${popupMaxHeight}px;">
+                    <div class="popup-header object-popup-header"><span class="popup-call">Create Object</span></div>
+                    <div class="object-popup-scroll">
+                        <div class="object-popup-grid">
+                            <label>Name <input id="obj-create-name" maxlength="9" placeholder="NETCTRL"></label>
+                            <label>Scope
+                                <select id="obj-create-scope">
+                                    <option value="global">Global</option>
+                                    <option value="local">Local RF only</option>
+                                    <option value="private">Private</option>
+                                </select>
+                            </label>
+                            <label class="object-popup-check"><input id="obj-create-enabled" type="checkbox" checked> Enabled</label>
+                            <label class="object-popup-check"><input id="obj-create-active" type="checkbox" checked> Active/live</label>
+                            <label class="object-popup-check"><input id="obj-create-permanent" type="checkbox"> Permanent item</label>
+                            <label>Transmit
+                                <select id="obj-create-mode">
+                                    <option value="">Use object setting</option>
+                                    <option value="both">RF + APRS-IS</option>
+                                    <option value="rf">RF only</option>
+                                    <option value="aprs_is">APRS-IS only</option>
+                                </select>
+                            </label>
+                            <label>Table
+                                <select id="obj-create-table">
+                                    <option value="/">Primary /</option>
+                                    <option value="\\">Alternate \\</option>
+                                </select>
+                            </label>
+                            <label>Symbol
+                                <select id="obj-create-symbol">${symbolOptions}</select>
+                            </label>
+                            <label>Overlay <input id="obj-create-overlay" maxlength="1" placeholder="A"></label>
+                            <label>Speed mph <input id="obj-create-speed" type="number" min="0" max="999" value="0"></label>
+                            <label>Course <input id="obj-create-course" type="number" min="0" max="359" value="0"></label>
+                            <label>Frequency <input id="obj-create-frequency" maxlength="12" placeholder="146.520"></label>
+                            <label>Tone <input id="obj-create-tone" maxlength="8" placeholder="100.0"></label>
+                            <label>Duplex <input id="obj-create-duplex" maxlength="3" placeholder="+"></label>
+                            <label>QRU <input id="obj-create-qru" maxlength="12" placeholder="CLUB"></label>
+                            <label>Path <input id="obj-create-path" maxlength="40" placeholder="Use global path"></label>
+                        </div>
+                        <input id="obj-create-comment" maxlength="80" placeholder="Comment">
+                        <div class="object-symbol-preview" id="obj-create-preview"></div>
+                        <div class="popup-detail">${lat.toFixed(5)}, ${lng.toFixed(5)}</div>
+                    </div>
+                    <div class="popup-actions object-popup-actions">
+                        <button type="button" class="popup-action-btn" id="obj-create-save">Save Object</button>
+                    </div>
+                </div>
+            `)
+            .openOn(this.map);
+        setTimeout(() => {
+            popup.update();
+            this.map?.panInside?.(popup.getLatLng(), {
+                paddingTopLeft: [20, reservedTop],
+                paddingBottomRight: [20, reservedBottom],
+            });
+        }, 0);
+        setTimeout(() => {
+            const nameEl = document.getElementById('obj-create-name');
+            const commentEl = document.getElementById('obj-create-comment');
+            const tableEl = document.getElementById('obj-create-table');
+            const symbolEl = document.getElementById('obj-create-symbol');
+            const previewEl = document.getElementById('obj-create-preview');
+            const btn = document.getElementById('obj-create-save');
+            const refreshPreview = () => {
+                const overlay = document.getElementById('obj-create-overlay')?.value || '';
+                const table = overlay || tableEl?.value || '/';
+                const code = symbolEl?.value || 'r';
+                const sprite = (typeof getAPRSSpriteHTML === 'function') ? getAPRSSpriteHTML(table, code, 28) : `${table}${code}`;
+                const name = (typeof getAPRSSymbolName === 'function') ? getAPRSSymbolName(table, code) : '';
+                if (previewEl) previewEl.innerHTML = `${sprite}<span>${this._escapeHtml(name || `${table}${code}`)}</span>`;
+            };
+            tableEl?.addEventListener('change', () => {
+                if (symbolEl) symbolEl.innerHTML = this._objectSymbolOptionsHTML(tableEl.value || '/', symbolEl.value || 'r');
+                refreshPreview();
+            });
+            symbolEl?.addEventListener('change', refreshPreview);
+            document.getElementById('obj-create-overlay')?.addEventListener('input', refreshPreview);
+            refreshPreview();
+            nameEl?.focus();
+            btn?.addEventListener('click', async () => {
+                const name = (nameEl?.value || '').trim().toUpperCase();
+                if (!name) {
+                    nameEl?.focus();
+                    return;
+                }
+                btn.disabled = true;
+                try {
+                    const resp = await fetch('/api/objects/create', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            name,
+                            latitude: lat,
+                            longitude: lng,
+                            enabled: document.getElementById('obj-create-enabled')?.checked ?? true,
+                            active: document.getElementById('obj-create-active')?.checked ?? true,
+                            permanent: document.getElementById('obj-create-permanent')?.checked ?? false,
+                            scope: document.getElementById('obj-create-scope')?.value || 'global',
+                            mode: document.getElementById('obj-create-mode')?.value || '',
+                            symbol_table: tableEl?.value || '/',
+                            symbol_code: symbolEl?.value || 'r',
+                            overlay: document.getElementById('obj-create-overlay')?.value || '',
+                            speed_mph: parseInt(document.getElementById('obj-create-speed')?.value, 10) || 0,
+                            course_deg: parseInt(document.getElementById('obj-create-course')?.value, 10) || 0,
+                            frequency: document.getElementById('obj-create-frequency')?.value || '',
+                            tone: document.getElementById('obj-create-tone')?.value || '',
+                            duplex: document.getElementById('obj-create-duplex')?.value || '',
+                            qru: document.getElementById('obj-create-qru')?.value || '',
+                            path: document.getElementById('obj-create-path')?.value || '',
+                            comment: commentEl?.value || '',
+                        }),
+                    });
+                    const result = await resp.json();
+                    if (!resp.ok || !result.success) throw new Error(result.message || 'Object save failed.');
+                    popup.setContent(`<b>${this._escapeHtml(name)}</b><br>Object saved and transmitted if a path was available.`);
+                    window.pvRefreshScheduledControls?.();
+                } catch (err) {
+                    popup.setContent(`<b>Object failed</b><br>${this._escapeHtml(err.message || 'Unable to save object.')}`);
+                }
+            });
+        }, 0);
+    }
+
+    _objectSymbolOptionsHTML(table, selectedCode) {
+        const symbols = (typeof APRS_SYMBOLS !== 'undefined' && APRS_SYMBOLS[table]) ? APRS_SYMBOLS[table] : [];
+        if (!symbols.length) {
+            return `<option value="${this._escapeHtml(selectedCode || 'r')}">${this._escapeHtml(table || '/')}${this._escapeHtml(selectedCode || 'r')}</option>`;
+        }
+        return symbols.map((sym) => {
+            const selected = sym.code === selectedCode ? ' selected' : '';
+            return `<option value="${this._escapeHtml(sym.code)}"${selected}>${this._escapeHtml(sym.name)} (${this._escapeHtml(table)}${this._escapeHtml(sym.code)})</option>`;
+        }).join('');
+    }
+
+    _pickPopupHTML(lat, lng) {
+        return `
+            <div class="popup-header">
+                <span class="popup-call" style="color:#f0883e;">Picked Location</span>
+            </div>
+            <div class="popup-detail">
+                ${lat.toFixed(5)}, ${lng.toFixed(5)}<br>
+                Settings reopened with these coordinates. Save Configuration to keep them.
+            </div>
+        `;
     }
 
     _addLegend() {
@@ -1474,9 +1873,14 @@ class PropViewMap {
         const d200l = isMi ? '62' : '100';
         const d200h = isMi ? '124' : '200';
         const d200p = isMi ? '124' : '200';
+        const symTable = this.myStationInfo?.symbol_table || '/';
+        const symCode = this.myStationInfo?.symbol_code || '#';
+        const mySprite = (typeof getAPRSSpriteHTML === 'function')
+            ? getAPRSSpriteHTML(symTable, symCode, 16)
+            : 'MY';
         this._legendEl.innerHTML = `
             <div class="legend-item">
-                <div class="legend-swatch" style="background: #39d5ff; border: 2px solid white;"></div>
+                <div class="legend-emoji legend-my-station">${mySprite}</div>
                 <span>My Station</span>
             </div>
             <div class="legend-item">

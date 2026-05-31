@@ -1,6 +1,6 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.5.4.2** | May 28, 2026
+**Version 1.5.5.0** | May 31, 2026
 
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 
@@ -13,7 +13,7 @@
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
 
-Version 1.5.4.2 adds AGWPE TCP port support, receive-only RF port controls, message route selection, weather analytics graphs, and better handling for same-base weather station callsigns.
+Version 1.5.5.0 adds scheduled APRS bulletins and objects, map-created objects, smart beaconing, private/local APRS-IS receive compatibility, configurable station-to-station map lines, routed digipeater paths, and AGWPE raw-frame handling fixes.
 
 Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs/linux-raspberry-pi.md).
 
@@ -25,10 +25,11 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **IGate** — Bidirectional RF ↔ APRS-IS gateway with proper q-construct handling and third-party IS→RF forwarding
 - **RF Station Tracking** — Separate list of stations heard directly on RF
 - **APRS-IS Station Tracking** — Separate list of stations received from APRS-IS
-- **Propagation Map** — Interactive Leaflet map with APRS sprite icons (16px markers, 32px in popup), directional arrowed path lines, and light/dark theme toggle
+- **Propagation Map** — Interactive Leaflet map with APRS sprite icons (16px markers, 32px in popup), directional arrowed path lines, map-created APRS objects, and light/dark theme toggle
 - **Custom Map Tiles** — Point the map at a local XYZ tile server for offline/field use
 - **Dual Propagation Meters** — Header gauges: "VHF Propagation My Station" (direct-heard RF only) and "Regional VHF Propagation" (all RF including via digipeater), each with configurable scoring thresholds
-- **Animated Path Lines** — Dashed propagation lines flow from remote stations toward your position, color-coded by distance (red/orange/green/purple)
+- **Configurable Path Lines** — Directional station-to-station lines support distance or custom coloring, weight, opacity, solid/dashed/dotted patterns, and offset arrows for bidirectional paths
+- **Digipeater-Routed Lines** — RF stations heard through known digipeaters draw TX-to-digi-to-RX paths instead of misleading direct-heard lines
 - **Callsign Labels** — Toggle persistent callsign labels above each station icon on the map
 - **Map Callsign Search** — Jump directly to a station by callsign from the map search box
 - **Auto-Fit Zoom** — Automatically zoom the map to fit all visible stations; zooms back in as stations expire; overridden by manual pan/zoom
@@ -36,7 +37,7 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **Station Expiry** — Automatically remove stations from the map after a configurable "last heard" timeout
 - **Mobile Companion** — Touch-optimized `/mobile` page with bottom tab bar for phone browsers (via Tailscale or LAN)
 - **Propagation Indicator** — Live gauge showing current VHF band conditions based on station count and distance trends
-- **Filters** — Filter stations by last-heard time, distance, and packet type
+- **Filters** — Filter stations by last-heard time, distance, packet type, callsign, source, and direct/via-digipeater RF path
 - **Solar Data Widget** — Live HF propagation summary image (solar flux, K-index, band conditions) from hamqsl.com in the Propagation tab
 - **Real-time Updates** — WebSocket-driven live dashboard
 
@@ -52,6 +53,7 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **Band Opening Detection** — Automatic alerts when propagation thresholds are exceeded
 - **Status/DX Reports** — Optional compact APRS status beacons with the best direct DX station, bearing, counts, and propagation level
 - **Dynamic, MHeard, and Weather Alert Beacons** — Rotate preset status messages, beacon direct-heard RF stations, or beacon severe weather alert text with preview-before-transmit controls
+- **Scheduled Bulletins and APRS Objects** — Periodically transmit configured BLN bulletins and APRS objects over RF, APRS-IS, or both, with preview and one-shot transmit controls
 - **Alert Destination Tests** — Send preformatted test messages to selected Discord, Email, and SMS destinations from Settings
 - **Quiet Hours** — Configurable quiet time window (HH:MM 24h) to suppress notifications
 - **Message Notifications** — Get notified via Discord/Email/SMS when APRS messages are received
@@ -98,6 +100,8 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **Minute-based Timers** — All timer settings (beacon interval, dedupe, cleanup, cooldown) displayed in minutes for simplicity
 - **Pick Location on Map** — Click the map to set your station coordinates
 - **GPS Ingestion** — Use browser/mobile GPS, own APRS position packets, or NMEA serial/TCP/UDP streams to move the map marker or update station coordinates
+- **Smart Beaconing** — Optional GPS-speed-aware station beacon intervals for mobile/portable use
+- **Map Object Creation** — Drop APRS objects from the map, choose symbol/comment/routing, and save them into the scheduled object list
 - **APRS Symbol Picker** — Visual icon chooser with both primary and alternate symbol tables
 - **Callsign + SSID Selector** — Uppercase callsign input with SSID dropdown (0–15) and descriptions
 - **APRS-IS Filter Helpers** — Generate fixed `r/35/-79/80` or `r/35.5/-79.8/80` range filters, or moving/mobile `m/80` filters, with support for additional javAPRS filter tokens
@@ -109,6 +113,7 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **Help & User Guide** — In-app help modal covering every feature, control, and setting
 - **Update Checker** - Automatically checks the latest GitHub release, supports disabling checks entirely, and lets you control the periodic recheck interval for long-running installs
 - **Persistent UI State** — Map toggles, zoom, position, theme, line time filter, station type filters, callsign labels, and auto-fit are saved to the browser and restored on next launch
+- **Linux/Pi Friendly Configuration** — Example config and install guide include multi-port RF, AGWPE TCP, private APRS-IS feeds, scheduled packets, and smart beaconing notes
 - **Station Cleanup** — Automatic pruning of stale stations from memory with real-time UI removal
 
 ### APRS-IS Policy Compliance
@@ -117,6 +122,7 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - Country-neutral callsign handling with APRS-safe character checks and APRS-IS placeholder protection
 - Minimum 10-minute beacon interval enforced per APRS-IS usage policy
 - Read-only mode: unverified connections (passcode `-1`) cannot transmit or gate
+- Private/local APRS-IS-style servers that omit banners or `logresp` can still feed received packets; without verification the connection remains read-only
 - RF→IS gating does not deduplicate or suppress traffic except for `NOGATE` / `RFONLY`
 - IS→RF gated packets do not request further digipeating (no WIDE path)
 - IS→RF gated packets use APRS third-party format to avoid loops
@@ -178,6 +184,9 @@ All settings are in `config.toml` and can be edited from the web UI **Settings**
 | `[database]` | SQLite database path |
 | `[propagation]` | Scoring thresholds for My Station and Regional propagation meters |
 | `[status]` | Compact APRS status beacon settings: DX summaries, dynamic preset text, direct-RF MHeard summaries, and optional severe weather alert beacons |
+| `[smart_beaconing]` | Optional GPS-speed-aware station beacon intervals for mobile operation |
+| `[bulletins]` | Scheduled APRS BLN bulletin packets, route, interval, and message list |
+| `[aprs_objects]` | Scheduled APRS object packets, route, interval, symbols, positions, and comments |
 | `[alerts]` | Band opening thresholds, Discord/email/SMS notification settings |
 | `[weather]` | Weather enabled, location code (zip/ICAO), WXnow/Open-Meteo current-condition options, alert range, radar overlay, alert polygons, alert scope, and adaptive polling |
 | `[wxnow]` | APRS weather transmit from `WXnow.txt`, including SSID, beacon interval, stale cutoff, position mode, path, and RF/APRS-IS route |
@@ -225,6 +234,7 @@ aprs-propview/
 │   ├── igate.py            # RF ↔ APRS-IS gateway
 │   ├── kiss.py             # KISS protocol plus legacy TNC2 monitor serial support
 │   ├── packet_handler.py   # Central packet router
+│   ├── scheduled_packets.py # Scheduled BLN bulletin and APRS object transmitter
 │   ├── station_tracker.py  # Station tracking & propagation
 │   ├── analytics.py        # Analytics engine
 │   ├── alerts.py           # Band opening alert manager
