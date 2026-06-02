@@ -17,6 +17,7 @@ class StationManager {
         this.isCallFilter = '';
         this.isSortOrder = 'heard_desc';
         this.packetBuffer = [];    // recent packets for display
+        this.packetSortOrder = 'newest';
         this.maxPackets = 500;
         this._listClickBound = false;
         this.hasLoadedInitialStations = false;
@@ -27,6 +28,7 @@ class StationManager {
         this._bindFilters();
         this._populateTypeDropdowns();
         this._bindListClicks();
+        this.loadRecentPackets();
     }
 
     updateStation(station) {
@@ -39,7 +41,7 @@ class StationManager {
             this.isStations[call] = station;
         }
 
-        window.pvMap.addOrUpdateStation(station);
+        this._reconcileMapStation(station);
         this._scheduleRenderStationList(source);
     }
 
@@ -47,12 +49,11 @@ class StationManager {
         this.hasLoadedInitialStations = true;
         rfList.forEach((s) => {
             this.rfStations[s.callsign] = s;
-            window.pvMap.addOrUpdateStation(s);
         });
         isList.forEach((s) => {
             this.isStations[s.callsign] = s;
-            window.pvMap.addOrUpdateStation(s);
         });
+        this._rebuildMapStations();
         this._renderStationList('rf');
         this._renderStationList('aprs_is');
     }
@@ -79,13 +80,26 @@ class StationManager {
         if (this.packetBuffer.length > this.maxPackets) {
             this.packetBuffer.pop();
         }
-        this._renderPacketItem(pkt);
+        this._rerenderPackets();
     }
 
     clearPackets() {
         this.packetBuffer = [];
         const list = document.getElementById('packet-list');
         if (list) list.innerHTML = '';
+    }
+
+    async loadRecentPackets() {
+        try {
+            const resp = await fetch('/api/packets?limit=500');
+            if (!resp.ok) return;
+            const data = await resp.json();
+            const packets = Array.isArray(data.packets) ? data.packets : [];
+            this._mergePacketBuffer(packets);
+            this._rerenderPackets();
+        } catch (error) {
+            console.warn('Failed to load recent packets:', error);
+        }
     }
 
     render() {
@@ -222,9 +236,6 @@ class StationManager {
         const list = document.getElementById('packet-list');
         if (!list) return;
 
-        const filter = document.getElementById('packet-source-filter')?.value || '';
-        if (filter && pkt.source !== filter) return;
-
         const time = pkt.timestamp
             ? new Date(pkt.timestamp * 1000).toLocaleTimeString()
             : '';
@@ -234,18 +245,15 @@ class StationManager {
         const sourceClass = pkt.source || 'rf';
 
         const el = document.createElement('div');
-        el.className = 'packet-item';
+        el.className = `packet-item${pkt.digipeated_by_me ? ' digipeated-by-me' : ''}`;
         el.innerHTML = `
             <span class="pkt-time">${time}</span>
             <span class="pkt-source ${sourceClass}">[${sourceLabel}]</span>
+            ${pkt.digipeated_by_me ? '<span class="pkt-badge digi">DIGI</span>' : ''}
             <span class="pkt-raw">${this._escapeHTML(pkt.raw || '')}</span>
         `;
 
-        list.insertBefore(el, list.firstChild);
-
-        while (list.children.length > 200) {
-            list.removeChild(list.lastChild);
-        }
+        list.appendChild(el);
     }
 
     _bindFilters() {
@@ -303,6 +311,11 @@ class StationManager {
             this._rerenderPackets();
         });
 
+        document.getElementById('packet-sort-order')?.addEventListener('change', (e) => {
+            this.packetSortOrder = e.target.value === 'oldest' ? 'oldest' : 'newest';
+            this._rerenderPackets();
+        });
+
         document.getElementById('btn-clear-packets')?.addEventListener('click', () => {
             this.clearPackets();
         });
@@ -312,7 +325,53 @@ class StationManager {
         const list = document.getElementById('packet-list');
         if (!list) return;
         list.innerHTML = '';
-        this.packetBuffer.forEach((pkt) => this._renderPacketItem(pkt));
+        this._filteredSortedPackets()
+            .slice(0, 200)
+            .forEach((pkt) => this._renderPacketItem(pkt));
+    }
+
+    _filteredSortedPackets() {
+        const filter = document.getElementById('packet-source-filter')?.value || '';
+        return [...this.packetBuffer]
+            .filter((pkt) => {
+                if (filter === 'my_digipeated') return !!pkt.digipeated_by_me;
+                return !filter || pkt.source === filter;
+            })
+            .sort((a, b) => {
+                const at = Number(a.timestamp || 0);
+                const bt = Number(b.timestamp || 0);
+                return this.packetSortOrder === 'oldest' ? at - bt : bt - at;
+            });
+    }
+
+    _mergePacketBuffer(packets) {
+        const seen = new Set(this.packetBuffer.map((pkt) => this._packetKey(pkt)));
+        packets.forEach((pkt) => {
+            const normalized = {
+                ...pkt,
+                digipeated_by_me: !!pkt.digipeated_by_me,
+            };
+            const key = this._packetKey(normalized);
+            if (!seen.has(key)) {
+                this.packetBuffer.push(normalized);
+                seen.add(key);
+            }
+        });
+        this.packetBuffer.sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
+        if (this.packetBuffer.length > this.maxPackets) {
+            this.packetBuffer = this.packetBuffer.slice(0, this.maxPackets);
+        }
+    }
+
+    _packetKey(pkt) {
+        if (pkt.id != null) return `id:${pkt.id}`;
+        return [
+            pkt.timestamp || '',
+            pkt.source || '',
+            pkt.from_call || '',
+            pkt.to_call || '',
+            pkt.raw || '',
+        ].join('|');
     }
 
     _populateTypeDropdowns() {
@@ -468,8 +527,73 @@ class StationManager {
 
         nextList.forEach((station) => {
             current[station.callsign] = station;
-            window.pvMap?.addOrUpdateStation(station);
         });
+        this._rebuildMapStations();
+    }
+
+    _reconcileMapStation(station) {
+        if (!window.pvMap || !station?.callsign) return;
+        if (station.source === 'rf') {
+            if (this._hasNewerAprsIsPosition(station)) {
+                window.pvMap.removeRfMapMarker(station.callsign);
+                return;
+            }
+            window.pvMap.addOrUpdateStation(station);
+            return;
+        }
+
+        window.pvMap.addOrUpdateStation(station);
+        if (this._shouldRetireRfMapForAprsIs(station)) {
+            window.pvMap.removeRfMapMarker(station.callsign);
+        }
+    }
+
+    _rebuildMapStations() {
+        Object.values(this.rfStations).forEach((station) => {
+            if (!this._hasNewerAprsIsPosition(station)) {
+                window.pvMap?.addOrUpdateStation(station);
+            } else {
+                window.pvMap?.removeRfMapMarker(station.callsign);
+            }
+        });
+        Object.values(this.isStations).forEach((station) => {
+            window.pvMap?.addOrUpdateStation(station);
+            if (this._shouldRetireRfMapForAprsIs(station)) {
+                window.pvMap?.removeRfMapMarker(station.callsign);
+            }
+        });
+    }
+
+    _hasNewerAprsIsPosition(rfStation) {
+        const isStation = this.isStations[rfStation.callsign];
+        return this._sameCallAprsIsSupersedesRf(isStation, rfStation);
+    }
+
+    _shouldRetireRfMapForAprsIs(isStation) {
+        const rfStation = this.rfStations[isStation.callsign];
+        return this._sameCallAprsIsSupersedesRf(isStation, rfStation);
+    }
+
+    _sameCallAprsIsSupersedesRf(isStation, rfStation) {
+        if (!isStation || !rfStation) return false;
+        if (!this._hasUsablePosition(isStation) || !this._hasUsablePosition(rfStation)) return false;
+        const isTime = Number(isStation.last_heard || 0);
+        const rfTime = Number(rfStation.last_heard || 0);
+        if (isTime < rfTime) return false;
+        return this._positionsDiffer(isStation, rfStation);
+    }
+
+    _hasUsablePosition(station) {
+        return !!station
+            && Number.isFinite(Number(station.latitude))
+            && Number.isFinite(Number(station.longitude))
+            && !(Number(station.latitude) === 0 && Number(station.longitude) === 0);
+    }
+
+    _positionsDiffer(a, b) {
+        const latDiff = Math.abs(Number(a.latitude) - Number(b.latitude));
+        const lonDiff = Math.abs(Number(a.longitude) - Number(b.longitude));
+        return latDiff > 0.0001 || lonDiff > 0.0001;
     }
 
     _formatBearing(heading) {

@@ -183,9 +183,9 @@ class APRSISComplianceTests(unittest.TestCase):
         config = Config()
         config.station.callsign = "K5ABC"
         config.aprs_is.passcode = "12345"
-        client = APRSISClient(config, lambda packet: None, app_version="1.5.5.1")
+        client = APRSISClient(config, lambda packet: None, app_version="1.5.5.2")
 
-        self.assertIn("vers APRSPropView 1.5.5.1", client._build_login())
+        self.assertIn("vers APRSPropView 1.5.5.2", client._build_login())
 
     def test_packet_sent_instead_of_logresp_is_not_dropped(self):
         async def run_test():
@@ -751,6 +751,40 @@ class MessagePersistenceTests(unittest.TestCase):
 
             self.assertEqual(station["last_port_name"], "KISS-Serial(COM7)")
             self.assertEqual(packets[0]["port_name"], "KISS-Serial(COM7)")
+
+        asyncio.run(run_test())
+
+    def test_packet_digipeated_by_my_station_is_flagged(self):
+        class FakeWebSocketManager:
+            def __init__(self):
+                self.messages = []
+
+            async def broadcast(self, message):
+                self.messages.append(message)
+
+        async def run_test():
+            with tempfile.TemporaryDirectory() as tmp:
+                config = Config()
+                config.station.callsign = "K5YVY"
+                config.station.ssid = 1
+                db = Database(f"{tmp}/test.db")
+                await db.initialize()
+                try:
+                    ws = FakeWebSocketManager()
+                    tracker = StationTracker(db, config, ws)
+                    packet = parse_packet(
+                        "K1ABC>APRS,K5YVY-1*,WIDE1-1:!3600.00N/09800.00W-Test",
+                        source="rf",
+                    )
+
+                    await tracker.track_packet(packet)
+                    packets = await db.get_recent_packets(limit=1)
+                finally:
+                    await db.close()
+
+            packet_messages = [msg["data"] for msg in ws.messages if msg.get("type") == "packet"]
+            self.assertEqual(packets[0]["digipeated_by_me"], 1)
+            self.assertTrue(packet_messages[-1]["digipeated_by_me"])
 
         asyncio.run(run_test())
 

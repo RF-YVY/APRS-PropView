@@ -240,8 +240,14 @@ class PacketHandler:
         if self.digipeater:
             new_frame = self.digipeater.should_digipeat(frame)
             if new_frame:
-                await self._transmit_rf(new_frame)
-                self.stats["digipeated"] += 1
+                sent = await self._transmit_rf(new_frame)
+                if sent:
+                    await self._record_tx_packet(
+                        new_frame.to_aprs_string(),
+                        "RF Digi",
+                        digipeated_by_me=True,
+                    )
+                    self.stats["digipeated"] += 1
 
         # IGate RF→IS
         if (
@@ -599,7 +605,7 @@ class PacketHandler:
                 logger.error(f"RF TX error on {iface.name}: {e}")
         return sent
 
-    async def _record_tx_packet(self, raw: str, transport: str):
+    async def _record_tx_packet(self, raw: str, transport: str, digipeated_by_me: bool = False):
         packet = parse_packet(raw, source="tx")
         packet.port_name = transport
         await self.tracker.db.log_packet(
@@ -612,6 +618,7 @@ class PacketHandler:
             latitude=packet.latitude,
             longitude=packet.longitude,
             port_name=transport,
+            digipeated_by_me=digipeated_by_me,
         )
         await self.ws.broadcast({
             "type": "packet",
@@ -627,6 +634,7 @@ class PacketHandler:
                 "longitude": packet.longitude,
                 "port_name": transport,
                 "distance_km": None,
+                "digipeated_by_me": digipeated_by_me,
             },
         })
 

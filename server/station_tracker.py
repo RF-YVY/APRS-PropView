@@ -67,6 +67,16 @@ class StationTracker:
             calls.add(f"{base}-{wx_ssid}" if wx_ssid else base)
         return {call for call in calls if call}
 
+    def packet_digipeated_by_me(self, path: str) -> bool:
+        my_call = self.config.station.full_callsign.upper()
+        if not my_call or not path:
+            return False
+        for hop in path.split(","):
+            hop = hop.strip().upper()
+            if hop.endswith("*") and hop[:-1] == my_call:
+                return True
+        return False
+
     async def _log_packet_only(
         self,
         packet: APRSPacket,
@@ -84,8 +94,10 @@ class StationTracker:
             latitude=packet.latitude,
             longitude=packet.longitude,
             port_name=port_name,
+            digipeated_by_me=self.packet_digipeated_by_me(packet.path),
             commit=commit,
         )
+        digipeated_by_me = self.packet_digipeated_by_me(packet.path)
         await self.ws.broadcast(
             {
                 "type": "packet",
@@ -101,6 +113,7 @@ class StationTracker:
                     "longitude": packet.longitude,
                     "port_name": port_name,
                     "distance_km": distance_km,
+                    "digipeated_by_me": digipeated_by_me,
                 },
             }
         )
@@ -111,6 +124,7 @@ class StationTracker:
         callsign = packet.from_call
         port_name = packet.port_name if source == "rf" else ""
         is_direct = source == "rf" and self._is_direct_path(packet.path)
+        digipeated_by_me = self.packet_digipeated_by_me(packet.path)
 
         if not callsign:
             return
@@ -126,6 +140,7 @@ class StationTracker:
                 latitude=packet.latitude,
                 longitude=packet.longitude,
                 port_name=port_name,
+                digipeated_by_me=digipeated_by_me,
             )
             await self.ws.broadcast(
                 {
@@ -142,6 +157,7 @@ class StationTracker:
                         "longitude": packet.longitude,
                         "port_name": port_name,
                         "distance_km": None,
+                        "digipeated_by_me": digipeated_by_me,
                     },
                 }
             )
@@ -223,6 +239,7 @@ class StationTracker:
             latitude=packet.latitude,
             longitude=packet.longitude,
             port_name=port_name,
+            digipeated_by_me=digipeated_by_me,
             commit=False,
         )
 
@@ -307,6 +324,7 @@ class StationTracker:
                     "longitude": packet.longitude,
                     "port_name": port_name,
                     "distance_km": distance_km,
+                    "digipeated_by_me": digipeated_by_me,
                 },
             }
         )

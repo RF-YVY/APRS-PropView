@@ -1,6 +1,6 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.5.5.1** | May 31, 2026
+**Version 1.5.5.2** | June 2, 2026
 
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 
@@ -13,7 +13,7 @@
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
 
-Version 1.5.5.1 adds the Band Opening Alert Tuning Helper on top of the v1.5.5.0 scheduled packets, smart beaconing, private APRS-IS receive compatibility, configurable map lines, routed digipeater paths, and AGWPE raw-frame handling fixes.
+Version 1.5.5.2 adds packet-list digipeat filtering and newest/oldest sorting, same-callsign moving-station map cleanup across RF/APRS-IS, NWS affected-zone polygon fallback for alerts, and weather alert banner layering fixes.
 
 Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs/linux-raspberry-pi.md).
 
@@ -30,6 +30,7 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **Dual Propagation Meters** — Header gauges: "VHF Propagation My Station" (direct-heard RF only) and "Regional VHF Propagation" (all RF including via digipeater), each with configurable scoring thresholds
 - **Configurable Path Lines** — Directional station-to-station lines support distance or custom coloring, weight, opacity, solid/dashed/dotted patterns, and offset arrows for bidirectional paths
 - **Digipeater-Routed Lines** — RF stations heard through known digipeaters draw TX-to-digi-to-RX paths instead of misleading direct-heard lines
+- **Moving Station Cleanup** — If APRS-IS later reports the same moving callsign at a newer different position, the stale RF marker and path line are removed from the map
 - **Callsign Labels** — Toggle persistent callsign labels above each station icon on the map
 - **Map Callsign Search** — Jump directly to a station by callsign from the map search box
 - **Auto-Fit Zoom** — Automatically zoom the map to fit all visible stations; zooms back in as stations expire; overridden by manual pan/zoom
@@ -72,10 +73,11 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **Metric/Imperial Weather Display** - Switch map weather and APRS WX station displays between °F/mph/in and °C/m/s/mm
 - **US Zip Code & ICAO Location** - Set your weather location by entering a US zip code or worldwide ICAO airport code
 - **Severe Weather Alerts** - NWS active alerts displayed as color-coded banners (red for warnings, orange for watches/advisories)
-- **Configurable Alert Range** - Select how far from your location to monitor severe weather (default 50 miles)
+- **Configurable Alert Range** - Select how far from your location to monitor severe weather banners/beacons in radius mode (default 40 miles)
 - **NWS Alert Awareness** - Current conditions, animated radar overlays, and NWS alert banners/polygons for weather situational awareness
 - **Weather Radar Overlay** - Optional animated radar tiles layered directly on the map with adjustable opacity for fast visual storm tracking
-- **NWS Alert Polygons** - Optional US map overlay for severe weather polygons, with per-category filters for warnings, watches, flood, winter, marine, fire/heat, and other alerts
+- **NWS Alert Polygons** - Optional US map overlay for severe weather polygons, with an independent map-only radius (default 80 miles) and per-category filters for warnings, watches, flood, winter, marine, fire/heat, and other alerts
+- **NWS Zone Geometry Fallback** - Watches or zone-based alerts without native polygons can draw affected county/zone geometry when available
 - **Adaptive Alert Polling** - Automatically increases alert checks to a 1-minute cadence when selected trigger events, such as Tornado Watch or Severe Thunderstorm Watch, become active
 - **Point or County/Zone Scope** - Monitor alerts for your exact station point or switch to a county/forecast-zone UGC target for broader warning coverage
 - **Adaptive Refresh Strategy** - Weather condition refresh stays user-configurable while alert polling cadence can increase automatically during elevated severe-weather scenarios
@@ -86,6 +88,7 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **Click to Reply** — Click any received message to auto-populate the TO callsign for quick reply
 - **Message Log** — Filterable message history (All / Sent / Received)
 - **Message Sort Order** — Switch messages between newest-first and oldest-first ordering
+- **Packet Sort and Digipeat Filter** — The Packets tab loads recent packet history, sorts newest or oldest first, and can show packets your station digipeated
 - **Mobile Message Refresh** — Mobile UI includes a manual message refresh button and closer parity with desktop message behavior
 - **RF + IS Routing** — Messages sent on both RF and APRS-IS simultaneously
 
@@ -189,7 +192,7 @@ All settings are in `config.toml` and can be edited from the web UI **Settings**
 | `[bulletins]` | Scheduled APRS BLN bulletin packets, route, interval, and message list |
 | `[aprs_objects]` | Scheduled APRS object packets, route, interval, symbols, positions, and comments |
 | `[alerts]` | Band opening thresholds, Discord/email/SMS notification settings |
-| `[weather]` | Weather enabled, location code (zip/ICAO), WXnow/Open-Meteo current-condition options, alert range, radar overlay, alert polygons, alert scope, and adaptive polling |
+| `[weather]` | Weather enabled, location code (zip/ICAO), WXnow/Open-Meteo current-condition options, banner alert range, radar overlay, map-only alert polygon range, alert scope, and adaptive polling |
 | `[wxnow]` | APRS weather transmit from `WXnow.txt`, including SSID, beacon interval, stale cutoff, position mode, path, and RF/APRS-IS route |
 | `[gps]` | Browser, own-packet, serial, TCP, and UDP GPS ingestion |
 | `[mqtt]` | Optional broker settings for propagation and alert publishing |

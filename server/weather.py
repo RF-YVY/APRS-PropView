@@ -65,10 +65,23 @@ NWS_SEVERITY = {
     "Unknown":  "watch",
 }
 
+_VALID_GEOJSON_GEOMETRY_TYPES = {
+    "Point",
+    "MultiPoint",
+    "LineString",
+    "MultiLineString",
+    "Polygon",
+    "MultiPolygon",
+    "GeometryCollection",
+}
+_MAX_ALERT_ZONE_GEOMETRIES = 80
+_ZONE_GEOMETRY_CACHE: Dict[str, Optional[Dict[str, Any]]] = {}
+
 # US Zip code regex
 _ZIP_RE = re.compile(r"^\d{5}$")
 # ICAO code regex (4 uppercase letters)
 _ICAO_RE = re.compile(r"^[A-Z]{4}$")
+_STATE_RE = re.compile(r",\s*([A-Z]{2})(?:\b|,)")
 
 
 def _classify_alert_categories(event: str, alert_type: str) -> List[str]:
@@ -94,6 +107,75 @@ def _classify_alert_categories(event: str, alert_type: str) -> List[str]:
         categories.append("other")
 
     return list(dict.fromkeys(categories))
+
+
+def _state_from_location(location: Optional[Dict[str, Any]], scope_zone: str = "") -> str:
+    """Best-effort US state code for NWS area alert queries."""
+    scope_zone = (scope_zone or "").strip().upper()
+    if len(scope_zone) >= 2 and scope_zone[:2].isalpha():
+        return scope_zone[:2]
+    if not location:
+        return ""
+    state = (location.get("state") or location.get("state_code") or "").strip().upper()
+    if len(state) == 2:
+        return state
+    match = _STATE_RE.search(location.get("name", "") or "")
+    return match.group(1) if match else ""
+
+
+def _iter_geometry_points(geometry: Optional[Dict[str, Any]]):
+    """Yield lon/lat coordinate pairs from a GeoJSON geometry."""
+    if not isinstance(geometry, dict):
+        return
+    geometry_type = geometry.get("type")
+    if geometry_type == "GeometryCollection":
+        for child in geometry.get("geometries", []) or []:
+            yield from _iter_geometry_points(child)
+        return
+
+    def walk(value):
+        if (
+            isinstance(value, list)
+            and len(value) >= 2
+            and isinstance(value[0], (int, float))
+            and isinstance(value[1], (int, float))
+        ):
+            yield float(value[0]), float(value[1])
+            return
+        if isinstance(value, list):
+            for item in value:
+                yield from walk(item)
+
+    yield from walk(geometry.get("coordinates"))
+
+
+def _distance_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    radius_miles = 3958.7613
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    d_phi = math.radians(lat2 - lat1)
+    d_lam = math.radians(lon2 - lon1)
+    a = (
+        math.sin(d_phi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(d_lam / 2) ** 2
+    )
+    return radius_miles * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def _geometry_within_radius(geometry: Optional[Dict[str, Any]], lat: float, lon: float, range_miles: int) -> bool:
+    points = list(_iter_geometry_points(geometry))
+    if not points:
+        return False
+
+    lons = [point[0] for point in points]
+    lats = [point[1] for point in points]
+    if min(lats) <= lat <= max(lats) and min(lons) <= lon <= max(lons):
+        return True
+
+    return any(
+        _distance_miles(lat, lon, point_lat, point_lon) <= range_miles
+        for point_lon, point_lat in points
+    )
 
 
 def _sync_http_get(url: str, timeout: int = 10, retries: int = 1, log_fail: bool = True) -> Optional[Dict]:
@@ -482,12 +564,71 @@ def _haversine_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> floa
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
+def _is_valid_geojson_geometry(geometry: Any) -> bool:
+    if not isinstance(geometry, dict):
+        return False
+    geometry_type = geometry.get("type")
+    if geometry_type not in _VALID_GEOJSON_GEOMETRY_TYPES:
+        return False
+    if geometry_type == "GeometryCollection":
+        geometries = geometry.get("geometries")
+        return isinstance(geometries, list) and bool(geometries)
+    return "coordinates" in geometry
+
+
+async def _fetch_zone_geometry(zone_url: str) -> Optional[Dict[str, Any]]:
+    """Fetch and cache a NWS zone/county GeoJSON geometry."""
+    if not zone_url:
+        return None
+    if zone_url in _ZONE_GEOMETRY_CACHE:
+        return _ZONE_GEOMETRY_CACHE[zone_url]
+
+    data = await _async_http_get(zone_url, timeout=15, retries=1, log_fail=False)
+    geometry = data.get("geometry") if isinstance(data, dict) else None
+    if not _is_valid_geojson_geometry(geometry):
+        geometry = None
+    _ZONE_GEOMETRY_CACHE[zone_url] = geometry
+    return geometry
+
+
+async def _alert_geometry_from_feature(feature: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], str]:
+    """Return native alert geometry, or affected-zone fallback geometry."""
+    geometry = feature.get("geometry")
+    if _is_valid_geojson_geometry(geometry):
+        return geometry, "alert"
+
+    props = feature.get("properties", {}) if isinstance(feature, dict) else {}
+    zone_urls = props.get("affectedZones", [])
+    if not isinstance(zone_urls, list) or not zone_urls:
+        return None, ""
+
+    zone_urls = [
+        str(url)
+        for url in zone_urls[:_MAX_ALERT_ZONE_GEOMETRIES]
+        if isinstance(url, str) and url.startswith("https://api.weather.gov/zones/")
+    ]
+    if not zone_urls:
+        return None, ""
+
+    geometries = [
+        zone_geometry
+        for zone_geometry in await asyncio.gather(*(_fetch_zone_geometry(url) for url in zone_urls))
+        if _is_valid_geojson_geometry(zone_geometry)
+    ]
+    if not geometries:
+        return None, ""
+    if len(geometries) == 1:
+        return geometries[0], "affected_zones"
+    return {"type": "GeometryCollection", "geometries": geometries}, "affected_zones"
+
+
 async def fetch_nws_alerts(
     lat: float,
     lon: float,
     range_miles: int = 50,
     scope_mode: str = "point",
     scope_zone: str = "",
+    area: str = "",
 ) -> List[Dict[str, Any]]:
     """Fetch active NWS weather alerts near a location.
 
@@ -496,8 +637,14 @@ async def fetch_nws_alerts(
       - 'watch'   (orange) — Watches, Advisories, Moderate/Minor
     """
     # NWS alerts by point — returns alerts whose zone/county covers the point
+    scope_mode = (scope_mode or "point").strip().lower()
+    scope_zone = (scope_zone or "").strip().upper()
+    area = (area or "").strip().upper()
+
     if scope_mode == "county_zone" and scope_zone:
         url = f"https://api.weather.gov/alerts/active?zone={scope_zone}"
+    elif scope_mode == "radius" and area:
+        url = f"https://api.weather.gov/alerts/active?area={area}"
     else:
         url = f"https://api.weather.gov/alerts/active?point={lat:.4f},{lon:.4f}"
     data = await _async_http_get(url, timeout=30, retries=2)
@@ -524,6 +671,8 @@ async def fetch_nws_alerts(
             if status in ("Test", "Exercise"):
                 continue
 
+            geometry, geometry_source = await _alert_geometry_from_feature(feature)
+
             # Classify severity
             alert_type = "warning" if severity in ("Extreme", "Severe") else "watch"
 
@@ -533,6 +682,14 @@ async def fetch_nws_alerts(
                 alert_type = "warning"
             elif "watch" in event_lower or "advisory" in event_lower:
                 alert_type = "watch"
+
+            if scope_mode == "radius" and not _geometry_within_radius(
+                geometry,
+                lat,
+                lon,
+                max(1, int(range_miles or 1)),
+            ):
+                continue
 
             alerts.append({
                 "id": feature.get("id") or props.get("id") or "",
@@ -548,7 +705,8 @@ async def fetch_nws_alerts(
                 "effective": effective,
                 "expires": expires,
                 "area_desc": props.get("areaDesc", ""),
-                "geometry": feature.get("geometry"),
+                "geometry": geometry,
+                "geometry_source": geometry_source,
                 "overlay_categories": _classify_alert_categories(event, alert_type),
             })
 
@@ -711,9 +869,11 @@ class WeatherManager:
         self._location: Optional[Dict[str, Any]] = None  # resolved lat/lon/name
         self._current: Optional[Dict[str, Any]] = None
         self._alerts: List[Dict[str, Any]] = []
+        self._overlay_alerts: List[Dict[str, Any]] = []
         self._ducting: Optional[Dict[str, Any]] = None
         self._last_fetch: float = 0
         self._last_alert_fetch: float = 0
+        self._last_overlay_alert_fetch: float = 0
         self._last_ducting_fetch: float = 0
         self._location_code_resolved: str = ""  # last code we resolved
         self._alert_scope_info: Optional[Dict[str, Any]] = None
@@ -737,6 +897,7 @@ class WeatherManager:
             # Reset caches to force fresh fetch
             self._last_fetch = 0
             self._last_alert_fetch = 0
+            self._last_overlay_alert_fetch = 0
             self._last_ducting_fetch = 0
             self._alert_scope_info = None
             country = f", {result.get('country')}" if result.get("country") else ""
@@ -917,12 +1078,20 @@ class WeatherManager:
             current = await self.get_current_weather(force=force)
             alerts = build_open_meteo_risk_alerts(current)
         elif provider == "nws" and country == "US":
+            area = _state_from_location(
+                self._location,
+                (self.config.weather.alert_scope_zone or "").strip().upper(),
+            )
+            scope_mode = self.config.weather.alert_scope_mode
+            if scope_mode == "radius" and not area:
+                scope_mode = "point"
             alerts = await fetch_nws_alerts(
                 lat,
                 lon,
                 self.config.weather.alert_range_miles,
-                self.config.weather.alert_scope_mode,
+                scope_mode,
                 (self.config.weather.alert_scope_zone or "").strip().upper(),
+                area=area,
             )
         else:
             alerts = []
@@ -932,6 +1101,47 @@ class WeatherManager:
         if self._alerts_trigger_elevated_mode(alerts):
             self._elevated_polling_until = time.time() + max(1, int(self.config.weather.elevated_alert_cooldown_minutes)) * 60
         return self._alerts
+
+    async def get_overlay_alerts(self, force: bool = False) -> List[Dict[str, Any]]:
+        """Get map-only weather alerts for polygon overlays."""
+        if not self.config.weather.alert_overlay_enabled:
+            return []
+        if not self.is_configured or not self._location:
+            return []
+
+        cache_seconds = self._get_alert_poll_interval_seconds()
+        if (
+            not force
+            and self._overlay_alerts is not None
+            and (time.time() - self._last_overlay_alert_fetch < cache_seconds)
+        ):
+            return self._overlay_alerts
+
+        country = (self._location.get("country") or "").upper()
+        provider = (getattr(self.config.weather, "alert_provider", "auto") or "auto").strip().lower()
+        if provider in {"nws", "open_meteo_risk"}:
+            provider = "auto"
+        if provider == "auto":
+            provider = "nws" if country == "US" else "open_meteo_risk"
+
+        if provider != "nws" or country != "US":
+            self._overlay_alerts = []
+        else:
+            area = _state_from_location(
+                self._location,
+                (self.config.weather.alert_scope_zone or "").strip().upper(),
+            )
+            self._overlay_alerts = await fetch_nws_alerts(
+                self._location["latitude"],
+                self._location["longitude"],
+                max(1, int(self.config.weather.alert_overlay_range_miles or 1)),
+                "radius" if area else "point",
+                "",
+                area=area,
+            )
+
+        self._last_overlay_alert_fetch = time.time()
+        return self._overlay_alerts
 
     async def get_ducting(self, force: bool = False) -> Optional[Dict[str, Any]]:
         """Get ducting index data, fetching from API if cache is stale."""
@@ -956,6 +1166,7 @@ class WeatherManager:
         """Get combined weather + alerts + ducting payload."""
         current = await self.get_current_weather(force=force)
         alerts = await self.get_alerts(force=force)
+        overlay_alerts = await self.get_overlay_alerts(force=force)
         ducting = await self.get_ducting(force=force)
 
         return {
@@ -967,6 +1178,7 @@ class WeatherManager:
             "alert_provider": self.config.weather.alert_provider,
             "current": current,
             "alerts": alerts,
+            "overlay_alerts": overlay_alerts,
             "ducting": ducting,
             "alert_count": len(alerts),
             "warning_count": sum(1 for a in alerts if a["alert_type"] == "warning"),
@@ -988,6 +1200,7 @@ class WeatherManager:
                 "radar_opacity": self.config.weather.radar_opacity,
                 "radar_animate": self.config.weather.radar_animate,
                 "alert_overlay_enabled": self.config.weather.alert_overlay_enabled,
+                "alert_overlay_range_miles": self.config.weather.alert_overlay_range_miles,
                 "alert_overlay_groups": self.config.weather.alert_overlay_groups,
                 "alert_provider": self.config.weather.alert_provider,
             },

@@ -533,6 +533,12 @@ body {
     cursor: pointer;
 }
 
+#map-panel.has-expanded-weather-alert .map-search {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
 /* Leaflet overrides for dark theme — only when .dark-tiles is on the map */
 .dark-tiles .leaflet-tile-pane {
     filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(1.1);
@@ -1259,6 +1265,28 @@ html.ui-theme-light #tab-messages.active {
     white-space: nowrap;
 }
 
+.packet-item.digipeated-by-me {
+    background: rgba(210, 153, 34, 0.08);
+}
+
+.packet-item .pkt-badge {
+    display: inline-flex;
+    align-items: center;
+    margin-right: 5px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+    vertical-align: middle;
+}
+
+.packet-item .pkt-badge.digi {
+    color: #f0c36a;
+    background: rgba(210, 153, 34, 0.18);
+    border: 1px solid rgba(210, 153, 34, 0.36);
+}
+
 .packet-item .pkt-raw {
     color: var(--text-secondary);
 }
@@ -1513,6 +1541,12 @@ canvas {
     font-size: 12px;
     color: var(--text-primary);
     box-shadow: 0 10px 24px var(--shadow-color);
+}
+
+#map-panel.has-expanded-weather-alert .map-legend {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
 }
 
 .legend-item {
@@ -4323,8 +4357,16 @@ canvas {
 #wx-alerts-container {
     display: flex;
     flex-direction: column;
+    position: relative;
     z-index: 801;
     flex-shrink: 0;
+}
+
+#wx-alerts-container.has-expanded-alert {
+    z-index: 1400;
+    max-height: min(58vh, 520px);
+    overflow-y: auto;
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.42);
 }
 
 .wx-alert {
@@ -4342,6 +4384,14 @@ canvas {
     background: rgba(255, 166, 0, 0.15);
     color: #ffa600;
     border-bottom-color: rgba(255, 166, 0, 0.3);
+}
+
+#wx-alerts-container.has-unacknowledged-alerts .wx-alert-warning {
+    animation: wxAlertSubtlePulse 5s ease-in-out infinite;
+}
+
+#wx-alerts-container.has-unacknowledged-alerts .wx-alert-warning {
+    --wx-alert-pulse-shadow: rgba(248, 81, 73, 0.36);
 }
 
 .wx-alert-summary {
@@ -4410,6 +4460,9 @@ canvas {
     font-size: 11px;
     line-height: 1.55;
     color: var(--text-primary);
+    max-height: min(46vh, 420px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 .wx-alert.is-expanded .wx-alert-summary {
@@ -4475,15 +4528,19 @@ canvas {
     margin-top: 4px;
 }
 
-/* Alert flash animation for new alerts */
-.wx-alert-flash {
-    animation: wxAlertFlash 0.6s ease-out;
-}
-
-@keyframes wxAlertFlash {
-    0%   { opacity: 0; transform: translateY(-4px); }
-    50%  { opacity: 1; }
-    100% { opacity: 1; transform: translateY(0); }
+@keyframes wxAlertSubtlePulse {
+    0%, 70%, 100% {
+        filter: brightness(1);
+        box-shadow: none;
+    }
+    78% {
+        filter: brightness(1.18);
+        box-shadow: inset 0 0 0 999px rgba(255, 255, 255, 0.025);
+    }
+    86% {
+        filter: brightness(1.04);
+        box-shadow: inset 0 0 0 1px var(--wx-alert-pulse-shadow, rgba(255, 255, 255, 0.18));
+    }
 }
 
 /* ── Weather Settings ───────────────────────────────────────── */

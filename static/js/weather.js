@@ -9,6 +9,8 @@ window.pvWeather = (function () {
     let lastAlertCount = 0;
     let hasRenderedAlerts = false;
     let lastWeatherData = null;
+    let alertPulseAcknowledged = false;
+    let lastAlertSignature = '';
 
     function init() {
         updateMapSearchOffset();
@@ -134,7 +136,7 @@ window.pvWeather = (function () {
             overlayConfig.alert_overlay_enabled = false;
         }
         map.setWeatherOverlayConfig(overlayConfig);
-        map.updateWeatherAlerts(data?.alerts || []);
+        map.updateWeatherAlerts(data?.overlay_alerts || data?.alerts || []);
     }
 
     function formatWind(wx) {
@@ -158,12 +160,22 @@ window.pvWeather = (function () {
 
         if (!alerts || alerts.length === 0) {
             container.innerHTML = '';
+            updateAlertStackState();
             lastAlertCount = 0;
+            lastAlertSignature = '';
+            alertPulseAcknowledged = false;
             hasRenderedAlerts = true;
             return;
         }
         // Flash effect when new alerts appear
         const isNew = alerts.length > lastAlertCount;
+        const alertSignature = alerts
+            .map((alert) => alert.id || `${alert.event || ''}|${alert.expires || ''}|${alert.area_desc || ''}`)
+            .join('||');
+        if (alertSignature !== lastAlertSignature) {
+            alertPulseAcknowledged = false;
+            lastAlertSignature = alertSignature;
+        }
         lastAlertCount = alerts.length;
         if (hasRenderedAlerts && isNew) {
             const firstAlertType = alerts[0]?.alert_type === 'warning' ? 'weather_warning' : 'weather_watch';
@@ -175,12 +187,11 @@ window.pvWeather = (function () {
             const isWarning = alert.alert_type === 'warning';
             const cls = isWarning ? 'wx-alert-warning' : 'wx-alert-watch';
             const icon = isWarning ? '&#128308;' : '&#128992;';
-            const flashCls = isNew && i === 0 ? ' wx-alert-flash' : '';
             const alertId = `wx-alert-${i}`;
             const detailId = `${alertId}-detail`;
 
             return `
-                <div class="wx-alert ${cls}${flashCls}" title="${escHtml(alert.headline || alert.event)}" id="${alertId}">
+                <div class="wx-alert ${cls}" title="${escHtml(alert.headline || alert.event)}" id="${alertId}">
                     <button
                         type="button"
                         class="wx-alert-summary"
@@ -201,6 +212,9 @@ window.pvWeather = (function () {
                 </div>
             `;
         }).join('');
+        const hasWarning = alerts.some((alert) => alert.alert_type === 'warning');
+        container.classList.toggle('has-unacknowledged-alerts', hasWarning && !alertPulseAcknowledged);
+        updateAlertStackState();
     }
 
     function renderAlertMeta(alert) {
@@ -259,6 +273,7 @@ window.pvWeather = (function () {
     }
 
     function toggleAlertDetail(index) {
+        acknowledgeAlertPulse();
         const card = document.getElementById(`wx-alert-${index}`);
         if (!card) return;
         const detail = card.querySelector('.wx-alert-detail');
@@ -278,6 +293,22 @@ window.pvWeather = (function () {
             card.classList.add('is-expanded');
             expand.textContent = 'Hide details';
         }
+        updateAlertStackState();
+    }
+
+    function acknowledgeAlertPulse() {
+        alertPulseAcknowledged = true;
+        document
+            .getElementById('wx-alerts-container')
+            ?.classList.remove('has-unacknowledged-alerts');
+    }
+
+    function updateAlertStackState() {
+        const container = document.getElementById('wx-alerts-container');
+        if (!container) return;
+        const hasExpanded = !!container.querySelector('.wx-alert.is-expanded');
+        container.classList.toggle('has-expanded-alert', hasExpanded);
+        document.getElementById('map-panel')?.classList.toggle('has-expanded-weather-alert', hasExpanded);
     }
 
     function formatExpires(isoStr) {

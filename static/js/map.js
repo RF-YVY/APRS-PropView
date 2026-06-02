@@ -496,6 +496,15 @@ class PropViewMap {
         delete this.stationMeta[callsign];
     }
 
+    removeRfMapMarker(callsign) {
+        if (this.rfMarkers[callsign]) {
+            this.rfLayer.removeLayer(this.rfMarkers[callsign]);
+            delete this.rfMarkers[callsign];
+        }
+        this._clearLineVisuals(callsign);
+        delete this.rfLineData[callsign];
+    }
+
     /** Apply or remove ghhost CSS on a marker's icon element. */
     _setGhost(callsign, source, ghosted) {
         const markers = source === 'rf' ? this.rfMarkers : this.isMarkers;

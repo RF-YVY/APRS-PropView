@@ -1699,6 +1699,7 @@ def create_app(
                 "radar_opacity": config.weather.radar_opacity,
                 "radar_animate": config.weather.radar_animate,
                 "alert_overlay_enabled": config.weather.alert_overlay_enabled,
+                "alert_overlay_range_miles": config.weather.alert_overlay_range_miles,
                 "alert_overlay_groups": config.weather.alert_overlay_groups,
                 "alert_scope_mode": config.weather.alert_scope_mode,
                 "alert_scope_zone": config.weather.alert_scope_zone,
@@ -2140,7 +2141,7 @@ def create_app(
                 if new_weatherbit_key and "*" not in new_weatherbit_key:
                     config.weather.weatherbit_api_key = new_weatherbit_key.strip()
                 config.weather.weatherbit_poll_minutes = max(30, int(wc.get("weatherbit_poll_minutes", config.weather.weatherbit_poll_minutes)))
-                config.weather.alert_range_miles = int(wc.get("alert_range_miles", config.weather.alert_range_miles))
+                config.weather.alert_range_miles = max(1, int(wc.get("alert_range_miles", config.weather.alert_range_miles)))
                 config.weather.refresh_minutes = max(5, int(wc.get("refresh_minutes", config.weather.refresh_minutes)))
                 config.weather.radar_enabled = bool(wc.get("radar_enabled", config.weather.radar_enabled))
                 provider = (wc.get("radar_provider", config.weather.radar_provider) or "rainviewer").strip().lower()
@@ -2155,13 +2156,14 @@ def create_app(
                 config.weather.radar_opacity = min(1.0, max(0.1, float(wc.get("radar_opacity", config.weather.radar_opacity))))
                 config.weather.radar_animate = bool(wc.get("radar_animate", config.weather.radar_animate))
                 config.weather.alert_overlay_enabled = bool(wc.get("alert_overlay_enabled", config.weather.alert_overlay_enabled))
+                config.weather.alert_overlay_range_miles = max(1, int(wc.get("alert_overlay_range_miles", config.weather.alert_overlay_range_miles)))
                 groups = wc.get("alert_overlay_groups", config.weather.alert_overlay_groups)
                 if not isinstance(groups, list):
                     groups = config.weather.alert_overlay_groups
                 valid_groups = {"warnings", "watches", "flood", "winter", "marine", "fire_heat", "other"}
                 config.weather.alert_overlay_groups = [g for g in groups if g in valid_groups]
                 scope_mode = (wc.get("alert_scope_mode", config.weather.alert_scope_mode) or "point").strip().lower()
-                config.weather.alert_scope_mode = scope_mode if scope_mode in {"point", "county_zone"} else "point"
+                config.weather.alert_scope_mode = scope_mode if scope_mode in {"point", "county_zone", "radius"} else "point"
                 config.weather.alert_scope_zone = (wc.get("alert_scope_zone", config.weather.alert_scope_zone) or "").strip().upper()
                 config.weather.elevated_alert_polling_enabled = bool(wc.get("elevated_alert_polling_enabled", config.weather.elevated_alert_polling_enabled))
                 config.weather.elevated_alert_polling_seconds = max(30, int(wc.get("elevated_alert_polling_seconds", config.weather.elevated_alert_polling_seconds)))

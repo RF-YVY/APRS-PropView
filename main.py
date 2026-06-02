@@ -4,13 +4,14 @@
 Launch this to start the application. The web interface opens automatically.
 """
 
-APP_VERSION = "1.5.5.1"
+APP_VERSION = "1.5.5.2"
 
 import asyncio
 import sys
 import logging
 import webbrowser
 import os
+import socket
 from pathlib import Path
 
 # Support PyInstaller frozen builds
@@ -58,6 +59,28 @@ logger = logging.getLogger("propview")
 # and works well for this app's socket usage.
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+
+def _pause_for_packaged_error():
+    """Keep double-clicked packaged consoles open after fatal startup errors."""
+    if not getattr(sys, "frozen", False):
+        return
+    if not getattr(sys.stdin, "isatty", lambda: False)():
+        return
+    try:
+        input("\n  Press Enter to close APRS PropView...")
+    except (EOFError, OSError):
+        pass
+
+
+def _web_port_available(host: str, port: int) -> bool:
+    family = socket.AF_INET6 if ":" in str(host) else socket.AF_INET
+    try:
+        with socket.socket(family, socket.SOCK_STREAM) as sock:
+            sock.bind((host, int(port)))
+    except OSError:
+        return False
+    return True
 
 
 # ── System Tray ─────────────────────────────────────────────────────
@@ -128,6 +151,20 @@ async def main():
     )
 
     # ── Initialize components ───────────────────────────────────────
+
+    if not _web_port_available(config.web.host, config.web.port):
+        logger.error(
+            "Web interface cannot start because %s:%s is already in use.",
+            config.web.host,
+            config.web.port,
+        )
+        print(
+            "\n  APRS PropView could not start because the web interface port is already in use."
+        )
+        print(f"  Address: {config.web.host}:{config.web.port}")
+        print("  Close the other APRS PropView window/process, or change [web].port in config.toml.\n")
+        _pause_for_packaged_error()
+        return
 
     db = Database(config.database.path)
     await db.initialize()
@@ -442,3 +479,11 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\n  Goodbye. 73!")
+    except SystemExit as exc:
+        if exc.code:
+            _pause_for_packaged_error()
+        raise
+    except Exception:
+        logger.exception("Fatal startup error")
+        _pause_for_packaged_error()
+        raise

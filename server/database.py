@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS packets (
     packet_type TEXT DEFAULT '',
     latitude REAL,
     longitude REAL,
-    port_name TEXT DEFAULT ''
+    port_name TEXT DEFAULT '',
+    digipeated_by_me INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -163,6 +164,7 @@ class Database:
             },
             "packets": {
                 "port_name": "ALTER TABLE packets ADD COLUMN port_name TEXT DEFAULT ''",
+                "digipeated_by_me": "ALTER TABLE packets ADD COLUMN digipeated_by_me INTEGER DEFAULT 0",
             },
             "path_history": {
                 "port_name": "ALTER TABLE path_history ADD COLUMN port_name TEXT DEFAULT ''",
@@ -331,14 +333,18 @@ class Database:
         latitude: Optional[float] = None,
         longitude: Optional[float] = None,
         port_name: str = "",
+        digipeated_by_me: bool = False,
         commit: bool = True,
     ):
         now = time.time()
         await self.db.execute(
             """INSERT INTO packets
-               (timestamp, source, from_call, to_call, path, raw, packet_type, latitude, longitude, port_name)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (now, source, from_call, to_call, path, raw, packet_type, latitude, longitude, port_name),
+               (timestamp, source, from_call, to_call, path, raw, packet_type, latitude, longitude, port_name, digipeated_by_me)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                now, source, from_call, to_call, path, raw, packet_type, latitude,
+                longitude, port_name, 1 if digipeated_by_me else 0,
+            ),
         )
         if commit:
             await self.db.commit()

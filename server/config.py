@@ -168,7 +168,7 @@ wxnow_condition_fallback_enabled = true
 alert_provider = "auto"
 weatherbit_api_key = ""
 weatherbit_poll_minutes = 30
-alert_range_miles = 50
+alert_range_miles = 40
 refresh_minutes = 15
 radar_enabled = false
 radar_provider = "rainviewer"
@@ -179,6 +179,7 @@ radar_custom_api_key = ""
 radar_opacity = 0.55
 radar_animate = true
 alert_overlay_enabled = false
+alert_overlay_range_miles = 80
 alert_overlay_groups = ["warnings", "watches", "flood", "winter", "marine", "fire_heat", "other"]
 alert_scope_mode = "point"
 alert_scope_zone = ""
@@ -431,7 +432,7 @@ class WeatherConfig:
     alert_provider: str = "auto"   # auto, nws, open_meteo_risk, weatherbit, disabled
     weatherbit_api_key: str = ""
     weatherbit_poll_minutes: int = 30
-    alert_range_miles: int = 50    # Range for severe weather alerts
+    alert_range_miles: int = 40    # Range for severe weather banners/beacons when using radius scope
     refresh_minutes: int = 15      # How often to refresh weather data
     radar_enabled: bool = False
     radar_provider: str = "rainviewer"
@@ -442,6 +443,7 @@ class WeatherConfig:
     radar_opacity: float = 0.55
     radar_animate: bool = True
     alert_overlay_enabled: bool = False
+    alert_overlay_range_miles: int = 80
     alert_overlay_groups: List[str] = field(default_factory=lambda: [
         "warnings", "watches", "flood", "winter", "marine", "fire_heat", "other",
     ])
@@ -813,6 +815,7 @@ class Config:
             f"radar_opacity = {float(self.weather.radar_opacity)}",
             f"radar_animate = {'true' if self.weather.radar_animate else 'false'}",
             f"alert_overlay_enabled = {'true' if self.weather.alert_overlay_enabled else 'false'}",
+            f"alert_overlay_range_miles = {int(self.weather.alert_overlay_range_miles)}",
             'alert_overlay_groups = [' + ', '.join('"' + self._toml_escape(v) + '"' for v in self.weather.alert_overlay_groups) + ']',
             f'alert_scope_mode = "{esc(self.weather.alert_scope_mode)}"',
             f'alert_scope_zone = "{esc(self.weather.alert_scope_zone)}"',

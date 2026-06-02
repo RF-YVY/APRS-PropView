@@ -1554,7 +1554,7 @@
 
     function renderUpdateStatus(data, els) {
         const { messageEl, detailEl, linkEl, footerEl } = els;
-        const currentVersion = data?.current_version || '1.5.5.1';
+        const currentVersion = data?.current_version || '1.5.5.2';
         const latestVersion = data?.latest_version || currentVersion;
         const releaseUrl = 'https://github.com/RF-YVY/APRS-PropView/releases';
         const publishedAt = data?.published_at ? formatReleaseDate(data.published_at) : '';
@@ -2335,6 +2335,7 @@
             setVal('cfg-wx-radar-opacity', cfg.weather?.radar_opacity ?? 0.55);
             setChk('cfg-wx-radar-animate', cfg.weather?.radar_animate ?? true);
             setChk('cfg-wx-alert-overlay-enabled', cfg.weather?.alert_overlay_enabled);
+            setVal('cfg-wx-alert-overlay-range', cfg.weather?.alert_overlay_range_miles ?? 80);
             setCheckboxGroupValues('cfg-wx-alert-group', cfg.weather?.alert_overlay_groups);
             setVal('cfg-wx-alert-scope-mode', cfg.weather?.alert_scope_mode || 'point');
             setVal('cfg-wx-alert-scope-zone', cfg.weather?.alert_scope_zone || '');
@@ -2553,6 +2554,7 @@
                 radar_opacity: parseFloat(getVal('cfg-wx-radar-opacity')) || 0.55,
                 radar_animate: getChk('cfg-wx-radar-animate'),
                 alert_overlay_enabled: getChk('cfg-wx-alert-overlay-enabled'),
+                alert_overlay_range_miles: parseInt(getVal('cfg-wx-alert-overlay-range')) || 80,
                 alert_overlay_groups: getCheckboxGroupValues('cfg-wx-alert-group'),
                 alert_scope_mode: getVal('cfg-wx-alert-scope-mode') || 'point',
                 alert_scope_zone: getVal('cfg-wx-alert-scope-zone'),
@@ -3202,6 +3204,7 @@
         document.getElementById('cfg-wx-elevated-events-custom')?.addEventListener('input', updateElevatedTriggerSummary);
         document.getElementById('cfg-wx-alert-scope-mode')?.addEventListener('change', updateWeatherAlertScopePreview);
         document.getElementById('cfg-wx-alert-scope-zone')?.addEventListener('input', updateWeatherAlertScopePreview);
+        document.getElementById('cfg-wx-range')?.addEventListener('input', updateWeatherAlertScopePreview);
         document.getElementById('btn-wx-resolve-scope')?.addEventListener('click', resolveWeatherAlertScope);
         updateWeatherOverlayOpacityLabel();
         updateWeatherAlertGroupSummary();
@@ -3277,9 +3280,14 @@
             label.textContent = parts.length ? parts.join(' • ') : 'Resolved';
             return;
         }
-        label.textContent = mode === 'county_zone'
-            ? (zone ? `Using ${zone}` : 'Enter or auto-fill a county/zone UGC')
-            : 'Point-based alerts';
+        if (mode === 'county_zone') {
+            label.textContent = zone ? `Using ${zone}` : 'Enter or auto-fill a county/zone UGC';
+        } else if (mode === 'radius') {
+            const miles = parseInt(getVal('cfg-wx-range')) || 40;
+            label.textContent = `Alerts within ${miles} miles`;
+        } else {
+            label.textContent = 'Point-based alerts';
+        }
     }
 
     async function resolveWeatherAlertScope() {
