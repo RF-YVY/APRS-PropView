@@ -310,6 +310,13 @@ class Database:
         await self.db.commit()
         return cursor.rowcount > 0
 
+    async def get_max_rf_distance(self) -> float:
+        cursor = await self.db.execute(
+            "SELECT MAX(distance_km) FROM stations WHERE source = 'rf' AND distance_km IS NOT NULL"
+        )
+        row = await cursor.fetchone()
+        return float(row[0]) if row and row[0] is not None else 0.0
+
     async def get_rf_station_count(self, since: Optional[float] = None) -> int:
         query = "SELECT COUNT(*) FROM stations WHERE source = 'rf'"
         params = []

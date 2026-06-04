@@ -151,6 +151,8 @@ enabled in Settings. The most common Pi/mobile options are:
   GPS sentences over TCP.
 - **NMEA UDP listener** - Listen for NMEA sentences sent over UDP from another
   app or device on the LAN.
+- **gpsd daemon** - Connect to gpsd on the Pi or another LAN host. This is a
+  good default for Linux systems where gpsd already owns the USB GPS device.
 - **Any source** - Accept the latest valid fix from any supported GPS source.
   This is helpful for testing or fallback setups, but a specific source gives
   clearer status if a device is missing.
@@ -170,6 +172,39 @@ station_position_locked = true
 
 Keep `station_position_locked = true` if GPS should move only the map marker and
 not overwrite the configured station latitude/longitude.
+
+For gpsd, leave gpsd on its normal port and select `gpsd`:
+
+```toml
+[gps]
+enabled = true
+source = "gpsd"
+gpsd_host = "127.0.0.1"
+gpsd_port = 2947
+map_update_enabled = true
+update_station_position = false
+station_position_locked = true
+```
+
+## Offline Map Tiles
+
+The web map can use a local XYZ tile server, which is the simplest path for
+field or grid-down use after you have cached the area you care about:
+
+```toml
+[web]
+map_tile_source = "custom"
+map_tile_url = "http://127.0.0.1:8080/tile/{z}/{x}/{y}.png"
+map_tile_attribution = "OpenStreetMap contributors"
+map_tile_max_zoom = 14
+```
+
+Prepare the OpenStreetMap tiles ahead of time and keep the cached zoom range
+modest. Higher zoom levels multiply storage quickly, especially for wide-area
+mobile use.
+
+The map **Cache** button stores the current view and zoom in `map_tile_cache/`.
+Use it while internet is available for the areas you expect to need offline.
 
 ## Smart Beaconing
 
@@ -303,6 +338,10 @@ port = 1883
 topic_prefix = "aprs/propview"
 username = ""
 password = ""
+discovery_enabled = true
+discovery_prefix = "homeassistant"
+device_name = "APRS PropView"
+device_id = "aprs_propview"
 ```
 
 With the default prefix, APRS PropView publishes:
@@ -310,10 +349,22 @@ With the default prefix, APRS PropView publishes:
 - `aprs/propview/propagation` - retained JSON propagation metrics.
 - `aprs/propview/score` - retained regional propagation score.
 - `aprs/propview/level` - retained regional propagation level.
+- `aprs/propview/event` - automation events such as `first_heard` and
+  `new_max_distance`.
 - `aprs/propview/alert` - alert events such as band openings, anomalies,
   Sporadic-E, and first-heard direct RF alerts.
+- `aprs/propview/status` - retained `online`/`offline` availability for
+  Home Assistant entities.
 
-Restart APRS PropView after changing MQTT settings in `config.toml`.
+When `discovery_enabled` is true, APRS PropView also publishes retained Home
+Assistant MQTT Discovery configs under `homeassistant/sensor/<device_id>/...`.
+Home Assistant will create sensors for My Station score/level, Regional
+score/level, RF stations heard in the last hour, and max RF distance. Keep
+`device_id` stable after discovery so Home Assistant does not create duplicate
+entities.
+
+MQTT settings saved from the web UI reconnect live. If you edit `config.toml`
+manually, restart APRS PropView so the running process loads those file changes.
 
 ## Firewall
 
@@ -336,7 +387,11 @@ sudo systemctl restart aprs-propview
 The installer preserves an existing `/opt/aprs-propview/config.toml`.
 New settings are added to `config.toml.example`; compare that file after
 updating if you want to adopt new sections such as smart beaconing, bulletins,
-or APRS objects in an older install.
+APRS objects, gpsd, MQTT Discovery, or map tile caching in an older install.
+
+The in-app About tab can still show that a newer GitHub release exists on
+Linux and Raspberry Pi systems, but Windows setup installer actions are hidden.
+Use the source update flow above for service installs.
 
 ## Uninstall
 

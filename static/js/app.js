@@ -1476,10 +1476,31 @@
                 loadUpdateStatus(true);
             });
         }
+        document.getElementById('btn-install-update')?.addEventListener('click', installUpdate);
 
         document.getElementById('update-alert-close')?.addEventListener('click', () => {
             dismissUpdateBanner();
         });
+    }
+
+    async function installUpdate() {
+        const btn = document.getElementById('btn-install-update');
+        const detailEl = document.getElementById('about-update-detail');
+        if (btn) btn.disabled = true;
+        if (detailEl) detailEl.textContent = 'Downloading update installer...';
+        try {
+            const resp = await fetch('/api/update-install', { method: 'POST' });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok || !data.success) {
+                throw new Error(data.message || `Update installer failed with HTTP ${resp.status}`);
+            }
+            if (detailEl) detailEl.textContent = data.message || 'Update installer launched.';
+        } catch (e) {
+            console.error('Failed to launch update installer:', e);
+            if (detailEl) detailEl.textContent = e.message || 'Could not launch update installer.';
+        } finally {
+            if (btn) btn.disabled = false;
+        }
     }
 
     function dismissUpdateBanner() {
@@ -1527,8 +1548,10 @@
         const linkEl = document.getElementById('about-update-link');
         const footerEl = document.getElementById('footer-update');
         const buttonEl = document.getElementById('btn-check-updates');
+        const installButtonEl = document.getElementById('btn-install-update');
 
         if (buttonEl) buttonEl.disabled = true;
+        if (installButtonEl && force) installButtonEl.style.display = 'none';
         if (messageEl && force) messageEl.textContent = 'Checking GitHub releases...';
         if (detailEl && force) detailEl.textContent = '';
 
@@ -1554,13 +1577,21 @@
 
     function renderUpdateStatus(data, els) {
         const { messageEl, detailEl, linkEl, footerEl } = els;
-        const currentVersion = data?.current_version || '1.5.5.2';
+        const currentVersion = data?.current_version || '1.5.6.0';
         const latestVersion = data?.latest_version || currentVersion;
         const releaseUrl = 'https://github.com/RF-YVY/APRS-PropView/releases';
         const publishedAt = data?.published_at ? formatReleaseDate(data.published_at) : '';
+        const installButtonEl = document.getElementById('btn-install-update');
 
         if (linkEl) linkEl.href = releaseUrl;
         syncUpdateBanner(data);
+        if (installButtonEl) {
+            const canInstallUpdate = data?.update_available && data?.installer_url && data?.installer_install_supported;
+            installButtonEl.style.display = canInstallUpdate ? 'inline-flex' : 'none';
+            installButtonEl.title = data?.installer_name
+                ? `Download and run ${data.installer_name}`
+                : 'Download and run the setup installer';
+        }
 
         if (data?.update_available) {
             if (messageEl) messageEl.textContent = `Update available: v${latestVersion}`;
@@ -1677,6 +1708,7 @@
             nmea_serial: 'Using NMEA serial',
             nmea_tcp: 'Using NMEA TCP',
             nmea_udp: 'Using NMEA UDP',
+            gpsd: 'Using gpsd',
         };
         return labels[source] || 'Browser GPS unavailable';
     }
@@ -1688,6 +1720,7 @@
             nmea_serial: 'This source reads from the configured NMEA serial GPS port.',
             nmea_tcp: 'This source reads from the configured NMEA TCP stream.',
             nmea_udp: 'This source listens for NMEA UDP sentences on the configured port.',
+            gpsd: 'This source connects to the configured gpsd daemon.',
         };
         return titles[source] || 'Select Browser or Any Source to use browser/device location.';
     }
@@ -2169,6 +2202,8 @@
             setVal('cfg-gps-tcp-port', cfg.gps?.tcp_port || 10110);
             setVal('cfg-gps-udp-host', cfg.gps?.udp_host || '0.0.0.0');
             setVal('cfg-gps-udp-port', cfg.gps?.udp_port || 10110);
+            setVal('cfg-gps-gpsd-host', cfg.gps?.gpsd_host || '127.0.0.1');
+            setVal('cfg-gps-gpsd-port', cfg.gps?.gpsd_port || 2947);
             updateGpsSourceVisibility();
 
             // Digipeater
@@ -2357,7 +2392,11 @@
             setVal('cfg-mqtt-port', cfg.mqtt?.port);
             setVal('cfg-mqtt-topic', cfg.mqtt?.topic_prefix);
             setVal('cfg-mqtt-user', cfg.mqtt?.username);
-            setVal('cfg-mqtt-pass', cfg.mqtt?.password);
+            setVal('cfg-mqtt-pass', '');
+            setChk('cfg-mqtt-discovery', cfg.mqtt?.discovery_enabled);
+            setVal('cfg-mqtt-discovery-prefix', cfg.mqtt?.discovery_prefix || 'homeassistant');
+            setVal('cfg-mqtt-device-name', cfg.mqtt?.device_name || 'APRS PropView');
+            setVal('cfg-mqtt-device-id', cfg.mqtt?.device_id || 'aprs_propview');
 
         } catch (e) {
             console.error('Failed to load settings:', e);
@@ -2463,6 +2502,8 @@
                 tcp_port: parseInt(getVal('cfg-gps-tcp-port')) || 10110,
                 udp_host: getVal('cfg-gps-udp-host') || '0.0.0.0',
                 udp_port: parseInt(getVal('cfg-gps-udp-port')) || 10110,
+                gpsd_host: getVal('cfg-gps-gpsd-host') || '127.0.0.1',
+                gpsd_port: parseInt(getVal('cfg-gps-gpsd-port')) || 2947,
             },
             web: {
                 host: getVal('cfg-web-host'),
@@ -2577,6 +2618,10 @@
                 topic_prefix: getVal('cfg-mqtt-topic'),
                 username: getVal('cfg-mqtt-user'),
                 password: getVal('cfg-mqtt-pass'),
+                discovery_enabled: getChk('cfg-mqtt-discovery'),
+                discovery_prefix: getVal('cfg-mqtt-discovery-prefix') || 'homeassistant',
+                device_name: getVal('cfg-mqtt-device-name') || 'APRS PropView',
+                device_id: getVal('cfg-mqtt-device-id') || 'aprs_propview',
             },
         };
 

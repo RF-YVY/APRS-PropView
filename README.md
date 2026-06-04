@@ -1,6 +1,6 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.5.5.2** | June 2, 2026
+**Version 1.5.6.0** | June 4, 2026
 
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 
@@ -13,7 +13,7 @@
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
 
-Version 1.5.5.2 adds packet-list digipeat filtering and newest/oldest sorting, same-callsign moving-station map cleanup across RF/APRS-IS, NWS affected-zone polygon fallback for alerts, and weather alert banner layering fixes.
+Version 1.5.6.0 adds Windows setup installers with installer-based in-app updates, platform-aware update UX, Home Assistant MQTT Discovery, MQTT availability/events, gpsd ingestion, visible-map tile caching, and macOS build/run documentation.
 
 Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs/linux-raspberry-pi.md).
 
@@ -26,7 +26,7 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **RF Station Tracking** — Separate list of stations heard directly on RF
 - **APRS-IS Station Tracking** — Separate list of stations received from APRS-IS
 - **Propagation Map** — Interactive Leaflet map with APRS sprite icons (16px markers, 32px in popup), directional arrowed path lines, map-created APRS objects, and light/dark theme toggle
-- **Custom Map Tiles** — Point the map at a local XYZ tile server for offline/field use
+- **Custom/Offline Map Tiles** — Point the map at a local XYZ tile server or cache the visible map area for offline/field use
 - **Dual Propagation Meters** — Header gauges: "VHF Propagation My Station" (direct-heard RF only) and "Regional VHF Propagation" (all RF including via digipeater), each with configurable scoring thresholds
 - **Configurable Path Lines** — Directional station-to-station lines support distance or custom coloring, weight, opacity, solid/dashed/dotted patterns, and offset arrows for bidirectional paths
 - **Digipeater-Routed Lines** — RF stations heard through known digipeaters draw TX-to-digi-to-RX paths instead of misleading direct-heard lines
@@ -59,7 +59,7 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **Alert Destination Tests** — Send preformatted test messages to selected Discord, Email, and SMS destinations from Settings
 - **Quiet Hours** — Configurable quiet time window (HH:MM 24h) to suppress notifications
 - **Message Notifications** — Get notified via Discord/Email/SMS when APRS messages are received
-- **MQTT Publishing** — Publish retained propagation metrics, score/level topics, and alert events to brokers such as Mosquitto, Home Assistant, Node-RED, or EMQX
+- **MQTT Publishing** — Publish retained propagation metrics, score/level topics, Home Assistant Discovery sensors, availability state, automation events, and alert events to brokers such as Mosquitto, Home Assistant, Node-RED, or EMQX
 - **Discord Webhooks** — Push notifications to a Discord channel
 - **Email (SMTP)** — Email alerts via any SMTP server
 - **SMS Gateway** — Text alerts via carrier email-to-SMS gateways
@@ -103,7 +103,7 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **Beacon Path Selector** — Choose digipeater path for beacons (DIRECT, WIDE1-1, WIDE1-1,WIDE2-1, etc.)
 - **Minute-based Timers** — All timer settings (beacon interval, dedupe, cleanup, cooldown) displayed in minutes for simplicity
 - **Pick Location on Map** — Click the map to set your station coordinates
-- **GPS Ingestion** — Use browser/mobile GPS, own APRS position packets, or NMEA serial/TCP/UDP streams to move the map marker or update station coordinates
+- **GPS Ingestion** — Use browser/mobile GPS, own APRS position packets, NMEA serial/TCP/UDP streams, or gpsd to move the map marker or update station coordinates
 - **Smart Beaconing** — Optional GPS-speed-aware station beacon intervals for mobile/portable use
 - **Map Object Creation** — Drop APRS objects from the map, choose symbol/comment/routing, and save them into the scheduled object list
 - **APRS Symbol Picker** — Visual icon chooser with both primary and alternate symbol tables
@@ -115,7 +115,8 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **Font Selector** — Choose from multiple fonts in Settings for crisp, readable text
 - **About Tab** — Application version, build info, and attribution
 - **Help & User Guide** — In-app help modal covering every feature, control, and setting
-- **Update Checker** - Automatically checks the latest GitHub release, supports disabling checks entirely, and lets you control the periodic recheck interval for long-running installs
+- **Installer-Based Updates** - Windows setup installs can detect GitHub setup assets, download the newer installer from the About tab, close APRS PropView cleanly, and launch setup while keeping user settings and data intact
+- **Update Checker** - Automatically checks the latest GitHub release, supports disabling checks entirely, hides Windows-only installer actions on Linux/macOS, and lets you control the periodic recheck interval for long-running installs
 - **Persistent UI State** — Map toggles, zoom, position, theme, line time filter, station type filters, callsign labels, and auto-fit are saved to the browser and restored on next launch
 - **Linux/Pi Friendly Configuration** — Example config and install guide include multi-port RF, AGWPE TCP, private APRS-IS feeds, scheduled packets, and smart beaconing notes
 - **Station Cleanup** — Automatic pruning of stale stations from memory with real-time UI removal
@@ -161,6 +162,22 @@ python main.py
 
 The web interface opens automatically at `http://localhost:14501`.
 
+### Run From Source On macOS
+
+Install Python 3.11 or newer, then run APRS PropView from a terminal:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python main.py
+```
+
+The web interface opens at `http://localhost:14501`. Serial TNC/GPS devices on
+macOS usually appear as `/dev/cu.usbserial-*`, `/dev/cu.usbmodem-*`, or similar
+paths rather than Windows-style `COM` ports. If a USB serial adapter does not
+appear, install the vendor's macOS driver and grant any requested permissions.
+
 ### Standalone Executable
 
 ```bash
@@ -169,6 +186,51 @@ python build_exe.py
 ```
 
 This produces `dist/APRSPropView.exe` — a single portable file (~33 MB). On first run it creates `config.toml` next to the exe and launches the browser.
+
+### Windows Setup Installer
+
+Install Inno Setup 6, then build a versioned setup executable:
+
+```bash
+winget install JRSoftware.InnoSetup
+python build_installer.py
+```
+
+This produces `dist/APRSPropViewSetup-<version>.exe`. The installer defaults
+to a per-user install under `%LOCALAPPDATA%\Programs\APRS PropView`, lets users
+choose a different install folder, creates Start Menu shortcuts, and installs
+the current `APRSPropView.exe`.
+
+Installer upgrades replace the application executable and bundled files only.
+User data such as `config.toml`, `propview.db`, `map_tile_cache/`, and
+`user_audio/` is left in place. Publish both `APRSPropView.exe` and the setup
+asset on GitHub releases; assets named like `APRSPropViewSetup-1.5.6.0.exe` are
+detected by the in-app update checker so users can click **Install Update** in
+the About tab. On Linux, Raspberry Pi, and macOS, users still see release
+notices but installer-based update buttons are hidden because those platforms
+update from source or platform-specific builds.
+
+### macOS App Bundle
+
+Build the local test `.app` bundle on a macOS machine:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt pyinstaller pillow
+python build_macos.py
+```
+
+This produces `dist/APRS PropView.app`. On first launch, the app stores
+`config.toml`, `propview.db`, `map_tile_cache/`, and `user_audio/` in:
+
+```text
+~/Library/Application Support/APRS PropView/
+```
+
+The local `.app` build is unsigned unless you set `MACOS_CODESIGN_IDENTITY`
+before running `build_macos.py`. Unsigned builds are suitable for local testing,
+but public macOS releases should be code-signed and notarized.
 
 ## Configuration
 
@@ -194,8 +256,39 @@ All settings are in `config.toml` and can be edited from the web UI **Settings**
 | `[alerts]` | Band opening thresholds, Discord/email/SMS notification settings |
 | `[weather]` | Weather enabled, location code (zip/ICAO), WXnow/Open-Meteo current-condition options, banner alert range, radar overlay, map-only alert polygon range, alert scope, and adaptive polling |
 | `[wxnow]` | APRS weather transmit from `WXnow.txt`, including SSID, beacon interval, stale cutoff, position mode, path, and RF/APRS-IS route |
-| `[gps]` | Browser, own-packet, serial, TCP, and UDP GPS ingestion |
-| `[mqtt]` | Optional broker settings for propagation and alert publishing |
+| `[gps]` | Browser, own-packet, serial, TCP, UDP, and gpsd GPS ingestion |
+| `[mqtt]` | Optional broker settings for propagation, Home Assistant Discovery, automation events, and alert publishing |
+
+### Offline Map Tiles
+
+APRS PropView uses standard Leaflet XYZ tiles. For grid-down or field setups,
+run a local tile server and point the web map at it:
+
+```toml
+[web]
+map_tile_source = "custom"
+map_tile_url = "http://127.0.0.1:8080/tile/{z}/{x}/{y}.png"
+map_tile_attribution = "OpenStreetMap contributors"
+map_tile_max_zoom = 14
+```
+
+The local server can be backed by downloaded OpenStreetMap data or a prepared
+tile archive. Keep the max zoom realistic for the area you cache; zoom levels
+above 14 grow quickly.
+
+The map's **Cache** control downloads the currently visible base-map tiles at
+the current zoom into `map_tile_cache/`. Cached tiles are served by APRS
+PropView itself, so already-cached areas remain visible later without internet
+access.
+
+### Receiver Feed Roadmap
+
+ADS-B/dump1090 and AIS receiver overlays are planned integration targets. A
+useful implementation should ingest local receiver feeds, normalize aircraft
+and vessel positions into dedicated map layers, expire stale targets, and keep
+them visually distinct from APRS stations. They are not APRS packets, so they
+should be added as separate situational-awareness layers instead of mixed into
+RF/APRS-IS station history.
 
 ## Architecture
 

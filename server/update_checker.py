@@ -15,6 +15,7 @@ logger = logging.getLogger("propview.update")
 GITHUB_REPO = "RF-YVY/APRS-PropView"
 GITHUB_RELEASES_URL = "https://github.com/RF-YVY/APRS-PropView/releases"
 GITHUB_LATEST_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+INSTALLER_ASSET_RE = re.compile(r"APRSPropViewSetup.*\.exe$", re.IGNORECASE)
 
 
 def _github_ssl_context() -> ssl.SSLContext:
@@ -58,6 +59,8 @@ class UpdateChecker:
             "latest_version": self.current_version,
             "release_name": "",
             "release_url": GITHUB_RELEASES_URL,
+            "installer_url": "",
+            "installer_name": "",
             "published_at": "",
             "prerelease": False,
             "checked_at": None,
@@ -162,6 +165,8 @@ class UpdateChecker:
                 "latest_version": latest_version or self.current_version,
                 "release_name": release.get("name") or release.get("tag_name") or "",
                 "release_url": GITHUB_RELEASES_URL,
+                "installer_url": release.get("installer_url") or "",
+                "installer_name": release.get("installer_name") or "",
                 "published_at": release.get("published_at") or "",
                 "prerelease": bool(release.get("prerelease")),
                 "checked_at": checked_at,
@@ -231,7 +236,9 @@ class UpdateChecker:
         )
         try:
             with urllib.request.urlopen(req, timeout=15, context=_github_ssl_context()) as resp:
-                return json.loads(resp.read().decode("utf-8"))
+                release = json.loads(resp.read().decode("utf-8"))
+                release.update(self._installer_asset_from_release(release))
+                return release
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"GitHub returned HTTP {exc.code}: {body[:160]}") from exc
@@ -265,6 +272,17 @@ class UpdateChecker:
             "tag_name": tag,
             "name": tag,
             "html_url": f"{GITHUB_RELEASES_URL}/tag/{tag}",
+            "installer_url": "",
+            "installer_name": "",
             "published_at": "",
             "prerelease": False,
         }
+
+    @staticmethod
+    def _installer_asset_from_release(release: Dict[str, Any]) -> Dict[str, str]:
+        for asset in release.get("assets") or []:
+            name = asset.get("name") or ""
+            url = asset.get("browser_download_url") or ""
+            if name and url and INSTALLER_ASSET_RE.search(name):
+                return {"installer_name": name, "installer_url": url}
+        return {"installer_name": "", "installer_url": ""}

@@ -213,6 +213,8 @@ tcp_host = "127.0.0.1"
 tcp_port = 10110
 udp_host = "0.0.0.0"
 udp_port = 10110
+gpsd_host = "127.0.0.1"
+gpsd_port = 2947
 
 [mqtt]
 enabled = false
@@ -221,6 +223,10 @@ port = 1883
 topic_prefix = "aprs/propview"
 username = ""
 password = ""
+discovery_enabled = false
+discovery_prefix = "homeassistant"
+device_name = "APRS PropView"
+device_id = "aprs_propview"
 """
 
 
@@ -475,7 +481,7 @@ class WxNowConfig:
 @dataclass
 class GPSConfig:
     enabled: bool = False
-    source: str = "browser"  # browser, self_packet, nmea_serial, nmea_tcp, nmea_udp, any
+    source: str = "browser"  # browser, self_packet, nmea_serial, nmea_tcp, nmea_udp, gpsd, any
     map_update_enabled: bool = True
     update_station_position: bool = False
     station_position_locked: bool = True
@@ -485,6 +491,8 @@ class GPSConfig:
     tcp_port: int = 10110
     udp_host: str = "0.0.0.0"
     udp_port: int = 10110
+    gpsd_host: str = "127.0.0.1"
+    gpsd_port: int = 2947
 
 
 @dataclass
@@ -495,6 +503,10 @@ class MQTTConfig:
     topic_prefix: str = "aprs/propview"
     username: str = ""
     password: str = ""
+    discovery_enabled: bool = False
+    discovery_prefix: str = "homeassistant"
+    device_name: str = "APRS PropView"
+    device_id: str = "aprs_propview"
 
 
 @dataclass
@@ -849,6 +861,8 @@ class Config:
             f"tcp_port = {int(self.gps.tcp_port)}",
             f'udp_host = "{esc(self.gps.udp_host)}"',
             f"udp_port = {int(self.gps.udp_port)}",
+            f'gpsd_host = "{esc(self.gps.gpsd_host)}"',
+            f"gpsd_port = {int(self.gps.gpsd_port)}",
             "",
             "[mqtt]",
             f"enabled = {'true' if self.mqtt.enabled else 'false'}",
@@ -857,5 +871,9 @@ class Config:
             f'topic_prefix = "{esc(self.mqtt.topic_prefix)}"',
             f'username = "{esc(self.mqtt.username)}"',
             f'password = "{esc(self.mqtt.password)}"',
+            f"discovery_enabled = {'true' if self.mqtt.discovery_enabled else 'false'}",
+            f'discovery_prefix = "{esc(self.mqtt.discovery_prefix)}"',
+            f'device_name = "{esc(self.mqtt.device_name)}"',
+            f'device_id = "{esc(self.mqtt.device_id)}"',
         ])
         path.write_text("\n".join(lines) + "\n")

@@ -1,17 +1,24 @@
 """FastAPI web application — serves UI and WebSocket endpoints."""
 
+import asyncio
 import base64
 import binascii
+import hashlib
 import mimetypes
+import os
 import re
+import shutil
+import subprocess
 import time
 import logging
 import tempfile
 import urllib.parse
+import urllib.request
+import math
 from pathlib import Path
 from typing import Optional, Dict, Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,7 +37,7 @@ from server.alerts import AlertConfig, AlertManager
 from server.aprs_is import APRSISClient
 from server.aprs_parser import parse_packet
 from server.weather import WeatherManager
-from server.update_checker import UpdateChecker
+from server.update_checker import UpdateChecker, _github_ssl_context
 
 logger = logging.getLogger("propview.app")
 
@@ -53,6 +60,8 @@ ALERT_AUDIO_KEYS = {
 }
 ALERT_AUDIO_EXTS = {".wav", ".mp3"}
 MAX_ALERT_AUDIO_BYTES = 15 * 1024 * 1024
+MAP_TILE_CACHE_DIR = Path.cwd() / "map_tile_cache"
+MAX_TILE_CACHE_REQUEST = 800
 
 # ── Validation helpers ──────────────────────────────────────────────
 
@@ -64,7 +73,7 @@ _MESSAGE_ADDRESSEE_RE = re.compile(r'^[A-Z0-9][A-Z0-9-]{0,8}$')
 _HOSTNAME_RE = re.compile(r'^[A-Za-z0-9._-]{1,253}$')
 _SAFE_PATH_RE = re.compile(r'^[A-Za-z0-9._-]{1,100}$')
 _FILTER_TOKEN_RE = re.compile(r'^-?[a-z]{1,2}/[!-~]+$', re.IGNORECASE)
-_GPS_SOURCE_VALUES = {"browser", "self_packet", "nmea_serial", "nmea_tcp", "nmea_udp", "any"}
+_GPS_SOURCE_VALUES = {"browser", "self_packet", "nmea_serial", "nmea_tcp", "nmea_udp", "gpsd", "any"}
 _TILE_URL_TOKENS = ("{z}", "{x}", "{y}")
 # Disallowed callsigns (common placeholders)
 _BLOCKED_CALLSIGNS = {'N0CALL', 'NOCALL', 'MYCALL', 'TEST'}
@@ -99,6 +108,16 @@ def _mask_passcode(passcode: str) -> str:
     if not passcode or passcode == "-1":
         return passcode
     return "*" * (len(passcode) - 1) + passcode[-1]
+
+
+def _merge_secret_value(current: str, submitted: Any, *, submitted_present: bool) -> str:
+    """Merge password-like settings from the UI."""
+    if not submitted_present:
+        return current
+    value = "" if submitted is None else str(submitted)
+    if "*" in value:
+        return current
+    return value
 
 
 def _clean_aprs_object_item(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -157,6 +176,121 @@ def _alert_audio_url(filename: str) -> str:
     if not filename:
         return ""
     return f"/api/alert-audio/file/{urllib.parse.quote(filename)}"
+
+
+def _default_tile_url() -> str:
+    return "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+
+
+def _tile_source_config(config: Config) -> Dict[str, Any]:
+    source = (config.web.map_tile_source or "osm").strip().lower()
+    if source == "custom" and config.web.map_tile_url:
+        return {
+            "url": config.web.map_tile_url,
+            "attribution": config.web.map_tile_attribution or "",
+            "max_zoom": int(config.web.map_tile_max_zoom or 19),
+        }
+    return {
+        "url": _default_tile_url(),
+        "attribution": "&copy; OpenStreetMap contributors",
+        "max_zoom": 19,
+    }
+
+
+def _tile_cache_key(tile_url: str) -> str:
+    return hashlib.sha256(tile_url.encode("utf-8")).hexdigest()[:16]
+
+
+def _tile_cache_path(tile_url: str, z: int, x: int, y: int) -> Path:
+    suffix = ".png"
+    parsed_suffix = Path(urllib.parse.urlparse(tile_url).path).suffix.lower()
+    if parsed_suffix in {".png", ".jpg", ".jpeg", ".webp"}:
+        suffix = parsed_suffix
+    return MAP_TILE_CACHE_DIR / _tile_cache_key(tile_url) / str(z) / str(x) / f"{y}{suffix}"
+
+
+def _tile_url_for(tile_url: str, z: int, x: int, y: int) -> str:
+    subdomains = "abc"
+    subdomain = subdomains[(x + y) % len(subdomains)]
+    return (
+        tile_url
+        .replace("{s}", subdomain)
+        .replace("{z}", str(z))
+        .replace("{x}", str(x))
+        .replace("{y}", str(y))
+    )
+
+
+def _download_tile(tile_url: str, z: int, x: int, y: int) -> Optional[Path]:
+    path = _tile_cache_path(tile_url, z, x, y)
+    if path.exists() and path.stat().st_size > 0:
+        return path
+
+    url = _tile_url_for(tile_url, z, x, y)
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "APRSPropView tile-cache",
+            "Referer": "http://localhost/",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            status = getattr(resp, "status", 200)
+            if status >= 400:
+                return None
+            data = resp.read(1024 * 1024)
+    except Exception:
+        return None
+
+    if not data:
+        return None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_bytes(data)
+    tmp.replace(path)
+    return path
+
+
+def _lon_to_tile_x(lon: float, z: int) -> int:
+    return int((lon + 180.0) / 360.0 * (1 << z))
+
+
+def _lat_to_tile_y(lat: float, z: int) -> int:
+    lat = max(-85.05112878, min(85.05112878, lat))
+    lat_rad = math.radians(lat)
+    return int((1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * (1 << z))
+
+
+def _tile_coords_for_bounds(bounds: Dict[str, Any], min_zoom: int, max_zoom: int) -> list[tuple[int, int, int]]:
+    north = float(bounds.get("north"))
+    south = float(bounds.get("south"))
+    east = float(bounds.get("east"))
+    west = float(bounds.get("west"))
+    north = max(-85.05112878, min(85.05112878, north))
+    south = max(-85.05112878, min(85.05112878, south))
+    if south > north:
+        south, north = north, south
+
+    coords = []
+    for z in range(min_zoom, max_zoom + 1):
+        limit = (1 << z) - 1
+        y_min = max(0, min(limit, _lat_to_tile_y(north, z)))
+        y_max = max(0, min(limit, _lat_to_tile_y(south, z)))
+        if west <= east:
+            x_ranges = [(max(0, min(limit, _lon_to_tile_x(west, z))), max(0, min(limit, _lon_to_tile_x(east, z))))]
+        else:
+            x_ranges = [
+                (max(0, min(limit, _lon_to_tile_x(west, z))), limit),
+                (0, max(0, min(limit, _lon_to_tile_x(east, z)))),
+            ]
+        for x_min, x_max in x_ranges:
+            if x_min > x_max:
+                x_min, x_max = x_max, x_min
+            for x in range(x_min, x_max + 1):
+                for y in range(y_min, y_max + 1):
+                    coords.append((z, x, y))
+    return coords
 
 
 def _validate_config(body: Dict[str, Any]) -> Optional[str]:
@@ -433,14 +567,15 @@ def _validate_config(body: Dict[str, Any]) -> Optional[str]:
                 return "GPS serial baudrate must be 300-921600."
         except (ValueError, TypeError):
             return "GPS serial baudrate must be a number."
-        for field_name in ("tcp_port", "udp_port"):
+        for field_name in ("tcp_port", "udp_port", "gpsd_port"):
             try:
-                port = int(g.get(field_name, 10110))
+                default_port = 2947 if field_name == "gpsd_port" else 10110
+                port = int(g.get(field_name, default_port))
                 if port < 1 or port > 65535:
                     return f"GPS {field_name.replace('_', ' ')} must be 1-65535."
             except (ValueError, TypeError):
                 return f"GPS {field_name.replace('_', ' ')} must be a number."
-        for field_name in ("tcp_host", "udp_host"):
+        for field_name in ("tcp_host", "udp_host", "gpsd_host"):
             host = g.get(field_name, "")
             if host and not _HOSTNAME_RE.match(host):
                 return f"Invalid GPS {field_name.replace('_', ' ')}."
@@ -497,11 +632,64 @@ def create_app(
     scheduled_transmitter = None,
     update_checker: UpdateChecker = None,
     gps_manager = None,
+    mqtt_state: Optional[Dict[str, Any]] = None,
     app_version: str = "1.0.0",
+    shutdown_event: Optional[asyncio.Event] = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application."""
 
     app = FastAPI(title="APRS PropView", version=app_version)
+    mqtt_state = mqtt_state if mqtt_state is not None else {"publisher": None}
+    mqtt_lock = asyncio.Lock()
+
+    def _mqtt_snapshot() -> tuple:
+        return (
+            bool(config.mqtt.enabled),
+            config.mqtt.broker,
+            int(config.mqtt.port),
+            config.mqtt.topic_prefix,
+            config.mqtt.username,
+            config.mqtt.password,
+            bool(config.mqtt.discovery_enabled),
+            config.mqtt.discovery_prefix,
+            config.mqtt.device_name,
+            config.mqtt.device_id,
+        )
+
+    async def _apply_mqtt_runtime() -> str:
+        async with mqtt_lock:
+            current = mqtt_state.get("publisher")
+            if current:
+                await current.close()
+                mqtt_state["publisher"] = None
+                tracker.set_mqtt_publisher(None)
+
+            if not config.mqtt.enabled:
+                logger.info("MQTT: disabled")
+                return "MQTT disabled"
+
+            from server.export import MQTTPublisher
+            publisher = MQTTPublisher(
+                host=config.mqtt.broker,
+                port=config.mqtt.port,
+                topic_prefix=config.mqtt.topic_prefix,
+                username=config.mqtt.username,
+                password=config.mqtt.password,
+                discovery_enabled=config.mqtt.discovery_enabled,
+                discovery_prefix=config.mqtt.discovery_prefix,
+                device_name=config.mqtt.device_name,
+                device_id=config.mqtt.device_id,
+            )
+            connected = await publisher.connect()
+            if connected:
+                mqtt_state["publisher"] = publisher
+                tracker.set_mqtt_publisher(publisher)
+                logger.info("MQTT: reconnected to %s:%s", config.mqtt.broker, config.mqtt.port)
+                return "MQTT reconnected"
+
+            await publisher.close()
+            logger.warning("MQTT: reconnect failed (check broker settings or paho-mqtt installation)")
+            return "MQTT reconnect failed"
 
     @app.on_event("startup")
     async def startup_update_check():
@@ -563,6 +751,99 @@ def create_app(
     async def favicon():
         return FileResponse(str(STATIC_DIR / "ico" / "favicon.ico"))
 
+    @app.get("/api/map-tiles/{z}/{x}/{y}")
+    async def get_map_tile(z: int, x: int, y: int):
+        if z < 0 or z > 22 or x < 0 or y < 0 or x >= (1 << z) or y >= (1 << z):
+            return JSONResponse(status_code=404, content={"success": False, "message": "Tile not found."})
+
+        tile_cfg = _tile_source_config(config)
+        tile_url = tile_cfg["url"]
+        path = _tile_cache_path(tile_url, z, x, y)
+        if not path.exists() or path.stat().st_size <= 0:
+            path = await asyncio.to_thread(_download_tile, tile_url, z, x, y)
+        if not path or not path.exists():
+            return JSONResponse(status_code=404, content={"success": False, "message": "Tile not cached and upstream is unavailable."})
+        media_type = mimetypes.guess_type(path.name)[0] or "image/png"
+        return FileResponse(path, media_type=media_type)
+
+    @app.get("/api/map-tiles/status")
+    async def get_map_tile_cache_status():
+        tile_cfg = _tile_source_config(config)
+        cache_root = MAP_TILE_CACHE_DIR / _tile_cache_key(tile_cfg["url"])
+        count = 0
+        size_bytes = 0
+        if cache_root.exists():
+            for path in cache_root.rglob("*"):
+                if path.is_file() and path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
+                    count += 1
+                    size_bytes += path.stat().st_size
+        return {
+            "enabled": True,
+            "tile_count": count,
+            "size_bytes": size_bytes,
+            "size_mb": round(size_bytes / (1024 * 1024), 2),
+            "source": config.web.map_tile_source,
+            "max_zoom": tile_cfg["max_zoom"],
+        }
+
+    @app.post("/api/map-tiles/cache-current-view")
+    async def cache_current_map_view(request: Request):
+        try:
+            body = await request.json()
+            bounds = body.get("bounds") or {}
+            zoom = int(body.get("zoom", 0))
+            min_zoom = int(body.get("min_zoom", zoom))
+            max_zoom = int(body.get("max_zoom", zoom))
+            tile_cfg = _tile_source_config(config)
+            max_source_zoom = min(22, max(1, int(tile_cfg["max_zoom"])))
+            min_zoom = max(0, min(max_source_zoom, min_zoom))
+            max_zoom = max(min_zoom, min(max_source_zoom, max_zoom))
+            coords = _tile_coords_for_bounds(bounds, min_zoom, max_zoom)
+        except Exception:
+            return JSONResponse(status_code=400, content={"success": False, "message": "Invalid map bounds or zoom."})
+
+        if not coords:
+            return {"success": True, "requested": 0, "downloaded": 0, "cached": 0, "failed": 0}
+        if len(coords) > MAX_TILE_CACHE_REQUEST:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "success": False,
+                    "message": f"Current view would request {len(coords)} tiles. Zoom in or cache fewer zoom levels; limit is {MAX_TILE_CACHE_REQUEST}.",
+                    "requested": len(coords),
+                    "limit": MAX_TILE_CACHE_REQUEST,
+                },
+            )
+
+        tile_url = tile_cfg["url"]
+        downloaded = 0
+        cached = 0
+        failed = 0
+        semaphore = asyncio.Semaphore(6)
+
+        async def cache_one(coord):
+            nonlocal downloaded, cached, failed
+            z, x, y = coord
+            path = _tile_cache_path(tile_url, z, x, y)
+            if path.exists() and path.stat().st_size > 0:
+                cached += 1
+                return
+            async with semaphore:
+                result = await asyncio.to_thread(_download_tile, tile_url, z, x, y)
+            if result:
+                downloaded += 1
+            else:
+                failed += 1
+
+        await asyncio.gather(*(cache_one(coord) for coord in coords))
+        return {
+            "success": True,
+            "requested": len(coords),
+            "downloaded": downloaded,
+            "cached": cached,
+            "failed": failed,
+        }
+
     # ── WebSocket ───────────────────────────────────────────────────
 
     @app.websocket("/ws")
@@ -614,6 +895,7 @@ def create_app(
 
     @app.get("/api/update-status")
     async def get_update_status(force: bool = Query(False)):
+        installer_install_supported = _sys.platform == "win32"
         if not update_checker:
             return {
                 "checked": False,
@@ -623,13 +905,135 @@ def create_app(
                 "latest_version": app_version,
                 "release_name": "",
                 "release_url": "https://github.com/RF-YVY/APRS-PropView/releases",
+                "installer_url": "",
+                "installer_name": "",
+                "installer_install_supported": installer_install_supported,
                 "published_at": "",
                 "prerelease": False,
                 "checked_at": None,
                 "message": "Update checker is not configured.",
                 "error": "unavailable",
             }
-        return await update_checker.get_status(force=force)
+        status = await update_checker.get_status(force=force)
+        status["installer_install_supported"] = installer_install_supported
+        return status
+
+    def _download_update_installer_sync(url: str, filename: str) -> str:
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme != "https" or parsed.netloc.lower() not in {
+            "github.com",
+            "objects.githubusercontent.com",
+            "github-releases.githubusercontent.com",
+        }:
+            raise RuntimeError("Installer download URL is not a trusted GitHub URL.")
+
+        safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", filename or "APRSPropViewSetup.exe")
+        if not safe_name.lower().endswith(".exe"):
+            safe_name = "APRSPropViewSetup.exe"
+        update_dir = Path(tempfile.gettempdir()) / "APRSPropViewUpdates"
+        update_dir.mkdir(parents=True, exist_ok=True)
+        target = update_dir / safe_name
+
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": f"APRSPropView/{app_version}"},
+        )
+        with urllib.request.urlopen(req, timeout=120, context=_github_ssl_context()) as resp:
+            with open(target, "wb") as f:
+                shutil.copyfileobj(resp, f)
+        if target.stat().st_size < 1024 * 1024:
+            raise RuntimeError("Downloaded installer is unexpectedly small.")
+        return str(target)
+
+    def _launch_update_installer(path: str) -> None:
+        installer = Path(path)
+        installer_arg = str(installer).replace("'", "''")
+        working_dir_arg = str(installer.parent).replace("'", "''")
+        helper_script = f"""
+$installer = '{installer_arg}'
+$workingDir = '{working_dir_arg}'
+$parentPid = {os.getpid()}
+Wait-Process -Id $parentPid -Timeout 60 -ErrorAction SilentlyContinue
+Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS', '/RESTARTAPPLICATIONS') -WorkingDirectory $workingDir
+"""
+        encoded_script = base64.b64encode(helper_script.encode("utf-16le")).decode("ascii")
+        subprocess.Popen(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-WindowStyle",
+                "Hidden",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-EncodedCommand",
+                encoded_script,
+            ],
+            cwd=str(installer.parent),
+            close_fds=True,
+        )
+
+    async def _shutdown_after_update_helper_launch() -> None:
+        await asyncio.sleep(1.5)
+        if shutdown_event:
+            logger.info("Update installer helper launched; requesting application shutdown.")
+            shutdown_event.set()
+        else:
+            logger.warning("Update installer helper launched, but no shutdown event is configured.")
+
+    @app.post("/api/update-install")
+    async def download_and_launch_update(background_tasks: BackgroundTasks):
+        if _sys.platform != "win32":
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": "Installer updates are available only on Windows."},
+            )
+        if not update_checker:
+            return JSONResponse(
+                status_code=503,
+                content={"success": False, "message": "Update checker is not configured."},
+            )
+
+        status = await update_checker.get_status(force=True)
+        if not status.get("update_available"):
+            return JSONResponse(
+                status_code=409,
+                content={"success": False, "message": status.get("message") or "No update is available."},
+            )
+
+        installer_url = (status.get("installer_url") or "").strip()
+        installer_name = (status.get("installer_name") or "").strip()
+        if not installer_url:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "success": False,
+                    "message": "This release does not include a setup installer asset. Open GitHub releases to update manually.",
+                    "release_url": status.get("release_url"),
+                },
+            )
+
+        loop = asyncio.get_running_loop()
+        try:
+            installer_path = await loop.run_in_executor(
+                None,
+                _download_update_installer_sync,
+                installer_url,
+                installer_name,
+            )
+        except Exception as e:
+            logger.warning("Update installer download failed: %s", e)
+            return JSONResponse(
+                status_code=502,
+                content={"success": False, "message": "Could not download the update installer."},
+            )
+
+        background_tasks.add_task(_launch_update_installer, installer_path)
+        background_tasks.add_task(_shutdown_after_update_helper_launch)
+        return {
+            "success": True,
+            "message": "Update installer downloaded. APRS PropView will close, then setup will launch to replace the application while keeping your settings.",
+            "installer_path": installer_path,
+        }
 
     @app.get("/api/status")
     async def get_status():
@@ -646,7 +1050,7 @@ def create_app(
         try:
             body = await request.json()
             source = (body.get("source", "browser") or "browser").strip().lower()
-            if source not in {"browser", "companion", "nmea_serial", "nmea_tcp", "nmea_udp", "self_packet"}:
+            if source not in {"browser", "companion", "nmea_serial", "nmea_tcp", "nmea_udp", "gpsd", "self_packet"}:
                 return JSONResponse(
                     status_code=400,
                     content={"success": False, "message": "Invalid GPS source."},
@@ -1733,6 +2137,8 @@ def create_app(
                 "tcp_port": config.gps.tcp_port,
                 "udp_host": config.gps.udp_host,
                 "udp_port": config.gps.udp_port,
+                "gpsd_host": config.gps.gpsd_host,
+                "gpsd_port": config.gps.gpsd_port,
             },
             "propagation": {
                 "my_station_full_count": config.propagation.my_station_full_count,
@@ -1780,6 +2186,10 @@ def create_app(
                 "topic_prefix": config.mqtt.topic_prefix,
                 "username": config.mqtt.username,
                 "password": _mask_passcode(config.mqtt.password),
+                "discovery_enabled": config.mqtt.discovery_enabled,
+                "discovery_prefix": config.mqtt.discovery_prefix,
+                "device_name": config.mqtt.device_name,
+                "device_id": config.mqtt.device_id,
             },
         }
 
@@ -1864,6 +2274,8 @@ def create_app(
                 config.aprs_is.passcode,
                 config.aprs_is.filter,
             )
+            old_mqtt = _mqtt_snapshot()
+            mqtt_save_requested = False
 
             # Update station config
             if "station" in body:
@@ -2034,6 +2446,8 @@ def create_app(
                 config.gps.tcp_port = int(g.get("tcp_port", config.gps.tcp_port))
                 config.gps.udp_host = g.get("udp_host", config.gps.udp_host)
                 config.gps.udp_port = int(g.get("udp_port", config.gps.udp_port))
+                config.gps.gpsd_host = g.get("gpsd_host", config.gps.gpsd_host)
+                config.gps.gpsd_port = int(g.get("gpsd_port", config.gps.gpsd_port))
                 live_applied.append("GPS ingestion")
                 if gps_manager:
                     await ws_manager.broadcast({"type": "gps_location", "data": gps_manager.get_status()})
@@ -2313,20 +2727,31 @@ def create_app(
 
             # Update MQTT config
             if "mqtt" in body:
+                mqtt_save_requested = True
                 mc = body["mqtt"]
                 config.mqtt.enabled = bool(mc.get("enabled", config.mqtt.enabled))
                 config.mqtt.broker = mc.get("broker", config.mqtt.broker)
                 config.mqtt.port = int(mc.get("port", config.mqtt.port))
-                config.mqtt.topic_prefix = mc.get("topic_prefix", config.mqtt.topic_prefix)
+                config.mqtt.topic_prefix = (mc.get("topic_prefix", config.mqtt.topic_prefix) or "aprs/propview").strip().strip("/")
                 config.mqtt.username = mc.get("username", config.mqtt.username)
-                new_mqtt_pw = mc.get("password", "")
-                if new_mqtt_pw and "*" not in new_mqtt_pw:
-                    config.mqtt.password = new_mqtt_pw
-                live_applied.append("mqtt")
+                config.mqtt.password = _merge_secret_value(
+                    config.mqtt.password,
+                    mc.get("password", ""),
+                    submitted_present="password" in mc,
+                )
+                config.mqtt.discovery_enabled = bool(mc.get("discovery_enabled", config.mqtt.discovery_enabled))
+                config.mqtt.discovery_prefix = (mc.get("discovery_prefix", config.mqtt.discovery_prefix) or "homeassistant").strip().strip("/")
+                config.mqtt.device_name = (mc.get("device_name", config.mqtt.device_name) or "APRS PropView").strip()
+                config.mqtt.device_id = (mc.get("device_id", config.mqtt.device_id) or "aprs_propview").strip()
 
             # Save to file
             config_path = Path("config.toml")
             config.save(config_path)
+            if mqtt_save_requested:
+                if _mqtt_snapshot() != old_mqtt or (config.mqtt.enabled and not mqtt_state.get("publisher")):
+                    live_applied.append(await _apply_mqtt_runtime())
+                else:
+                    live_applied.append("MQTT unchanged")
             logger.info(
                 "Config saved: weather enabled=%s location=%s radar=%s polygons=%s scope=%s/%s",
                 config.weather.enabled,

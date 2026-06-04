@@ -1,0 +1,880 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0d1117">
+    <title>APRS PropView Documentation</title>
+    <link rel="icon" type="image/x-icon" href="/static/ico/favicon.ico">
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg: #0d1117;
+            --panel: #161b22;
+            --panel-2: #1f2630;
+            --border: #30363d;
+            --text: #e6edf3;
+            --muted: #9aa4b2;
+            --soft: #c9d1d9;
+            --accent: #58a6ff;
+            --accent-2: #3fb950;
+            --warn: #d29922;
+            --danger: #f85149;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.58;
+        }
+
+        a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        code {
+            background: rgba(110, 118, 129, 0.22);
+            border: 1px solid rgba(110, 118, 129, 0.35);
+            border-radius: 4px;
+            padding: 1px 5px;
+            font-family: Consolas, "Courier New", monospace;
+            color: #f0f6fc;
+        }
+
+        pre {
+            overflow-x: auto;
+            background: #010409;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px;
+        }
+
+        pre code {
+            background: transparent;
+            border: 0;
+            padding: 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 14px 0;
+            font-size: 14px;
+        }
+
+        th,
+        td {
+            border: 1px solid var(--border);
+            padding: 9px 10px;
+            vertical-align: top;
+            text-align: left;
+        }
+
+        th {
+            background: rgba(88, 166, 255, 0.12);
+            color: #f0f6fc;
+        }
+
+        .page {
+            width: min(1180px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 28px 0 56px;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 22px;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .brand img {
+            width: 210px;
+            height: 54px;
+            object-fit: contain;
+        }
+
+        .topbar-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 36px;
+            padding: 8px 13px;
+            border-radius: 6px;
+            border: 1px solid rgba(88, 166, 255, 0.42);
+            background: rgba(88, 166, 255, 0.12);
+            color: var(--text);
+            font-weight: 700;
+            font-size: 13px;
+        }
+
+        .button:hover {
+            background: rgba(88, 166, 255, 0.2);
+            text-decoration: none;
+        }
+
+        .hero {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: linear-gradient(135deg, rgba(88, 166, 255, 0.16), rgba(63, 185, 80, 0.08)), var(--panel);
+            padding: 24px;
+            margin-bottom: 22px;
+        }
+
+        .hero h1 {
+            margin: 0 0 8px;
+            font-size: clamp(28px, 5vw, 44px);
+            line-height: 1.1;
+            letter-spacing: 0;
+        }
+
+        .lede {
+            max-width: 920px;
+            margin: 0;
+            color: var(--soft);
+            font-size: 17px;
+        }
+
+        .meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 18px;
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            padding: 4px 10px;
+            color: var(--muted);
+            background: rgba(13, 17, 23, 0.55);
+            font-size: 13px;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 280px minmax(0, 1fr);
+            gap: 22px;
+        }
+
+        .toc {
+            position: sticky;
+            top: 16px;
+            align-self: start;
+            max-height: calc(100vh - 32px);
+            overflow: auto;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--panel);
+            padding: 16px;
+        }
+
+        .toc h2 {
+            margin: 0 0 10px;
+            color: var(--text);
+            font-size: 16px;
+        }
+
+        .toc ol {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .toc li {
+            margin: 0;
+        }
+
+        .toc a {
+            display: block;
+            padding: 6px 0;
+            color: var(--soft);
+            font-size: 14px;
+        }
+
+        .toc a:hover {
+            color: var(--accent);
+        }
+
+        section {
+            scroll-margin-top: 18px;
+            margin-bottom: 22px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--panel);
+            padding: 20px;
+        }
+
+        section h2 {
+            margin: 0 0 12px;
+            color: var(--accent);
+            font-size: 24px;
+            line-height: 1.2;
+        }
+
+        section h3 {
+            margin: 20px 0 8px;
+            color: #f0f6fc;
+            font-size: 17px;
+        }
+
+        section h4 {
+            margin: 16px 0 6px;
+            color: var(--soft);
+            font-size: 15px;
+        }
+
+        p {
+            margin: 0 0 12px;
+            color: var(--soft);
+        }
+
+        ul,
+        ol {
+            margin: 8px 0 14px 22px;
+            padding: 0;
+            color: var(--soft);
+        }
+
+        li {
+            margin-bottom: 6px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            gap: 12px;
+        }
+
+        .card {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--panel-2);
+            padding: 14px;
+        }
+
+        .card h3 {
+            margin-top: 0;
+        }
+
+        .callout {
+            border-left: 4px solid var(--accent);
+            background: rgba(88, 166, 255, 0.1);
+            padding: 12px 14px;
+            border-radius: 6px;
+            margin: 12px 0;
+        }
+
+        .doc-figure {
+            margin: 16px 0;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            background: #010409;
+        }
+
+        .doc-figure img {
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+
+        .doc-figure figcaption {
+            padding: 9px 12px;
+            border-top: 1px solid var(--border);
+            color: var(--muted);
+            background: var(--panel-2);
+            font-size: 13px;
+        }
+
+        .warning {
+            border-left-color: var(--warn);
+            background: rgba(210, 153, 34, 0.1);
+        }
+
+        .danger {
+            border-left-color: var(--danger);
+            background: rgba(248, 81, 73, 0.1);
+        }
+
+        .small {
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .backtop {
+            display: inline-block;
+            margin-top: 8px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        @media (max-width: 860px) {
+            .layout {
+                grid-template-columns: 1fr;
+            }
+
+            .toc {
+                position: static;
+                max-height: none;
+            }
+
+            .topbar {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .topbar-actions {
+                justify-content: flex-start;
+            }
+
+            .brand img {
+                width: 185px;
+                height: 48px;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="page" id="top">
+    <header class="topbar">
+        <div class="brand">
+            <img src="/static/img/header.webp" alt="APRS PropView">
+        </div>
+        <nav class="topbar-actions" aria-label="Documentation links">
+            <a class="button" href="/">Open Dashboard</a>
+            <a class="button" href="/mobile">Mobile View</a>
+            <a class="button" href="/static/mqtt-guide.html">MQTT Guide</a>
+            <a class="button" href="https://github.com/RF-YVY/APRS-PropView" target="_blank" rel="noreferrer">GitHub</a>
+        </nav>
+    </header>
+
+    <div class="hero">
+        <h1>APRS PropView Documentation</h1>
+        <p class="lede">A complete field guide for installing, configuring, operating, and understanding APRS PropView: a real-time APRS digipeater, IGate, propagation monitor, weather-aware map, analytics dashboard, and messaging console.</p>
+        <div class="meta">
+            <span class="pill">Version covered: 1.5.6.0</span>
+            <span class="pill">Updated: June 4, 2026</span>
+            <span class="pill">License: Apache 2.0</span>
+        </div>
+    </div>
+
+    <div class="layout">
+        <aside class="toc" aria-label="Table of contents">
+            <h2>Table Of Contents</h2>
+            <ol>
+                <li><a href="#overview">1. Overview</a></li>
+                <li><a href="#quick-start">2. Quick Start</a></li>
+                <li><a href="#interface">3. Interface Tour</a></li>
+                <li><a href="#map">4. Map And Stations</a></li>
+                <li><a href="#rf-igate">5. RF, Digipeater, And IGate</a></li>
+                <li><a href="#aprs-is">6. APRS-IS</a></li>
+                <li><a href="#messaging">7. APRS Messaging</a></li>
+                <li><a href="#propagation">8. Propagation And Analytics</a></li>
+                <li><a href="#weather">9. Weather And Alerts</a></li>
+                <li><a href="#gps-mobile">10. GPS And Mobile</a></li>
+                <li><a href="#scheduled">11. Scheduled Packets</a></li>
+                <li><a href="#mqtt">12. MQTT Integration</a></li>
+                <li><a href="#settings">13. Options Reference</a></li>
+                <li><a href="#operations">14. Operations And Maintenance</a></li>
+                <li><a href="#security">15. Security And Policy</a></li>
+                <li><a href="#architecture">16. Architecture</a></li>
+                <li><a href="#sources">17. Sources And Credits</a></li>
+                <li><a href="#troubleshooting">18. Troubleshooting</a></li>
+            </ol>
+        </aside>
+
+        <main>
+            <section id="overview">
+                <h2>1. Overview</h2>
+                <p>APRS PropView is a local web application for amateur radio APRS operations. It receives packets from RF TNCs and APRS-IS, plots stations on a live Leaflet map, draws propagation paths, scores VHF conditions, supports bidirectional messaging, and can transmit station beacons, weather packets, status reports, bulletins, and APRS objects.</p>
+                <p>The dashboard is meant for both fixed station monitoring and field/mobile operation. RF-only, APRS-IS-only, and combined RF plus APRS-IS deployments are supported.</p>
+                <div class="grid">
+                    <div class="card">
+                        <h3>Core Purpose</h3>
+                        <p>Observe who your station hears, how far signals are traveling, and whether a VHF band opening is developing.</p>
+                    </div>
+                    <div class="card">
+                        <h3>Gateway Role</h3>
+                        <p>Act as an RF digipeater and APRS-IS IGate when the station is configured with proper callsign, passcode, and RF path settings.</p>
+                    </div>
+                    <div class="card">
+                        <h3>Situational Awareness</h3>
+                        <p>Combine live APRS stations, weather conditions, radar, NWS alerts, messaging, and analytics in a single browser view.</p>
+                    </div>
+                </div>
+                <h3>Common Use Cases</h3>
+                <ul>
+                    <li>Monitor local and regional VHF propagation from a home station.</li>
+                    <li>Run an APRS digipeater or IGate with visual feedback.</li>
+                    <li>Track direct RF stations separately from digipeated and APRS-IS stations.</li>
+                    <li>Operate from a vehicle, portable site, or Raspberry Pi using the mobile companion view.</li>
+                    <li>Send APRS messages, scheduled bulletins, station status, weather, and map-created APRS objects.</li>
+                    <li>Publish propagation metrics into Home Assistant, Node-RED, or other MQTT consumers.</li>
+                </ul>
+                <a class="backtop" href="#top">Back to top</a>
+            </section>
+
+            <section id="quick-start">
+                <h2>2. Quick Start</h2>
+                <h3>Run From Source</h3>
+                <pre><code>pip install -r requirements.txt
+python main.py</code></pre>
+                <p>On first launch, PropView creates or loads <code>config.toml</code>, starts the FastAPI server, and opens the web interface at <code>http://localhost:14501</code>.</p>
+
+                <h3>Minimum First Setup</h3>
+                <ol>
+                    <li>Open the dashboard and select the <b>Settings</b> tab.</li>
+                    <li>Set your callsign, SSID, latitude, longitude, APRS symbol, and station comment.</li>
+                    <li>Configure at least one RF port if you have a KISS/TNC2 TNC, or leave RF disabled for APRS-IS-only use.</li>
+                    <li>Set APRS-IS server, port, passcode, and a range filter when using APRS-IS.</li>
+                    <li>Choose beacon path and beacon interval. Fixed station beacons should be 10 minutes or slower.</li>
+                    <li>Save configuration, then use preview and test buttons before transmitting.</li>
+                </ol>
+
+                <div class="callout warning">
+                    <p><b>On-air note:</b> Use your assigned callsign and a valid APRS-IS passcode before transmitting or gating. Keep RF paths short and appropriate for your area.</p>
+                </div>
+
+                <h3>Standalone Builds</h3>
+                <p>Windows portable builds are produced with <code>python build_exe.py</code>. Windows setup installers are produced with <code>python build_installer.py</code> after installing Inno Setup 6; the setup wizard lets users choose the install folder and keeps user data during upgrades. macOS test app bundles are produced with <code>python build_macos.py</code> on macOS. See the repository README and platform docs for build-specific notes.</p>
+                <a class="backtop" href="#top">Back to top</a>
+            </section>
+
+            <section id="interface">
+                <h2>3. Interface Tour</h2>
+                <h3>Header</h3>
+                <p>The header shows your station callsign, RF/APRS-IS/WebSocket status dots, direct and regional propagation gauges, station counts, max distance, UI theme toggle, and a manual beacon control with route selection.</p>
+
+                <h3>Main Map</h3>
+                <p>The map occupies the primary work area. It displays your station, RF stations, APRS-IS stations, APRS objects, path lines, radar, alert polygons, and weather banners depending on enabled layers.</p>
+                <figure class="doc-figure">
+                    <img src="/static/img/docs/desktop-dashboard.png" alt="APRS PropView desktop dashboard with map, station tabs, gauges, and status controls" loading="lazy">
+                    <figcaption>Desktop dashboard overview with propagation gauges, map controls, live station lists, and RF/APRS-IS status.</figcaption>
+                </figure>
+
+                <h3>Side Tabs</h3>
+                <table>
+                    <thead>
+                    <tr><th>Tab</th><th>Purpose</th></tr>
+                    </thead>
+                    <tbody>
+                    <tr><td>RF Stations</td><td>Stations heard on RF, with filters for time, distance, type, path, and sort order.</td></tr>
+                    <tr><td>APRS-IS</td><td>Stations received from the APRS-IS network.</td></tr>
+                    <tr><td>Packets</td><td>Live and historical decoded packet feed with source and sort controls.</td></tr>
+                    <tr><td>Messages</td><td>Send, receive, reply to, sort, and review APRS messages.</td></tr>
+                    <tr><td>Propagation</td><td>Current propagation cards, histograms, charts, and solar data.</td></tr>
+                    <tr><td>Analytics</td><td>Longest paths, heatmaps, reliability scores, and best time-of-day views.</td></tr>
+                    <tr><td>Settings</td><td>Web configuration editor for station, RF, APRS-IS, weather, alerts, MQTT, GPS, and more.</td></tr>
+                    <tr><td>About</td><td>Version, credits, update checks, support link, help modal, and this documentation.</td></tr>
+                    </tbody>
+                </table>
+                <a class="backtop" href="#top">Back to top</a>
+            </section>
+
+            <section id="map">
+                <h2>4. Map And Stations</h2>
+                <p>The propagation map is the main visual surface. Station markers use APRS symbols, station source styling, popups, optional callsign labels, and propagation lines that can be filtered by age.</p>
+                <h3>Map Controls</h3>
+                <table>
+                    <thead>
+                    <tr><th>Control</th><th>What It Does</th></tr>
+                    </thead>
+                    <tbody>
+                    <tr><td>Center</td><td>Returns the map to your configured or live GPS station position.</td></tr>
+                    <tr><td>Obj</td><td>Creates an APRS object from a clicked map location and saves it into scheduled objects.</td></tr>
+                    <tr><td>Lines</td><td>Shows or hides propagation path lines.</td></tr>
+                    <tr><td>RF / APRS-IS</td><td>Shows or hides RF and internet-heard stations independently.</td></tr>
+                    <tr><td>Direct RF</td><td>Displays only RF stations heard directly, excluding APRS-IS and digipeated RF paths.</td></tr>
+                    <tr><td>Theme</td><td>Switches between dark and light map tile styling.</td></tr>
+                    <tr><td>Labels</td><td>Toggles persistent callsign labels above station icons.</td></tr>
+                    <tr><td>Auto-fit</td><td>Zooms the map to include visible stations until manually overridden.</td></tr>
+                    <tr><td>Cache</td><td>Downloads currently visible map tiles so they remain available offline later.</td></tr>
+                    <tr><td>Line</td><td>Configures line color mode, custom color, weight, opacity, and pattern.</td></tr>
+                    <tr><td>Types</td><td>Filters visible stations by APRS symbol/type categories.</td></tr>
+                    </tbody>
+                </table>
+
+                <h3>Station Source Behavior</h3>
+                <ul>
+                    <li>RF stations are tracked separately from APRS-IS stations.</li>
+                    <li>Direct RF stations can be isolated from stations heard through digipeaters.</li>
+                    <li>Digipeater-routed lines can draw transmitter-to-digipeater-to-receiver paths instead of misleading straight lines.</li>
+                    <li>If a moving callsign appears later on APRS-IS at a newer different position, stale RF map markers can be removed to avoid duplicate locations.</li>
+                    <li>Station ghosting and expiry visually age or remove stale stations.</li>
+                </ul>
+
+                <h3>Offline Map Tiles</h3>
+                <p>PropView uses Leaflet XYZ tiles. You can use the default online OpenStreetMap tiles or configure a custom tile URL with <code>{z}</code>, <code>{x}</code>, and <code>{y}</code> tokens. The map cache control stores visible tiles in <code>map_tile_cache/</code>.</p>
+                <a class="backtop" href="#top">Back to top</a>
+            </section>
+
+            <section id="rf-igate">
+                <h2>5. RF, Digipeater, And IGate</h2>
+                <h3>RF Ports</h3>
+                <p>Newer configurations use <code>[[rf_ports]]</code> entries. Ports can represent serial KISS, TCP KISS, or legacy TNC2 monitor style input depending on configuration. Each port can be named and controlled independently.</p>
+                <h3>Digipeater</h3>
+                <p>The digipeater supports WIDEn-N style behavior and duplicate suppression. Use aliases and dedupe windows that match local APRS practice. Avoid overbroad paths in dense areas.</p>
+                <h3>IGate</h3>
+                <p>The IGate can forward RF to APRS-IS, APRS-IS to RF, or both when enabled and properly verified. IS-to-RF gated packets are formatted to avoid loops and should not request further digipeating.</p>
+                <div class="callout danger">
+                    <p><b>Important:</b> RF-to-APRS-IS gating requires a valid APRS-IS passcode. Read-only passcode mode can receive but cannot inject packets into APRS-IS.</p>
+                </div>
+                <h3>Beaconing</h3>
+                <p>Station beacon preview shows exact packet text before transmit. Manual beacon controls can transmit over RF, APRS-IS, or both depending on available connections and route choice.</p>
+                <a class="backtop" href="#top">Back to top</a>
+            </section>
+
+            <section id="aprs-is">
+                <h2>6. APRS-IS</h2>
+                <p>APRS-IS settings control internet receive/transmit connectivity. The default public server is typically <code>rotate.aprs2.net</code> on port <code>14580</code>.</p>
+                <h3>Filters</h3>
+                <p>PropView can generate range filters for fixed or moving use. Fixed filters look like <code>r/35/-79/80</code> or <code>r/35.5/-79.8/80</code>. Moving filters look like <code>m/80</code>. Additional javAPRS filter tokens may be appended.</p>
+                <h3>Read-only Operation</h3>
+                <p>Private or local APRS-IS-style feeds that omit banners or login responses can still populate receive traffic. Without login verification, PropView keeps that connection read-only.</p>
+                <h3>Recommended Steps</h3>
+                <ol>
+                    <li>Set server and port.</li>
+                    <li>Enter your passcode if transmitting or gating.</li>
+                    <li>Choose fixed or moving range filter mode.</li>
+                    <li>Preview the generated filter and add extra tokens only when needed.</li>
+                    <li>Save and watch the APRS-IS status chip.</li>
+                </ol>
+                <a class="backtop" href="#top">Back to top</a>
+            </section>
+
+            <section id="messaging">
+                <h2>7. APRS Messaging</h2>
+                <p>The Messages tab supports APRS message send, receive, auto-ACK behavior, retries, history, contact-style reply flow, and message notifications.</p>
+                <figure class="doc-figure">
+                    <img src="/static/img/docs/desktop-messages.png" alt="APRS PropView desktop messages tab showing message controls and conversation layout" loading="lazy">
+                    <figcaption>Desktop APRS messaging view with filters, contacts, conversation history, and compose controls.</figcaption>
+                </figure>
+                <h3>How To Send A Message</h3>
+                <ol>
+                    <li>Open the <b>Messages</b> tab.</li>
+                    <li>Enter a destination callsign, tactical address, or supported bot addressee.</li>
+                    <li>Type a message up to 67 characters.</li>
+                    <li>Click <b>Send</b>. PropView routes over RF and APRS-IS according to current availability.</li>
+                </ol>
+                <h3>Message History</h3>
+                <p>History is stored in the local SQLite database and can be filtered by all, sent, or received. Message sort order can be newest-first or oldest-first on desktop and mobile views.</p>
+                <h3>Notifications</h3>
+                <p>Incoming APRS messages can trigger Discord, email, or SMS notifications independent from band-opening alert channels.</p>
+                <a class="backtop" href="#top">Back to top</a>
+            </section>
+
+            <section id="propagation">
+                <h2>8. Propagation And Analytics</h2>
+                <p>PropView scores propagation with two dashboard gauges: direct-heard RF for your station and regional RF including digipeated paths. Thresholds are configurable in the propagation settings.</p>
+                <h3>Propagation Views</h3>
+                <ul>
+                    <li>RF station counts over 1 hour, 6 hours, and 24 hours.</li>
+                    <li>Maximum and average distance views.</li>
+                    <li>Distance distribution histogram.</li>
+                    <li>24-hour propagation history chart.</li>
+                    <li>Solar data widget from hamqsl.com.</li>
+                </ul>
+                <h3>Analytics</h3>
+                <p>The Analytics tab adds historical views including longest path leaderboard, propagation heatmap, station reliability grades, and best time-of-day analysis.</p>
+                <h3>Alert Tuning</h3>
+                <p>The alert tuning helper can analyze recent RF path history and recommend more selective alert thresholds based on your local station baseline.</p>
+                <a class="backtop" href="#top">Back to top</a>
+            </section>
+
+            <section id="weather">
+                <h2>9. Weather And Alerts</h2>
+                <p>Weather features provide map context and optional APRS weather transmissions. Open-Meteo powers current conditions. NWS alert support provides US severe weather banners, alert polygons, and adaptive polling.</p>
+                <h3>Weather Display</h3>
+                <ul>
+                    <li>Current conditions banner with temperature, wind, humidity, pressure, feels-like, and location.</li>
+                    <li>Metric or imperial units for weather and station displays.</li>
+                    <li>Optional animated radar overlay with opacity control.</li>
+                    <li>NWS alert banners and map polygons with radius and category filters.</li>
+                    <li>County/zone geometry fallback for alerts without native polygons.</li>
+                </ul>
+                <h3>WXnow.txt</h3>
+                <p>WXnow transmit can beacon APRS weather packets from a local <code>WXnow.txt</code> file. Configure weather SSID, route, path, interval, stale cutoff, and whether position is included. Preview before one-shot or scheduled transmit.</p>
+                <h3>Weather Alert Beacons</h3>
+                <p>Status/DX settings can optionally include severe weather alert text in APRS status beacons when selected active alerts are present.</p>
+                <a class="backtop" href="#top">Back to top</a>
+            </section>
+
+            <section id="gps-mobile">
+                <h2>10. GPS And Mobile</h2>
+                <h3>GPS Sources</h3>
+                <p>GPS ingestion can use browser/mobile geolocation, your own APRS position packets, NMEA serial, NMEA TCP, NMEA UDP, gpsd, or any supported source. GPS can move only the map marker or update saved station coordinates.</p>
+                <h3>Position Lock</h3>
+                <p>The station coordinate lock prevents active GPS from overwriting saved latitude and longitude. Leave it locked when mobile GPS should move the marker without changing your base station configuration.</p>
+                <h3>Smart Beaconing</h3>
+                <p>Smart beaconing chooses between slow/parked and faster moving intervals based on GPS speed. This is useful for mobile or portable operation. APRS-IS-safe minimum intervals are enforced.</p>
+                <h3>Mobile Companion</h3>
+                <p>Open <code>/mobile</code> from a phone browser on the LAN, VPN, or Tailscale. The mobile interface includes Messages, Map, Stations, Propagation, and About tabs. The Share GPS control can feed the phone location into PropView.</p>
+                <p>The mobile map uses the same APRS station symbols as the desktop view and can draw compact propagation lines from your station to RF and APRS-IS stations. RF paths use distance-based colors, while APRS-IS paths are shown as lighter dashed lines. Use the mobile <b>Lines</b> control to hide or restore path lines, <b>Light/Dark</b> to switch the default mobile base-map theme, and <b>Fit</b> to frame your station plus visible stations.</p>
+                <p>Tap a station marker to open an information bubble with callsign, source, symbol type, distance, last-heard time, packet count, path/comment details, and a <b>Send Message</b> button that opens the selected station conversation.</p>
+                <p>Mobile messages are grouped by conversation/station. The conversation strip shows recent contacts and previews, while the selected thread below shows only that station's message history with sent/received bubbles, route labels, and ACK/reject state for outgoing messages.</p>
+                <a class="backtop" href="#top">Back to top</a>
+            </section>
+
+            <section id="scheduled">
+                <h2>11. Scheduled Packets</h2>
+                <h3>Bulletins</h3>
+                <p>Scheduled bulletins transmit APRS <code>BLN</code> packets on an interval. Configure route, interval, and message lines. Keep content short, useful, and appropriate for local APRS audiences.</p>
+                <h3>APRS Objects</h3>
+                <p>Scheduled objects transmit named APRS object packets with position, symbol, scope, route, path, comment, and optional repeater-style metadata. Objects can be created directly from map clicks using the <b>Obj</b> map control.</p>
+                <h3>Status, MHeard, And Dynamic Messages</h3>
+                <p>Status/DX reports can summarize best direct DX, bearings, station counts, propagation level, direct RF MHeard summaries, dynamic preset lines, or weather alert status depending on enabled options.</p>
+                <a class="backtop" href="#top">Back to top</a>
+            </section>
+
+            <section id="mqtt">
+                <h2>12. MQTT Integration</h2>
+                <p>MQTT publishes propagation state, summary values, availability, Home Assistant Discovery sensors, automation events, and alerts to a broker such as Mosquitto, Home Assistant, Node-RED, or EMQX.</p>
+                <h3>Basic Setup</h3>
+                <ol>
+                    <li>Enable MQTT in Settings.</li>
+                    <li>Enter broker host, port, topic prefix, and credentials if needed.</li>
+                    <li>Enable Home Assistant Discovery if Home Assistant should create entities automatically.</li>
+                    <li>Save. PropView reconnects MQTT live and republishes discovery config topics.</li>
+                </ol>
+                <h3>Default Topics</h3>
+                <table>
+                    <thead>
+                    <tr><th>Topic</th><th>Purpose</th></tr>
+                    </thead>
+                    <tbody>
+                    <tr><td><code>aprs/propview/propagation</code></td><td>Retained JSON with current propagation metrics.</td></tr>
+                    <tr><td><code>aprs/propview/score</code></td><td>Retained regional propagation score.</td></tr>
+                    <tr><td><code>aprs/propview/level</code></td><td>Retained regional propagation level text.</td></tr>
+                    <tr><td><code>aprs/propview/alert</code></td><td>JSON alert event payload.</td></tr>
+                    <tr><td><code>aprs/propview/event</code></td><td>Automation-friendly non-retained events.</td></tr>
+                    <tr><td><code>aprs/propview/status</code></td><td>Availability state for Home Assistant.</td></tr>
+                    </tbody>
+                </table>
+                <p>For broker examples and Home Assistant/Node-RED details, open the <a href="/static/mqtt-guide.html">MQTT Setup Guide</a>.</p>
+                <a class="backtop" href="#top">Back to top</a>
+            </section>
+
+            <section id="settings">
+                <h2>13. Options Reference</h2>
+                <p>Most settings can be edited from the browser Settings tab and are stored in <code>config.toml</code>. Host, port, and KISS transport changes may require a restart. Many runtime settings apply immediately after saving.</p>
+                <figure class="doc-figure">
+                    <img src="/static/img/docs/desktop-settings.png" alt="APRS PropView settings tab with configuration sections and save controls" loading="lazy">
+                    <figcaption>Settings tab with collapsible configuration groups for station, RF, APRS-IS, weather, alerts, GPS, MQTT, and web options.</figcaption>
+                </figure>
+                <table>
+                    <thead>
+                    <tr><th>Section</th><th>Purpose</th></tr>
+                    </thead>
+                    <tbody>
+                    <tr><td><code>[station]</code></td><td>Callsign, SSID, position, symbol, comment, beacon interval, and beacon path.</td></tr>
+                    <tr><td><code>[digipeater]</code></td><td>Enable state, aliases, WIDEn-N behavior, and dedupe timing.</td></tr>
+                    <tr><td><code>[igate]</code></td><td>RF-to-APRS-IS and APRS-IS-to-RF gateway controls.</td></tr>
+                    <tr><td><code>[aprs_is]</code></td><td>Server, port, passcode, filter mode, range, and extra filters.</td></tr>
+                    <tr><td><code>[[rf_ports]]</code></td><td>Multi-port RF serial/TCP KISS and compatible monitor-style inputs.</td></tr>
+                    <tr><td><code>[web]</code></td><td>Bind host, port, UI font, map tile source, station ghosting, station expiry, and mobile PIN.</td></tr>
+                    <tr><td><code>[tracking]</code></td><td>Station age windows and cleanup intervals.</td></tr>
+                    <tr><td><code>[messaging]</code></td><td>APRS message history retention.</td></tr>
+                    <tr><td><code>[database]</code></td><td>SQLite database path.</td></tr>
+                    <tr><td><code>[propagation]</code></td><td>Direct and regional propagation scoring thresholds.</td></tr>
+                    <tr><td><code>[status]</code></td><td>Status/DX, dynamic, MHeard, and weather-alert beacon options.</td></tr>
+                    <tr><td><code>[smart_beaconing]</code></td><td>GPS-speed-aware beacon interval behavior.</td></tr>
+                    <tr><td><code>[bulletins]</code></td><td>Scheduled APRS BLN packet route, interval, and messages.</td></tr>
+                    <tr><td><code>[aprs_objects]</code></td><td>Scheduled APRS object route, interval, symbols, coordinates, metadata, and comments.</td></tr>
+                    <tr><td><code>[alerts]</code></td><td>Band-opening thresholds, cooldowns, quiet hours, audio, Discord, email, and SMS settings.</td></tr>
+                    <tr><td><code>[weather]</code></td><td>Weather source settings, alerts, radar overlay, NWS scopes, alert categories, and adaptive polling.</td></tr>
+                    <tr><td><code>[wxnow]</code></td><td>WXnow weather packet transmit settings.</td></tr>
+                    <tr><td><code>[gps]</code></td><td>Browser, APRS self-packet, NMEA, and gpsd ingestion settings.</td></tr>
+                    <tr><td><code>[mqtt]</code></td><td>Broker, topics, Home Assistant Discovery, device identity, and publish behavior.</td></tr>
+                    </tbody>
+                </table>
+                <h3>Backup And Restore</h3>
+                <p>Use settings export before experimenting with RF, APRS-IS, host, port, or tile settings. Imported settings require an application restart before the full configuration is loaded.</p>
+                <a class="backtop" href="#top">Back to top</a>
+            </section>
+
+            <section id="operations">
+                <h2>14. Operations And Maintenance</h2>
+                <h3>Routine Operation</h3>
+                <ul>
+                    <li>Watch RF, APRS-IS, and WebSocket status indicators after startup.</li>
+                    <li>Use preview buttons before transmitting beacons, status, WXnow, bulletins, or objects.</li>
+                    <li>Keep beacon intervals conservative. Ten minutes or slower is the fixed-station norm for APRS-IS-safe operation.</li>
+                    <li>Use Direct RF view when tuning propagation alerts or evaluating local reception.</li>
+                    <li>Export settings before changing radio, port, APRS-IS, or gateway behavior.</li>
+                </ul>
+                <h3>Updates</h3>
+                <p>The About tab checks GitHub releases for newer builds unless update checks are disabled. The app can also show an update banner in the dashboard.</p>
+                <p>On Windows installer-based releases, the update checker looks for a GitHub release asset named like <code>APRSPropViewSetup-1.5.6.0.exe</code>. When an installer asset is available, the About tab shows <b>Install Update</b>. Clicking it downloads the setup executable, asks APRS PropView to shut down cleanly, and launches setup after the server exits so newer application files can replace the existing install while keeping user settings and data intact. On Linux, Raspberry Pi, and macOS, release notices remain visible but the Windows-only installer action is hidden.</p>
+                <h3>Data Files</h3>
+                <table>
+                    <thead>
+                    <tr><th>File Or Folder</th><th>Use</th></tr>
+                    </thead>
+                    <tbody>
+                    <tr><td><code>config.toml</code></td><td>Main saved configuration.</td></tr>
+                    <tr><td><code>propview.db</code></td><td>SQLite packet, message, station, and analytics history.</td></tr>
+                    <tr><td><code>map_tile_cache/</code></td><td>Downloaded map tiles for offline use.</td></tr>
+                    <tr><td><code>user_audio/</code></td><td>User-provided alert audio files.</td></tr>
+                    </tbody>
+                </table>
+                <p>Installer upgrades do not delete <code>config.toml</code>, <code>propview.db</code>, <code>map_tile_cache/</code>, or <code>user_audio/</code>. Uninstall also leaves those user data files in place unless they are removed manually.</p>
+                <a class="backtop" href="#top">Back to top</a>
+            </section>
+
+            <section id="security">
+                <h2>15. Security And Policy</h2>
+                <h3>Application Protections</h3>
+                <ul>
+                    <li>Input validation for callsigns, APRS-IS hosts, ports, filter tokens, paths, and packet fields.</li>
+                    <li>TOML injection prevention for imported and saved settings.</li>
+                    <li>XSS-safe escaping for user-supplied display data.</li>
+                    <li>Masked APRS-IS passcodes in API responses.</li>
+                    <li>Configurable CORS origins and WebSocket connection limits.</li>
+                    <li>Sanitized error messages in user-facing responses.</li>
+                </ul>
+                <h3>APRS-IS Compliance</h3>
+                <ul>
+                    <li>Minimum 10-minute beacon interval enforcement for APRS-IS policy.</li>
+                    <li>Read-only mode for unverified or passcode <code>-1</code> connections.</li>
+                    <li>RF-to-IS gating respects <code>NOGATE</code> and <code>RFONLY</code>.</li>
+                    <li>IS-to-RF gated packets use third-party format and avoid requesting further digipeating.</li>
+                    <li>Country-neutral callsign handling checks APRS-safe characters while APRS-IS verifies account authority.</li>
+                </ul>
+                <a class="backtop" href="#top">Back to top</a>
+            </section>
+
+            <section id="architecture">
+                <h2>16. Architecture</h2>
+                <p>APRS PropView is a Python/FastAPI backend with a browser dashboard. The backend handles radio/network IO, packet parsing, database storage, station tracking, propagation analytics, alerts, weather, MQTT, REST APIs, and WebSocket updates. The frontend renders map, tabs, controls, and live data.</p>
+                <pre><code>KISS/TNC RF        APRS-IS
+    |                 |
+    v                 v
+ PacketHandler and Gateway Logic
+    |
+    +-- StationTracker
+    +-- Database
+    +-- Analytics
+    +-- Alerts and Weather
+    +-- MQTT Publisher
+    |
+ REST API + WebSocket
+    |
+ Desktop Dashboard and Mobile View</code></pre>
+                <h3>Key Project Areas</h3>
+                <table>
+                    <thead>
+                    <tr><th>Path</th><th>Role</th></tr>
+                    </thead>
+                    <tbody>
+                    <tr><td><code>main.py</code></td><td>Application entry point.</td></tr>
+                    <tr><td><code>server/app.py</code></td><td>FastAPI routes, validation, settings API, static pages, and WebSocket setup.</td></tr>
+                    <tr><td><code>server/packet_handler.py</code></td><td>Central packet routing between RF, APRS-IS, tracking, database, and UI.</td></tr>
+                    <tr><td><code>server/kiss.py</code></td><td>KISS and compatible radio transport handling.</td></tr>
+                    <tr><td><code>server/aprs_is.py</code></td><td>APRS-IS TCP client.</td></tr>
+                    <tr><td><code>server/station_tracker.py</code></td><td>Station state, direct RF handling, propagation scoring inputs, and cleanup.</td></tr>
+                    <tr><td><code>server/weather.py</code></td><td>Open-Meteo and NWS weather functions.</td></tr>
+                    <tr><td><code>static/index.html</code></td><td>Desktop single-page dashboard.</td></tr>
+                    <tr><td><code>static/mobile.html</code></td><td>Touch-optimized mobile companion.</td></tr>
+                    <tr><td><code>static/js/</code></td><td>Frontend map, station, message, analytics, weather, and WebSocket logic.</td></tr>
+                    </tbody>
+                </table>
+                <a class="backtop" href="#top">Back to top</a>
+            </section>
+
+            <section id="sources">
+                <h2>17. Sources And Credits</h2>
+                <h3>Project Sources</h3>
+                <ul>
+                    <li><a href="https://github.com/RF-YVY/APRS-PropView" target="_blank" rel="noreferrer">APRS PropView GitHub repository</a></li>
+                    <li><a href="https://github.com/RF-YVY/APRS-PropView/releases" target="_blank" rel="noreferrer">Release downloads and changelog</a></li>
+                    <li><a href="/static/mqtt-guide.html">APRS PropView MQTT Setup Guide</a></li>
+                    <li><a href="/static/mobile.html">Mobile companion page</a></li>
+                </ul>
+                <h3>External Services And Libraries</h3>
+                <ul>
+                    <li><a href="https://leafletjs.com/" target="_blank" rel="noreferrer">Leaflet</a> for interactive web mapping.</li>
+                    <li><a href="https://www.openstreetmap.org/" target="_blank" rel="noreferrer">OpenStreetMap</a> tile data and attribution when using default map tiles.</li>
+                    <li><a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> for current conditions.</li>
+                    <li><a href="https://www.weather.gov/documentation/services-web-api" target="_blank" rel="noreferrer">National Weather Service API</a> for US alerts.</li>
+                    <li><a href="https://www.hamqsl.com/solar.html" target="_blank" rel="noreferrer">HamQSL solar data</a> for propagation summary imagery.</li>
+                    <li><a href="https://www.aprs-is.net/" target="_blank" rel="noreferrer">APRS-IS</a> for APRS internet backbone connectivity.</li>
+                </ul>
+                <h3>Credits</h3>
+                <p>APRS PropView was created by Brett Wicker - K5YVY with assistance from an AI agent. The README thanks community contributors and issue reporters for suggestions and bug finds.</p>
+                <p class="small">Documentation content here is derived from the local project README, configuration example, in-app help text, and current static/server source files.</p>
+                <a class="backtop" href="#top">Back to top</a>
+            </section>
+
+            <section id="troubleshooting">
+                <h2>18. Troubleshooting</h2>
+                <h3>No Stations Appear</h3>
+                <ul>
+                    <li>Check RF, APRS-IS, and WebSocket status indicators.</li>
+                    <li>Confirm station coordinates and APRS-IS filter radius are valid.</li>
+                    <li>For RF, verify the TNC port type, serial/TCP address, baud rate, and radio audio/PTT path.</li>
+                    <li>For APRS-IS, confirm server, port, internet access, and filter string.</li>
+                </ul>
+                <h3>Cannot Transmit Or Gate</h3>
+                <ul>
+                    <li>Replace placeholder callsigns such as <code>N0CALL</code>.</li>
+                    <li>Use a valid APRS-IS passcode for transmitting to APRS-IS.</li>
+                    <li>Confirm RF port availability before RF transmit.</li>
+                    <li>Check that route mode is not set to a currently unavailable transport.</li>
+                </ul>
+                <h3>Map Tiles Do Not Load</h3>
+                <ul>
+                    <li>Return to the default OSM source or verify custom tile URLs include <code>{z}</code>, <code>{x}</code>, and <code>{y}</code>.</li>
+                    <li>Check local tile server availability when using offline maps.</li>
+                    <li>Cache tiles while online before relying on them offline.</li>
+                </ul>
+                <h3>Weather Or Alerts Are Missing</h3>
+                <ul>
+                    <li>Confirm weather is enabled and the location is a valid US zip code or ICAO code.</li>
+                    <li>NWS alert polygons and warnings are US-focused and depend on active NWS data.</li>
+                    <li>Radar and alerts can be separately disabled by map overlay settings.</li>
+                </ul>
+                <h3>MQTT Messages Are Missing</h3>
+                <ul>
+                    <li>Confirm the broker host, port, credentials, and topic prefix.</li>
+                    <li>Subscribe to <code>aprs/propview/#</code> with MQTT Explorer or <code>mosquitto_sub</code>.</li>
+                    <li>For Home Assistant Discovery, keep discovery prefix and device ID stable.</li>
+                </ul>
+                <a class="backtop" href="#top">Back to top</a>
+            </section>
+        </main>
+    </div>
+</div>
+</body>
+</html>

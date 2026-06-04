@@ -106,7 +106,7 @@
             <li><b>Topic Prefix:</b> usually <code>aprs/propview</code></li>
             <li><b>Username/Password:</b> the broker credentials, if your broker requires them</li>
         </ul>
-        <p>Save settings and restart PropView. MQTT currently connects at startup, so broker changes need a restart.</p>
+        <p>Save settings. PropView reconnects MQTT live after broker, login, topic, or discovery settings change.</p>
     </section>
 
     <section>
@@ -138,9 +138,10 @@
             <li>Start the add-on and enable <b>Start on boot</b>.</li>
             <li>Create or choose a Home Assistant user for MQTT authentication.</li>
             <li>In PropView, set Broker Host to the Home Assistant host/IP, Port to <code>1883</code>, and enter that username/password.</li>
-            <li>Save PropView settings and restart PropView.</li>
+            <li>Enable <b>Home Assistant Discovery</b>. The default Discovery Prefix is <code>homeassistant</code>.</li>
+            <li>Save PropView settings. PropView will reconnect MQTT and publish discovery configs.</li>
         </ol>
-        <p>To confirm messages are arriving, install a tool such as MQTT Explorer and subscribe to <code>aprs/propview/#</code>, or use Home Assistant's MQTT integration diagnostics.</p>
+        <p>To confirm messages are arriving, install a tool such as MQTT Explorer and subscribe to <code>aprs/propview/#</code> and <code>homeassistant/sensor/aprs_propview/#</code>, or use Home Assistant's MQTT integration diagnostics.</p>
     </section>
 
     <section>
@@ -156,7 +157,15 @@ sudo systemctl enable --now mosquitto</code></pre>
 
     <section>
         <h2>Home Assistant Entities</h2>
-        <p>If Home Assistant does not auto-discover these topics, add MQTT sensors in <code>configuration.yaml</code>:</p>
+        <p>With Home Assistant Discovery enabled, PropView publishes retained discovery configs for these sensors:</p>
+        <ul>
+            <li>My Station Propagation Score and Level</li>
+            <li>Regional Propagation Score and Level</li>
+            <li>RF Stations 1h</li>
+            <li>Max RF Distance</li>
+        </ul>
+        <p>Discovery uses <code>homeassistant/sensor/&lt;device_id&gt;/&lt;sensor&gt;/config</code> topics and <code>aprs/propview/status</code> for availability. Keep the Device ID stable after entities are created.</p>
+        <p>If Home Assistant discovery is disabled or unavailable, add MQTT sensors in <code>configuration.yaml</code>:</p>
         <pre><code>mqtt:
   sensor:
     - name: "APRS PropView Score"
@@ -187,6 +196,7 @@ sudo systemctl enable --now mosquitto</code></pre>
         <ul>
             <li><code>mqtt in</code> topic <code>aprs/propview/propagation</code> -> <code>json</code> -> <code>debug</code> to inspect the full propagation payload.</li>
             <li><code>mqtt in</code> topic <code>aprs/propview/score</code> -> dashboard gauge/chart node to display the regional score.</li>
+            <li><code>mqtt in</code> topic <code>aprs/propview/event</code> -> <code>json</code> -> Home Assistant notification, speech, or achievement logging.</li>
             <li><code>mqtt in</code> topic <code>aprs/propview/alert</code> -> <code>json</code> -> notification, email, Home Assistant service call, or dashboard text node.</li>
         </ul>
         <p>When using the wildcard topic <code>aprs/propview/#</code>, Node-RED puts the actual topic in <code>msg.topic</code> and the value in <code>msg.payload</code>. That makes it easy to use a <b>switch</b> node to route score, level, propagation, and alert messages down different paths.</p>
@@ -201,10 +211,27 @@ return msg;</code></pre>
     </section>
 
     <section>
+        <h2>Automation Events</h2>
+        <p>PropView publishes non-retained JSON events on <code>aprs/propview/event</code>. These are meant for Home Assistant and Node-RED automations, not dashboard state.</p>
+        <pre><code>{
+  "event": "new_max_distance",
+  "callsign": "W1ABC",
+  "source": "rf",
+  "distance_km": 1240.0,
+  "previous_distance_km": 980.2,
+  "heading": 63.4,
+  "is_direct": true,
+  "hop_count": 0
+}</code></pre>
+        <p>Current events are <code>first_heard</code> and <code>new_max_distance</code>. Automations can speak the callsign, flash lights, send mobile notifications, or log achievement records.</p>
+    </section>
+
+    <section>
         <h2>Troubleshooting</h2>
         <ul>
             <li>If PropView logs <code>MQTT: failed to connect</code>, confirm broker host, port, username, password, and firewall rules.</li>
-            <li>If Home Assistant does not show updates, first verify topics with <code>mosquitto_sub</code> or MQTT Explorer.</li>
+            <li>If Home Assistant does not discover entities, confirm MQTT discovery is enabled in Home Assistant and verify <code>homeassistant/sensor/aprs_propview/#</code> config topics are retained.</li>
+            <li>If Home Assistant entities appear but do not update, first verify <code>aprs/propview/#</code> topics with <code>mosquitto_sub</code> or MQTT Explorer.</li>
             <li>If Node-RED does not show messages, attach a debug node directly to the MQTT node, subscribe to <code>aprs/propview/#</code>, and confirm the broker connection says connected.</li>
             <li>If using Docker or a VM, remember that <code>localhost</code> means inside that container or VM. Use the broker's reachable LAN host/IP instead.</li>
             <li>PropView publishes propagation periodically, so wait for the next propagation update after startup.</li>

@@ -4,7 +4,7 @@
 Launch this to start the application. The web interface opens automatically.
 """
 
-APP_VERSION = "1.5.5.2"
+APP_VERSION = "1.5.6.0"
 
 import asyncio
 import sys
@@ -17,7 +17,11 @@ from pathlib import Path
 # Support PyInstaller frozen builds
 if getattr(sys, 'frozen', False):
     # Exe directory for config/db files; _MEIPASS for bundled code/data
-    EXE_DIR = Path(sys.executable).parent
+    if sys.platform == "darwin":
+        EXE_DIR = Path.home() / "Library" / "Application Support" / "APRS PropView"
+        EXE_DIR.mkdir(parents=True, exist_ok=True)
+    else:
+        EXE_DIR = Path(sys.executable).parent
     BASE_DIR = Path(sys._MEIPASS)
     os.chdir(EXE_DIR)
 else:
@@ -355,6 +359,7 @@ async def main():
     # ── MQTT Publisher (optional) ──────────────────────────────────
 
     mqtt_publisher = None
+    mqtt_state = {"publisher": None}
     if config.mqtt.enabled:
         from server.export import MQTTPublisher
         mqtt_publisher = MQTTPublisher(
@@ -363,16 +368,23 @@ async def main():
             topic_prefix=config.mqtt.topic_prefix,
             username=config.mqtt.username,
             password=config.mqtt.password,
+            discovery_enabled=config.mqtt.discovery_enabled,
+            discovery_prefix=config.mqtt.discovery_prefix,
+            device_name=config.mqtt.device_name,
+            device_id=config.mqtt.device_id,
         )
         connected = await mqtt_publisher.connect()
         if connected:
             logger.info(f"MQTT: connected to {config.mqtt.broker}:{config.mqtt.port}")
+            mqtt_state["publisher"] = mqtt_publisher
             tracker.set_mqtt_publisher(mqtt_publisher)
         else:
             logger.warning("MQTT: failed to connect (check broker settings or paho-mqtt installation)")
             mqtt_publisher = None
 
     # ── Create web application ──────────────────────────────────────
+
+    shutdown_event = asyncio.Event()
 
     app = create_app(
         config,
@@ -389,7 +401,9 @@ async def main():
         scheduled_transmitter=scheduled_transmitter,
         update_checker=update_checker,
         gps_manager=gps_manager,
+        mqtt_state=mqtt_state,
         app_version=APP_VERSION,
+        shutdown_event=shutdown_event,
     )
 
     # ── Start background tasks ──────────────────────────────────────
@@ -408,6 +422,7 @@ async def main():
     tasks.append(asyncio.create_task(gps_manager.run_serial_nmea()))
     tasks.append(asyncio.create_task(gps_manager.run_tcp_nmea()))
     tasks.append(asyncio.create_task(gps_manager.run_udp_nmea()))
+    tasks.append(asyncio.create_task(gps_manager.run_gpsd()))
 
     # Beacon loop always runs — it re-reads interval from config each iteration
     # so changes via the web UI apply live (interval=0 means disabled, loop sleeps)
@@ -443,7 +458,6 @@ async def main():
 
     # ── System tray icon ────────────────────────────────────────────
 
-    shutdown_event = asyncio.Event()
     tray_icon = _start_tray(url, shutdown_event, asyncio.get_event_loop())
 
     print(f"\n  APRS PropView running at {url}")
@@ -465,8 +479,8 @@ async def main():
         logger.info("Shutting down...")
         for task in tasks:
             task.cancel()
-        if mqtt_publisher:
-            await mqtt_publisher.close()
+        if mqtt_state.get("publisher"):
+            await mqtt_state["publisher"].close()
         if aprs_is:
             await aprs_is.close()
         for iface in handler.rf_interfaces:

@@ -8,8 +8,8 @@
 <meta name="theme-color" content="#0d1117">
 <title>APRS PropView Mobile</title>
 <link rel="icon" type="image/x-icon" href="/static/ico/favicon.ico">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
+<script defer src="/static/vendor/leaflet/leaflet.js"></script>
 <script defer src="/static/js/icons.js"></script>
 <style>
 :root {
@@ -63,7 +63,7 @@ html, body {
 .m-header .is-chip.offline .value { color: var(--accent-red); }
 .m-quick-actions {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 8px;
     padding: 8px 10px;
     background: var(--bg-card);
@@ -173,9 +173,86 @@ html, body {
 }
 .msg-filter-bar select { color: var(--text); max-width: 120px; }
 .msg-filter-bar button.active { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
+.msg-conversations {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 8px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    -webkit-overflow-scrolling: touch;
+}
+.msg-conv-card {
+    min-width: 118px;
+    max-width: 160px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-card);
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+}
+.msg-conv-card.active {
+    border-color: var(--accent-blue);
+    background: rgba(88,166,255,0.12);
+}
+.msg-conv-card.unread {
+    border-color: rgba(248,81,73,0.6);
+}
+.msg-conv-card .call {
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.msg-conv-card .preview {
+    color: var(--text-muted);
+    font-size: 11px;
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.msg-thread-header {
+    padding: 8px 10px;
+    background: rgba(88,166,255,0.08);
+    border-bottom: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 12px;
+    flex-shrink: 0;
+}
+.msg-thread-header strong { color: var(--text); }
 
 /* ── Map ────────────────────────────────── */
 #m-map { flex: 1; }
+.m-map-tab { position: relative; }
+.m-map-tools {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 500;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    max-width: calc(100% - 72px);
+}
+.m-map-tools button {
+    background: rgba(22,27,34,0.92);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 7px 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
+.m-map-tools button.active {
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
+}
 .aprs-icon-wrapper { background: transparent !important; border: none !important; }
 .aprs-sprite { display: inline-block; image-rendering: pixelated; image-rendering: -moz-crisp-edges; vertical-align: middle; flex-shrink: 0; }
 .aprs-emoji-fallback { display: inline-block; text-align: center; vertical-align: middle; }
@@ -194,6 +271,17 @@ html, body {
 .popup-rf { color: var(--accent-red); }
 .popup-is { color: var(--accent-blue); }
 .popup-detail { font-size: 12px; line-height: 1.5; color: var(--text-muted); }
+.popup-actions { margin-top: 8px; display: flex; gap: 6px; }
+.popup-action-btn {
+    background: var(--accent-blue);
+    border: 0;
+    border-radius: 6px;
+    color: #fff;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 7px 10px;
+}
 
 /* ── Stations ───────────────────────────── */
 .station-section { padding: 8px; }
@@ -284,6 +372,7 @@ html, body {
     <div class="m-quick-actions">
         <button type="button" data-quick-tab="mtab-messages">Messages<span class="qa-badge" id="m-qa-msg-badge">0</span></button>
         <button type="button" data-quick-tab="mtab-map">Map</button>
+        <button type="button" id="m-btn-lines" class="active">Lines</button>
         <button type="button" id="m-btn-center">Center Me</button>
         <button type="button" id="m-btn-gps">Share GPS</button>
         <button type="button" data-quick-tab="mtab-stations">Stations</button>
@@ -304,6 +393,8 @@ html, body {
                 </select>
                 <button id="m-btn-refresh" type="button" title="Refresh messages and weather">Refresh</button>
             </div>
+            <div class="msg-conversations" id="m-msg-conversations"></div>
+            <div class="msg-thread-header" id="m-msg-thread-header">Select a conversation.</div>
             <div class="msg-list" id="m-msg-list"><div class="msg-empty">No messages yet.</div></div>
             <div class="msg-compose">
                 <input type="text" id="m-msg-to" placeholder="TO CALL" maxlength="9" title="Station, APRS addressee, or bot such as WXBOT" autocomplete="off" autocapitalize="characters">
@@ -313,7 +404,14 @@ html, body {
         </div>
 
         <!-- Map -->
-        <div class="m-tab" id="mtab-map"><div id="m-map"></div></div>
+        <div class="m-tab m-map-tab" id="mtab-map">
+            <div class="m-map-tools">
+                <button id="m-map-lines" type="button" class="active">Lines</button>
+                <button id="m-map-theme" type="button">Light</button>
+                <button id="m-map-fit" type="button">Fit</button>
+            </div>
+            <div id="m-map"></div>
+        </div>
 
         <!-- Stations -->
         <div class="m-tab" id="mtab-stations">
@@ -359,6 +457,7 @@ html, body {
                     <strong>Wicker Made, LLC</strong><br>
                     <a href="mailto:madebywicker@gmail.com">madebywicker@gmail.com</a><br><br>
                     <a href="https://www.youtube.com/watch?v=OyX6RaNevUk&amp;t=76s" target="_blank" rel="noreferrer">Video Guide</a><br>
+                    <a href="/static/documentation.html" target="_blank" rel="noreferrer">HTML Documentation</a><br>
                     <a href="/" target="_blank">Open Desktop View</a>
                 </div>
             </div>
@@ -443,17 +542,18 @@ html, body {
 const MOBILE_TAB_KEY = 'pvMobileTab';
 const MOBILE_MSG_FILTER_KEY = 'pvMobileMsgFilter';
 const MOBILE_MSG_SORT_KEY = 'pvMobileMsgSort';
+const MOBILE_MAP_THEME_KEY = 'pvMobileMapTheme';
 
 const S = {
     ws: null, connected: false, myCall: '', messages: [], msgFilter: 'all', msgSort: 'asc',
     rfStations: {}, isStations: {},
     map: null, mapReady: false, rfMarkers: {}, isMarkers: {},
-    rfLayer: null, isLayer: null, myMarker: null, myPos: null, baseTileLayer: null,
+    rfLayer: null, isLayer: null, lineLayer: null, rfLines: {}, isLines: {}, myMarker: null, myPos: null, baseTileLayer: null,
     startTime: 0, ghostMinutes: 60, stationMeta: {},
     unreadCount: 0, activeTab: 'mtab-messages', propData: null,
-    messagesLoaded: false, stationsLoaded: false, replyContext: null,
+    messagesLoaded: false, stationsLoaded: false, replyContext: null, selectedConversation: '',
     aprsIsConnected: false, aprsIsVerified: false,
-    gpsWatchId: null, lastGpsPost: 0, config: null,
+    gpsWatchId: null, lastGpsPost: 0, config: null, showLines: true, mapTheme: 'dark',
 };
 
 // ── Helpers ────────────────────────────────────────────────
@@ -469,6 +569,32 @@ function timeAgo(ts) {
 }
 function fmtDist(km) { if (!km) return '--'; return (km * 0.621371).toFixed(1) + ' mi'; }
 function fmtTime(ts) { if (!ts) return ''; return new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+function normalizeCall(value) { return (value || '').trim().toUpperCase(); }
+function conversationCall(msg) {
+    const from = normalizeCall(msg.from);
+    const to = normalizeCall(msg.to);
+    if (msg.direction === 'tx') return to;
+    if (from && from !== S.myCall) return from;
+    return to === S.myCall ? from : to;
+}
+function messageKey(msg) {
+    const from = normalizeCall(msg.from);
+    const to = normalizeCall(msg.to);
+    if (msg.direction === 'tx' && msg.message_id) return `tx:${from}|${to}|${msg.message_id}`;
+    if (msg.message_id) return `rx:${from}|${to}|${msg.message_id}`;
+    return `${msg.direction || 'rx'}:${from}|${to}|${msg.text || ''}|${msg.timestamp || ''}`;
+}
+function upsertMessage(msg) {
+    if (!msg) return false;
+    const key = messageKey(msg);
+    const idx = S.messages.findIndex(m => messageKey(m) === key);
+    if (idx >= 0) {
+        S.messages[idx] = { ...S.messages[idx], ...msg };
+        return false;
+    }
+    S.messages.unshift(msg);
+    return true;
+}
 function syncQuickActions() {
     document.querySelectorAll('.m-quick-actions button[data-quick-tab]').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.quickTab === S.activeTab);
@@ -551,7 +677,14 @@ async function sendMsg() {
             body: JSON.stringify({ to, text, reply_source: replySource || undefined }),
         });
         const j = await r.json();
-        if (j.success) { $('m-msg-text').value = ''; S.replyContext = null; $('m-msg-text').focus(); }
+        if (j.success) {
+            S.selectedConversation = to;
+            if (j.message) upsertMessage(j.message);
+            $('m-msg-text').value = '';
+            S.replyContext = null;
+            renderMessages();
+            $('m-msg-text').focus();
+        }
         else alert(j.message || 'Send failed');
     } catch { alert('Network error'); }
     finally { $('m-btn-send').disabled = false; }
@@ -567,6 +700,14 @@ $('m-msg-list').addEventListener('click', e => {
         source: bub.dataset.replySource || '',
     };
     $('m-msg-text').focus();
+});
+
+$('m-msg-conversations').addEventListener('click', e => {
+    const card = e.target.closest('.msg-conv-card');
+    if (!card) return;
+    S.selectedConversation = normalizeCall(card.dataset.call);
+    $('m-msg-to').value = S.selectedConversation;
+    renderMessages();
 });
 
 // ── Render messages ────────────────────────────────────────
@@ -600,6 +741,98 @@ function renderMessages() {
             if (m.acked) ackHtml = '<span class="ack-icon">✓</span>';
             else if (m.rejected) ackHtml = '<span class="rej-icon">✗</span>';
             else ackHtml = '⏳';
+        }
+        const src = m.source === 'rf' ? 'RF' : (m.source === 'aprs_is' ? 'IS' : (m.source === 'both' ? 'RF+IS' : 'TX'));
+        const replyCall = !isTx ? (m.from || '') : '';
+        const replySource = !isTx ? (m.source || '') : '';
+        return `<div class="msg-bubble ${isTx ? 'tx' : 'rx'}" data-reply-call="${escHtml(replyCall)}" data-reply-source="${escHtml(replySource)}">
+            <div class="from">${escHtml(m.from || '?')} → ${escHtml(m.to || '?')}</div>
+            ${escHtml(m.text || '')}
+            <div class="meta"><span>${fmtTime(m.timestamp)}</span><span>${src}</span>${ackHtml}</div>
+        </div>`;
+    }).join('');
+    list.scrollTop = S.msgSort === 'asc' ? list.scrollHeight : 0;
+}
+
+function filteredMessages() {
+    let msgs = S.messages;
+    if (S.msgFilter === 'mine') msgs = msgs.filter(m => normalizeCall(m.from) === S.myCall || normalizeCall(m.to) === S.myCall);
+    else if (S.msgFilter === 'rx') msgs = msgs.filter(m => m.direction === 'rx');
+    else if (S.msgFilter === 'tx') msgs = msgs.filter(m => m.direction === 'tx');
+    return msgs;
+}
+
+function buildConversations(msgs) {
+    const convs = new Map();
+    for (const msg of msgs) {
+        const call = conversationCall(msg);
+        if (!call) continue;
+        const current = convs.get(call) || { call, messages: [], newest: 0, unread: 0 };
+        current.messages.push(msg);
+        current.newest = Math.max(current.newest, Number(msg.timestamp || 0));
+        if (msg.direction === 'rx' && normalizeCall(msg.to) === S.myCall) current.unread += 1;
+        convs.set(call, current);
+    }
+    return [...convs.values()].sort((a, b) => b.newest - a.newest);
+}
+
+function renderConversations(convs) {
+    const strip = $('m-msg-conversations');
+    if (!strip) return;
+    if (!convs.length) {
+        strip.innerHTML = '';
+        S.selectedConversation = '';
+        return;
+    }
+    if (!S.selectedConversation || !convs.some(c => c.call === S.selectedConversation)) {
+        S.selectedConversation = convs[0].call;
+    }
+    strip.innerHTML = convs.map(c => {
+        const latest = [...c.messages].sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0))[0] || {};
+        return `<button type="button" class="msg-conv-card ${c.call === S.selectedConversation ? 'active' : ''} ${c.unread ? 'unread' : ''}" data-call="${escHtml(c.call)}">
+            <div class="call">${escHtml(c.call)}${c.unread ? ` (${c.unread})` : ''}</div>
+            <div class="preview">${escHtml(latest.text || '')}</div>
+        </button>`;
+    }).join('');
+}
+
+function renderMessages() {
+    const list = $('m-msg-list');
+    const header = $('m-msg-thread-header');
+    const msgs = filteredMessages();
+    const convs = buildConversations(msgs);
+    renderConversations(convs);
+
+    if (!msgs.length) {
+        if (header) header.textContent = 'No conversation selected.';
+        if (!S.messagesLoaded) {
+            list.innerHTML = '<div class="m-empty"><div class="title">Loading messages</div><div class="copy">Checking recent APRS message history and waiting for live traffic.</div></div>';
+            return;
+        }
+        const copy = S.connected
+            ? 'Send a message or wait for incoming APRS traffic.'
+            : 'The live connection is offline. Messages will refresh after reconnect.';
+        list.innerHTML = `<div class="m-empty"><div class="title">No messages yet</div><div class="copy">${copy}</div></div>`;
+        return;
+    }
+
+    const thread = msgs.filter(m => conversationCall(m) === S.selectedConversation);
+    if (header) {
+        const count = thread.length;
+        header.innerHTML = `<strong>${escHtml(S.selectedConversation || 'Conversation')}</strong> &middot; ${count} message${count === 1 ? '' : 's'}`;
+    }
+
+    const sorted = [...thread].sort((a, b) => {
+        const diff = Number(a.timestamp || 0) - Number(b.timestamp || 0);
+        return S.msgSort === 'desc' ? -diff : diff;
+    });
+    list.innerHTML = sorted.map(m => {
+        const isTx = m.direction === 'tx';
+        let ackHtml = '';
+        if (isTx) {
+            if (m.acked) ackHtml = '<span class="ack-icon">✓</span>';
+            else if (m.rejected) ackHtml = '<span class="rej-icon">×</span>';
+            else ackHtml = '…';
         }
         const src = m.source === 'rf' ? 'RF' : (m.source === 'aprs_is' ? 'IS' : (m.source === 'both' ? 'RF+IS' : 'TX'));
         const replyCall = !isTx ? (m.from || '') : '';
@@ -658,6 +891,7 @@ function initMap() {
     if (tileCfg.url.includes('{s}')) tileOpts.subdomains = tileCfg.subdomains;
     S.baseTileLayer = L.tileLayer(tileCfg.url, tileOpts).addTo(S.map);
 
+    S.lineLayer = L.layerGroup().addTo(S.map);
     S.rfLayer = L.layerGroup().addTo(S.map);
     S.isLayer = L.layerGroup().addTo(S.map);
 
@@ -667,9 +901,10 @@ function initMap() {
         }).addTo(S.map).bindPopup(`<b style="color:#3fb950">${escHtml(S.myCall)}</b><br>My Station`);
     }
 
+    S.mapReady = true;
     for (const st of Object.values(S.rfStations)) addMapMarker(st);
     for (const st of Object.values(S.isStations)) addMapMarker(st);
-    S.mapReady = true;
+    redrawAllLines();
 }
 
 function getMapTileConfig() {
@@ -682,6 +917,14 @@ function getMapTileConfig() {
             subdomains: 'abc',
         };
     }
+    if (S.mapTheme === 'light') {
+        return {
+            url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+            attribution: '&copy; OpenStreetMap contributors',
+            maxZoom: 19,
+            subdomains: 'abc',
+        };
+    }
     return {
         url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
         attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
@@ -689,6 +932,96 @@ function getMapTileConfig() {
         subdomains: 'abcd',
     };
 }
+
+function updateMapThemeButton() {
+    const btn = $('m-map-theme');
+    if (!btn) return;
+    const customTiles = !!(S.config?.web?.map_tile_source === 'custom' && S.config?.web?.map_tile_url);
+    btn.textContent = S.mapTheme === 'light' ? 'Dark' : 'Light';
+    btn.title = customTiles ? 'Custom tile source is configured; theme toggle uses default tiles only.' : 'Toggle mobile map light/dark tiles';
+}
+
+function applyMobileMapTheme() {
+    updateMapThemeButton();
+    if (!S.mapReady || !S.map) return;
+    const tileCfg = getMapTileConfig();
+    const tileOpts = {
+        maxZoom: tileCfg.maxZoom,
+        attribution: tileCfg.attribution,
+    };
+    if (tileCfg.url.includes('{s}')) tileOpts.subdomains = tileCfg.subdomains;
+    if (S.baseTileLayer) S.map.removeLayer(S.baseTileLayer);
+    S.baseTileLayer = L.tileLayer(tileCfg.url, tileOpts).addTo(S.map);
+    if (S.lineLayer) S.lineLayer.bringToFront();
+    if (S.rfLayer) S.rfLayer.bringToFront();
+    if (S.isLayer) S.isLayer.bringToFront();
+}
+
+function toggleMobileMapTheme() {
+    S.mapTheme = S.mapTheme === 'light' ? 'dark' : 'light';
+    localStorage.setItem(MOBILE_MAP_THEME_KEY, S.mapTheme);
+    applyMobileMapTheme();
+}
+
+function lineColorFor(st) {
+    if (st.source !== 'rf') return '#58a6ff';
+    const km = Number(st.distance_km || 0);
+    if (km > 200) return '#bc8cff';
+    if (km > 100) return '#3fb950';
+    if (km > 50) return '#d29922';
+    return '#f85149';
+}
+
+function updateStationLine(st) {
+    if (!S.mapReady || !S.lineLayer || !S.showLines || !S.myPos || !st.latitude || !st.longitude) return;
+    if (st.latitude === 0 && st.longitude === 0) return;
+    const source = st.source === 'rf' ? 'rf' : 'aprs_is';
+    const lines = source === 'rf' ? S.rfLines : S.isLines;
+    const key = st.callsign;
+    const opts = {
+        color: lineColorFor(st),
+        weight: source === 'rf' ? 2.5 : 1.5,
+        opacity: source === 'rf' ? 0.72 : 0.38,
+        dashArray: source === 'rf' ? null : '4 7',
+        interactive: false,
+    };
+    const points = [S.myPos, [st.latitude, st.longitude]];
+    if (lines[key]) {
+        lines[key].setLatLngs(points);
+        lines[key].setStyle(opts);
+    } else {
+        lines[key] = L.polyline(points, opts).addTo(S.lineLayer);
+    }
+}
+
+function redrawAllLines() {
+    if (!S.lineLayer) return;
+    S.lineLayer.clearLayers();
+    S.rfLines = {};
+    S.isLines = {};
+    if (!S.showLines) return;
+    Object.values(S.rfStations).forEach(updateStationLine);
+    Object.values(S.isStations).forEach(updateStationLine);
+}
+
+function setLinesVisible(show) {
+    S.showLines = !!show;
+    $('m-btn-lines')?.classList.toggle('active', S.showLines);
+    $('m-map-lines')?.classList.toggle('active', S.showLines);
+    redrawAllLines();
+}
+
+function startMessageTo(call, source = '') {
+    const dest = normalizeCall(call);
+    if (!dest) return;
+    S.selectedConversation = dest;
+    $('m-msg-to').value = dest;
+    S.replyContext = source ? { to: dest, source } : null;
+    activateTab('mtab-messages');
+    renderMessages();
+    setTimeout(() => $('m-msg-text')?.focus(), 80);
+}
+window.startMessageTo = startMessageTo;
 
 function addMapMarker(st) {
     if (!st.latitude || !st.longitude) return;
@@ -715,7 +1048,10 @@ function addMapMarker(st) {
     const popup = `<div class="popup-call ${srcClass}">${escHtml(call)}</div>
         <div class="popup-detail">Source: ${srcLabel}<br>Type: ${popSpr} ${escHtml(symN)}<br>
         Distance: ${fmtDist(st.distance_km)}<br>Last: ${fmtTime(st.last_heard)}<br>
-        Pkts: ${st.packet_count || 1}${st.last_comment ? '<br>' + escHtml(st.last_comment) : ''}</div>`;
+        Pkts: ${st.packet_count || 1}${st.last_path ? '<br>Path: ' + escHtml(st.last_path) : ''}${st.last_comment ? '<br>' + escHtml(st.last_comment) : ''}</div>
+        <div class="popup-actions">
+            <button type="button" class="popup-action-btn" onclick="startMessageTo('${escHtml(call)}', '${source}')">Send Message</button>
+        </div>`;
 
     if (markers[call]) {
         markers[call].setLatLng([st.latitude, st.longitude]).setPopupContent(popup).setIcon(icon);
@@ -723,12 +1059,15 @@ function addMapMarker(st) {
         markers[call] = L.marker([st.latitude, st.longitude], { icon }).bindPopup(popup).addTo(layer);
     }
     S.stationMeta[call] = { source, last_heard: st.last_heard || 0 };
+    updateStationLine(st);
 }
 
 function removeMapMarker(call, source) {
     const markers = source === 'rf' ? S.rfMarkers : S.isMarkers;
     const layer = source === 'rf' ? S.rfLayer : S.isLayer;
     if (markers[call] && layer) { layer.removeLayer(markers[call]); delete markers[call]; }
+    const lines = source === 'rf' ? S.rfLines : S.isLines;
+    if (lines[call] && S.lineLayer) { S.lineLayer.removeLayer(lines[call]); delete lines[call]; }
     delete S.stationMeta[call];
 }
 
@@ -786,6 +1125,23 @@ function refreshStationTimes() {
     document.querySelectorAll('.stn-time[data-last-heard]').forEach(el => {
         el.textContent = timeAgo(parseFloat(el.dataset.lastHeard || '0'));
     });
+}
+
+function fitMobileMap() {
+    if (!S.map) return;
+    const points = [];
+    if (S.myPos) points.push(S.myPos);
+    Object.values(S.rfStations).forEach(st => {
+        if (st.latitude && st.longitude && !(st.latitude === 0 && st.longitude === 0)) points.push([st.latitude, st.longitude]);
+    });
+    Object.values(S.isStations).forEach(st => {
+        if (st.latitude && st.longitude && !(st.latitude === 0 && st.longitude === 0)) points.push([st.latitude, st.longitude]);
+    });
+    if (points.length >= 2) {
+        S.map.fitBounds(L.latLngBounds(points), { padding: [28, 28], maxZoom: 11 });
+    } else if (points.length === 1) {
+        S.map.setView(points[0], 9);
+    }
 }
 
 // ── Propagation ────────────────────────────────────────────
@@ -936,7 +1292,8 @@ function connectWS() {
 
             case 'message':
                 if (msg.data) {
-                    S.messages.unshift(msg.data);
+                    upsertMessage(msg.data);
+                    if (!S.selectedConversation) S.selectedConversation = conversationCall(msg.data);
                     if (S.activeTab !== 'mtab-messages' && msg.data.direction === 'rx' && msg.data.to?.toUpperCase() === S.myCall) {
                         S.unreadCount++;
                         updateBadge();
@@ -1030,6 +1387,7 @@ function handleStatus(data) {
         } else if (S.mapReady && S.myMarker) {
             S.myMarker.setLatLng(S.myPos);
         }
+        if (S.mapReady) redrawAllLines();
     }
 }
 
@@ -1039,6 +1397,7 @@ function handleGpsStatus(gps) {
     if (S.mapReady && S.myMarker) {
         S.myMarker.setLatLng(S.myPos);
     }
+    if (S.mapReady) redrawAllLines();
 }
 
 function toggleMobileGps() {
@@ -1082,7 +1441,9 @@ async function init() {
     S.activeTab = localStorage.getItem(MOBILE_TAB_KEY) || S.activeTab;
     S.msgFilter = localStorage.getItem(MOBILE_MSG_FILTER_KEY) || S.msgFilter;
     S.msgSort = localStorage.getItem(MOBILE_MSG_SORT_KEY) || S.msgSort;
+    S.mapTheme = localStorage.getItem(MOBILE_MAP_THEME_KEY) === 'light' ? 'light' : 'dark';
     if ($('m-msg-sort')) $('m-msg-sort').value = S.msgSort;
+    updateMapThemeButton();
     syncMsgFilterButtons();
     try {
         const r = await fetch('/api/config');
@@ -1123,6 +1484,10 @@ $('m-btn-center').addEventListener('click', () => {
 });
 
 $('m-btn-gps').addEventListener('click', toggleMobileGps);
+$('m-btn-lines')?.addEventListener('click', () => setLinesVisible(!S.showLines));
+$('m-map-lines')?.addEventListener('click', () => setLinesVisible(!S.showLines));
+$('m-map-theme')?.addEventListener('click', toggleMobileMapTheme);
+$('m-map-fit')?.addEventListener('click', fitMobileMap);
 
 document.addEventListener('DOMContentLoaded', init);
 </script>

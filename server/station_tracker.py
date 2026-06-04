@@ -37,6 +37,7 @@ class StationTracker:
         self._analytics = None
         self._gps_manager = None
         self._mqtt_publisher = None
+        self._mqtt_max_distance_km: Optional[float] = None
 
     def set_alert_manager(self, alert_manager):
         """Inject the AlertManager instance for band-opening detection."""
@@ -211,6 +212,12 @@ class StationTracker:
         if source == "rf":
             is_first_heard = not await self.db.is_station_known(callsign, source)
 
+        previous_max_distance_km = None
+        if source == "rf" and distance_km is not None:
+            if self._mqtt_max_distance_km is None:
+                self._mqtt_max_distance_km = await self.db.get_max_rf_distance()
+            previous_max_distance_km = self._mqtt_max_distance_km
+
         # Update database
         station = await self.db.upsert_station(
             callsign=callsign,
@@ -285,6 +292,19 @@ class StationTracker:
                     "port_name": port_name,
                 },
             })
+            await self._publish_mqtt_event(self._station_event_payload(
+                event="first_heard",
+                callsign=callsign,
+                source=source,
+                distance_km=distance_km,
+                heading=heading,
+                latitude=packet.latitude,
+                longitude=packet.longitude,
+                path=packet.path,
+                port_name=port_name,
+                is_direct=is_direct,
+                hop_count=self._count_hops(packet.path) if source == "rf" else 0,
+            ))
             # Trigger first-heard alert if alert manager is available
             if self._alert_manager and distance_km and (source != "rf" or is_direct):
                 alert = await self._alert_manager.check_first_heard(
@@ -292,6 +312,28 @@ class StationTracker:
                 )
                 if alert:
                     await self._publish_mqtt_alert(alert)
+
+        if (
+            source == "rf"
+            and distance_km is not None
+            and previous_max_distance_km is not None
+            and distance_km > previous_max_distance_km
+        ):
+            self._mqtt_max_distance_km = distance_km
+            await self._publish_mqtt_event(self._station_event_payload(
+                event="new_max_distance",
+                callsign=callsign,
+                source=source,
+                distance_km=distance_km,
+                heading=heading,
+                latitude=packet.latitude,
+                longitude=packet.longitude,
+                path=packet.path,
+                port_name=port_name,
+                is_direct=is_direct,
+                hop_count=self._count_hops(packet.path),
+                extra={"previous_distance_km": round(previous_max_distance_km, 1)},
+            ))
 
         await self.db.commit()
 
@@ -595,6 +637,48 @@ class StationTracker:
             await self._mqtt_publisher.publish_alert(alert)
         except Exception as e:
             logger.error(f"MQTT alert publish error: {e}")
+
+    def _station_event_payload(
+        self,
+        event: str,
+        callsign: str,
+        source: str,
+        distance_km: Optional[float],
+        heading: Optional[float],
+        latitude: Optional[float],
+        longitude: Optional[float],
+        path: str,
+        port_name: str,
+        is_direct: bool,
+        hop_count: int,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        payload = {
+            "event": event,
+            "timestamp": time.time(),
+            "callsign": callsign,
+            "source": source,
+            "distance_km": round(distance_km, 1) if distance_km is not None else None,
+            "heading": round(heading, 1) if heading is not None else None,
+            "latitude": latitude,
+            "longitude": longitude,
+            "path": path,
+            "port_name": port_name,
+            "is_direct": is_direct,
+            "hop_count": hop_count,
+        }
+        if extra:
+            payload.update(extra)
+        return payload
+
+    async def _publish_mqtt_event(self, event: Dict[str, Any]):
+        """Publish an automation event through the optional MQTT integration."""
+        if not self._mqtt_publisher:
+            return
+        try:
+            await self._mqtt_publisher.publish_event(event)
+        except Exception as e:
+            logger.error(f"MQTT event publish error: {e}")
 
     @staticmethod
     def _score_to_level(score: float) -> str:

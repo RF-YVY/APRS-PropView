@@ -234,7 +234,7 @@ symbol_table = "/"
 symbol_code = "_"
 
 [gps]
-# Sources: browser, self_packet, nmea_serial, nmea_tcp, nmea_udp, any
+# Sources: browser, self_packet, nmea_serial, nmea_tcp, nmea_udp, gpsd, any
 enabled = false
 source = "browser"
 map_update_enabled = true
@@ -246,6 +246,8 @@ tcp_host = "127.0.0.1"
 tcp_port = 10110
 udp_host = "0.0.0.0"
 udp_port = 10110
+gpsd_host = "127.0.0.1"
+gpsd_port = 2947
 
 [mqtt]
 enabled = false
@@ -254,3 +256,9 @@ port = 1883
 topic_prefix = "aprs/propview"
 username = ""
 password = ""
+# Publish retained Home Assistant MQTT Discovery config topics.
+discovery_enabled = false
+discovery_prefix = "homeassistant"
+device_name = "APRS PropView"
+# Keep this stable once Home Assistant discovers the entities.
+device_id = "aprs_propview"

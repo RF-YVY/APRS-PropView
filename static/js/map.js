@@ -137,12 +137,17 @@ class PropViewMap {
         if (source === 'custom' && config?.map_tile_url) {
             return {
                 map_tile_source: 'custom',
-                map_tile_url: config.map_tile_url,
+                map_tile_url: '/api/map-tiles/{z}/{x}/{y}',
+                upstream_tile_url: config.map_tile_url,
                 map_tile_attribution: config.map_tile_attribution || '',
                 map_tile_max_zoom: parseInt(config.map_tile_max_zoom, 10) || defaults.map_tile_max_zoom,
             };
         }
-        return defaults;
+        return {
+            ...defaults,
+            map_tile_url: '/api/map-tiles/{z}/{x}/{y}',
+            upstream_tile_url: defaults.map_tile_url,
+        };
     }
 
     async _loadMapTileConfig() {
@@ -164,7 +169,7 @@ class PropViewMap {
         if (
             this.baseTileLayer &&
             prev.map_tile_source === next.map_tile_source &&
-            prev.map_tile_url === next.map_tile_url &&
+            prev.upstream_tile_url === next.upstream_tile_url &&
             prev.map_tile_attribution === next.map_tile_attribution &&
             prev.map_tile_max_zoom === next.map_tile_max_zoom
         ) {
@@ -1454,6 +1459,10 @@ class PropViewMap {
             e.target.classList.toggle('active', active);
         });
 
+        document.getElementById('btn-cache-map')?.addEventListener('click', (e) => {
+            this.cacheCurrentView(e.currentTarget);
+        });
+
         // Station type filter — multi-select checkboxes
         this._initTypeFilterCheckboxes();
 
@@ -1540,6 +1549,64 @@ class PropViewMap {
         this.map.getContainer().classList.toggle('dark-tiles', this.darkMode);
         this._saveUIState();
         return this.darkMode;
+    }
+
+    async cacheCurrentView(button) {
+        if (!this.map) return;
+        const bounds = this.map.getBounds();
+        const zoom = this.map.getZoom();
+        const btn = button || document.getElementById('btn-cache-map');
+        const original = btn?.textContent || 'Cache';
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = '...';
+            btn.title = 'Caching visible map tiles';
+        }
+        try {
+            const resp = await fetch('/api/map-tiles/cache-current-view', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    zoom,
+                    min_zoom: zoom,
+                    max_zoom: zoom,
+                    bounds: {
+                        north: bounds.getNorth(),
+                        south: bounds.getSouth(),
+                        east: bounds.getEast(),
+                        west: bounds.getWest(),
+                    },
+                }),
+            });
+            const result = await resp.json();
+            if (!resp.ok || !result.success) {
+                throw new Error(result.message || 'Tile cache failed.');
+            }
+            if (btn) {
+                btn.textContent = 'Done';
+                btn.title = `Cached ${result.downloaded + result.cached}/${result.requested} visible tiles`;
+            }
+            setTimeout(() => {
+                if (btn) {
+                    btn.textContent = original;
+                    btn.title = 'Cache visible map tiles for offline use';
+                }
+            }, 2500);
+        } catch (error) {
+            console.error('Map tile cache failed:', error);
+            if (btn) {
+                btn.textContent = 'Fail';
+                btn.title = error.message || 'Tile cache failed';
+            }
+            setTimeout(() => {
+                if (btn) {
+                    btn.textContent = original;
+                    btn.title = 'Cache visible map tiles for offline use';
+                }
+            }, 3500);
+        } finally {
+            if (btn) btn.disabled = false;
+        }
     }
 
     /**

@@ -23,7 +23,7 @@
     </script>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css" />
-    <link rel="stylesheet" href="/static/css/style.css?v=1.5.5.2" />
+    <link rel="stylesheet" href="/static/css/style.css?v=1.5.6.0" />
     <!-- Leaflet JS -->
     <script defer src="/static/vendor/leaflet/leaflet.js"></script>
 </head>
@@ -150,6 +150,7 @@
                 <button id="btn-toggle-theme" title="Toggle light/dark map" class="active">🌙</button>
                 <button id="btn-toggle-labels" title="Toggle station callsign labels">🏷️</button>
                 <button id="btn-toggle-autofit" title="Auto-zoom to fit all stations">⛶</button>
+                <button id="btn-cache-map" title="Cache visible map tiles for offline use">Cache</button>
                 <div class="map-control-divider"></div>
                 <select id="line-time-filter" title="Filter lines by time">
                     <option value="1">1h lines</option>
@@ -747,6 +748,7 @@
                                 <option value="nmea_serial">NMEA serial GPS</option>
                                 <option value="nmea_tcp">NMEA TCP stream</option>
                                 <option value="nmea_udp">NMEA UDP listener</option>
+                                <option value="gpsd">gpsd daemon</option>
                                 <option value="any">Any source</option>
                             </select>
                         </div>
@@ -795,6 +797,14 @@
                         <div class="settings-row gps-source-setting gps-source-nmea_udp">
                             <label for="cfg-gps-udp-port">GPS UDP Port</label>
                             <input type="number" id="cfg-gps-udp-port" min="1" max="65535" step="1" placeholder="10110">
+                        </div>
+                        <div class="settings-row gps-source-setting gps-source-gpsd">
+                            <label for="cfg-gps-gpsd-host">gpsd Host</label>
+                            <input type="text" id="cfg-gps-gpsd-host" placeholder="127.0.0.1">
+                        </div>
+                        <div class="settings-row gps-source-setting gps-source-gpsd">
+                            <label for="cfg-gps-gpsd-port">gpsd Port</label>
+                            <input type="number" id="cfg-gps-gpsd-port" min="1" max="65535" step="1" placeholder="2947">
                         </div>
                         <div class="settings-row">
                             <label>Station Icon</label>
@@ -1671,10 +1681,26 @@
                             <input type="password" id="cfg-mqtt-pass" placeholder="(optional)">
                         </div>
                         <div class="settings-row">
+                            <label for="cfg-mqtt-discovery">Home Assistant Discovery</label>
+                            <input type="checkbox" id="cfg-mqtt-discovery">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-mqtt-discovery-prefix">Discovery Prefix</label>
+                            <input type="text" id="cfg-mqtt-discovery-prefix" placeholder="homeassistant">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-mqtt-device-name">Device Name</label>
+                            <input type="text" id="cfg-mqtt-device-name" placeholder="APRS PropView">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-mqtt-device-id">Device ID</label>
+                            <input type="text" id="cfg-mqtt-device-id" placeholder="aprs_propview">
+                        </div>
+                        <div class="settings-row">
                             <label></label>
                             <button type="button" class="btn-small" id="btn-mqtt-guide">Open MQTT Setup Guide</button>
                         </div>
-                        <p class="settings-note">PropView publishes to an MQTT broker. Home Assistant, Node-RED, and dashboards usually subscribe to that broker rather than receiving MQTT directly from PropView.</p>
+                        <p class="settings-note">PropView publishes to an MQTT broker. MQTT reconnects after saving connection or discovery changes and republishes Home Assistant Discovery config topics.</p>
                     </div>
 
                     <div class="settings-actions">
@@ -1689,7 +1715,7 @@
                 <div class="about-panel">
                     <div class="about-header">
                         <h2>APRS PropView</h2>
-                        <span id="about-version" class="about-version">v1.5.5.2</span>
+                        <span id="about-version" class="about-version">v1.5.6.0</span>
                     </div>
                     <div class="about-section">
                         <p>A real-time APRS digipeater and IGate focused on VHF propagation, live mapping, APRS messaging, analytics, and weather-aware situational awareness.</p>
@@ -1705,9 +1731,9 @@
                     </div>
                     <div class="about-section">
                         <h3>Build Info</h3>
-                        <p>Version: <span id="about-version-detail">1.5.5.2</span></p>
-                        <p>Release Date: <span id="about-date">June 2, 2026</span></p>
-                        <p>Highlights: packet digipeat filtering and sort order, moving-station map cleanup across RF/APRS-IS, NWS alert polygon fallback geometry, and weather alert banner layering fixes.</p>
+                        <p>Version: <span id="about-version-detail">1.5.6.0</span></p>
+                        <p>Release Date: <span id="about-date">June 4, 2026</span></p>
+                        <p>Highlights: Windows setup installer and in-app update handoff, platform-aware update UX, Home Assistant MQTT Discovery/events, gpsd ingestion, visible-map tile caching, and macOS build/run documentation.</p>
                     </div>
                     <div class="about-section">
                         <h3>Video Guide</h3>
@@ -1719,6 +1745,7 @@
                         <p id="about-update-detail" class="about-update-detail"></p>
                         <div class="about-update-actions">
                             <button id="btn-check-updates" class="btn-primary about-update-btn">Check Now</button>
+                            <button id="btn-install-update" class="btn-primary about-update-btn" style="display:none;">Install Update</button>
                             <a id="about-update-link" href="https://github.com/RF-YVY/APRS-PropView/releases" target="_blank" class="about-link" rel="noreferrer">Open Releases</a>
                         </div>
                     </div>
@@ -1738,8 +1765,9 @@
                             </section>
                         </form>
                     </div>
-                    <div class="about-section" style="text-align:center;margin-top:12px;">
-                        <button id="btn-open-help" class="btn-primary" style="font-size:14px;padding:10px 28px;">📖 Help &amp; User Guide</button>
+                    <div class="about-section about-doc-actions">
+                        <a href="/static/documentation.html" target="_blank" rel="noreferrer" class="btn-primary about-doc-btn">Full HTML Documentation</a>
+                        <button id="btn-open-help" class="btn-primary about-doc-btn">📖 Help &amp; User Guide</button>
                     </div>
                     <div class="about-section" style="text-align:center;margin-top:16px;">
             <img src="/static/img/header.webp" alt="APRS PropView" style="width:350px;height:90px;object-fit:contain;border-radius:6px;" loading="lazy" decoding="async">
@@ -1877,7 +1905,7 @@
                         <tr><td>Search</td><td><b>Callsign Search</b> — Enter a callsign to jump to that station marker on the map.</td></tr>
                     </table>
                     <p>Weather radar and NWS polygons are managed from Settings - Weather. All map toggle states, zoom level, position, and filter selections are saved automatically and persist across restarts. Expanded weather alert banners rise above map controls and scroll when alert text is long.</p>
-                    <p>Application update checks are managed from Settings - Web Interface. You can disable release checks entirely or choose how often the app rechecks GitHub while it stays running.</p>
+                    <p>Application update checks are managed from Settings - Web Interface. You can disable release checks entirely or choose how often the app rechecks GitHub while it stays running. Windows setup installs can download and launch newer setup installers from the About tab; Linux, Raspberry Pi, and macOS installs show release notices without the Windows-only installer button.</p>
                 </section>
 
                 <section class="help-section">
@@ -1931,6 +1959,7 @@
                         <li><b>NMEA serial GPS</b> - Reads NMEA GPS sentences from a local serial port such as a USB GPS puck, GPS-enabled TNC, or serial feed from another device.</li>
                         <li><b>NMEA TCP stream</b> - Connects to a TCP host/port that provides NMEA sentences. Use this with network GPS bridges, companion software, or devices that expose GPS over TCP.</li>
                         <li><b>NMEA UDP listener</b> - Listens for NMEA sentences sent to the configured UDP bind address and port. Use this when another app or device broadcasts GPS updates over the LAN.</li>
+                        <li><b>gpsd daemon</b> - Connects to a local or network gpsd service and consumes JSON TPV fixes. On most Linux/Pi systems gpsd listens on <code>127.0.0.1:2947</code>.</li>
                         <li><b>Any source</b> - Accepts the latest valid GPS fix from any supported source. This is useful for testing, mixed mobile/base setups, or fallback workflows, but selecting a specific source gives clearer status messages when a device is missing.</li>
                     </ul>
                     <p><b>Move my map marker from GPS</b> controls whether the live GPS fix moves your station marker on the map. <b>Update station latitude/longitude</b> also writes the live coordinates into Settings when unlocked; save the configuration if you want those coordinates kept after restart.</p>
@@ -1975,7 +2004,7 @@
                     <h4>MQTT Integration</h4>
                     <p>MQTT is for sending APRS PropView events and propagation status to other systems. It is not needed for normal APRS, digipeater, IGate, mapping, or messaging operation; enable it when you have an MQTT broker such as Mosquitto, Home Assistant, Node-RED, EMQX, or another dashboard/automation system that should receive PropView data.</p>
                     <p>Common use cases include showing current propagation level on a wall dashboard, triggering Home Assistant or Node-RED automations when a band opening alert fires, logging propagation metrics into another time-series system, or bridging PropView status to a shack display without scraping the web UI.</p>
-                    <p>Configure the broker host, port, topic prefix, and optional username/password. The default topic prefix is <code>aprs/propview</code>. APRS PropView publishes retained propagation metrics on <code>aprs/propview/propagation</code>, retained summary values on <code>aprs/propview/score</code> and <code>aprs/propview/level</code>, and alert events on <code>aprs/propview/alert</code>.</p>
+                    <p>Configure the broker host, port, topic prefix, and optional username/password. The default topic prefix is <code>aprs/propview</code>. APRS PropView publishes retained propagation metrics on <code>aprs/propview/propagation</code>, retained summary values on <code>aprs/propview/score</code> and <code>aprs/propview/level</code>, and alert events on <code>aprs/propview/alert</code>. MQTT reconnects live after saving settings.</p>
                 </section>
 
                 <section class="help-section">
@@ -2004,12 +2033,12 @@
 
     <!-- ── Scripts ────────────────────────────────────────────── -->
     <script defer src="/static/js/websocket.js"></script>
-    <script defer src="/static/js/map.js?v=1.5.5.2"></script>
-    <script defer src="/static/js/stations.js?v=1.5.5.2"></script>
+    <script defer src="/static/js/map.js?v=1.5.6.0"></script>
+    <script defer src="/static/js/stations.js?v=1.5.6.0"></script>
     <script defer src="/static/js/icons.js"></script>
-    <script defer src="/static/js/analytics.js?v=1.5.5.2"></script>
-    <script defer src="/static/js/messages.js?v=1.5.5.2"></script>
-    <script defer src="/static/js/weather.js?v=1.5.5.2"></script>
-    <script defer src="/static/js/app.js?v=1.5.5.2"></script>
+    <script defer src="/static/js/analytics.js?v=1.5.6.0"></script>
+    <script defer src="/static/js/messages.js?v=1.5.6.0"></script>
+    <script defer src="/static/js/weather.js?v=1.5.6.0"></script>
+    <script defer src="/static/js/app.js?v=1.5.6.0"></script>
 </body>
 </html>

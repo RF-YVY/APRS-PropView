@@ -4,6 +4,7 @@ import csv
 import io
 import json
 import logging
+import re
 import time
 import asyncio
 from typing import Dict, Any, List, Optional
@@ -68,12 +69,19 @@ class MQTTPublisher:
     """Publishes propagation data to an MQTT broker."""
 
     def __init__(self, host: str, port: int = 1883, topic_prefix: str = "aprs/propview",
-                 username: str = "", password: str = ""):
+                 username: str = "", password: str = "", discovery_enabled: bool = False,
+                 discovery_prefix: str = "homeassistant", device_name: str = "APRS PropView",
+                 device_id: str = "aprs_propview"):
         self.host = host
         self.port = port
         self.topic_prefix = topic_prefix.rstrip("/")
         self.username = username
         self.password = password
+        self.discovery_enabled = discovery_enabled
+        self.discovery_prefix = (discovery_prefix or "homeassistant").strip().strip("/")
+        self.device_name = (device_name or "APRS PropView").strip()
+        self.device_id = self._slugify(device_id or self.device_name)
+        self.availability_topic = f"{self.topic_prefix}/status"
         self._client = None
         self._connected = False
 
@@ -89,11 +97,13 @@ class MQTTPublisher:
         self._client = mqtt.Client(client_id="aprs-propview", protocol=mqtt.MQTTv311)
         if self.username:
             self._client.username_pw_set(self.username, self.password)
+        self._client.will_set(self.availability_topic, "offline", qos=0, retain=True)
 
         def on_connect(client, userdata, flags, rc):
             if rc == 0:
                 self._connected = True
                 logger.info(f"MQTT connected to {self.host}:{self.port}")
+                client.publish(self.availability_topic, "online", qos=0, retain=True)
             else:
                 logger.error(f"MQTT connection failed: rc={rc}")
 
@@ -112,10 +122,107 @@ class MQTTPublisher:
             self._client.loop_start()
             # Wait briefly for connection
             await asyncio.sleep(1)
+            if self._connected and self.discovery_enabled:
+                await self.publish_home_assistant_discovery()
             return self._connected
         except Exception as e:
             logger.error(f"MQTT connect error: {e}")
             return False
+
+    @staticmethod
+    def _slugify(value: str) -> str:
+        slug = re.sub(r"[^a-z0-9_]+", "_", (value or "").strip().lower().replace("-", "_"))
+        return slug.strip("_") or "aprs_propview"
+
+    def _device_payload(self) -> Dict[str, Any]:
+        return {
+            "identifiers": [self.device_id],
+            "name": self.device_name,
+            "manufacturer": "APRS PropView",
+            "model": "APRS propagation monitor",
+        }
+
+    def _discovery_payloads(self) -> Dict[str, Dict[str, Any]]:
+        state_topic = f"{self.topic_prefix}/propagation"
+        device = self._device_payload()
+        availability = {
+            "availability_topic": self.availability_topic,
+            "payload_available": "online",
+            "payload_not_available": "offline",
+        }
+        common = {
+            "device": device,
+            "state_topic": state_topic,
+            "json_attributes_topic": state_topic,
+            "availability_topic": availability["availability_topic"],
+            "payload_available": availability["payload_available"],
+            "payload_not_available": availability["payload_not_available"],
+        }
+
+        return {
+            "my_score": {
+                **common,
+                "name": "My Station Propagation Score",
+                "unique_id": f"{self.device_id}_my_score",
+                "value_template": "{{ value_json.my_score }}",
+                "icon": "mdi:radio-tower",
+                "unit_of_measurement": "%",
+                "state_class": "measurement",
+            },
+            "my_level": {
+                **common,
+                "name": "My Station Propagation Level",
+                "unique_id": f"{self.device_id}_my_level",
+                "value_template": "{{ value_json.my_level }}",
+                "icon": "mdi:signal",
+            },
+            "regional_score": {
+                **common,
+                "name": "Regional Propagation Score",
+                "unique_id": f"{self.device_id}_regional_score",
+                "value_template": "{{ value_json.regional_score }}",
+                "icon": "mdi:radio-tower",
+                "unit_of_measurement": "%",
+                "state_class": "measurement",
+            },
+            "regional_level": {
+                **common,
+                "name": "Regional Propagation Level",
+                "unique_id": f"{self.device_id}_regional_level",
+                "value_template": "{{ value_json.regional_level }}",
+                "icon": "mdi:signal",
+            },
+            "rf_stations_1h": {
+                **common,
+                "name": "RF Stations 1h",
+                "unique_id": f"{self.device_id}_rf_stations_1h",
+                "value_template": "{{ value_json.rf_stations_1h }}",
+                "icon": "mdi:access-point-network",
+                "unit_of_measurement": "stations",
+                "state_class": "measurement",
+            },
+            "max_distance_km": {
+                **common,
+                "name": "Max RF Distance",
+                "unique_id": f"{self.device_id}_max_distance_km",
+                "value_template": "{{ value_json.max_distance_km }}",
+                "icon": "mdi:map-marker-distance",
+                "unit_of_measurement": "km",
+                "state_class": "measurement",
+            },
+        }
+
+    async def publish_home_assistant_discovery(self):
+        """Publish Home Assistant MQTT Discovery configs for propagation sensors."""
+        if not self._client or not self._connected:
+            return
+        try:
+            for key, payload in self._discovery_payloads().items():
+                topic = f"{self.discovery_prefix}/sensor/{self.device_id}/{key}/config"
+                self._client.publish(topic, json.dumps(payload), qos=0, retain=True)
+            logger.info("MQTT Home Assistant discovery published for device %s", self.device_id)
+        except Exception as e:
+            logger.error(f"MQTT discovery publish error: {e}")
 
     async def publish_propagation(self, prop_data: Dict[str, Any]):
         """Publish current propagation score and metrics."""
@@ -149,6 +256,18 @@ class MQTTPublisher:
         except Exception as e:
             logger.error(f"MQTT alert publish error: {e}")
 
+    async def publish_event(self, event: Dict[str, Any]):
+        """Publish an automation-friendly event payload."""
+        if not self._client or not self._connected:
+            return
+        try:
+            payload = json.dumps(event, default=str)
+            self._client.publish(
+                f"{self.topic_prefix}/event", payload, qos=1
+            )
+        except Exception as e:
+            logger.error(f"MQTT event publish error: {e}")
+
     async def publish_prop_score(self, score: float, level: str):
         """Publish just the propagation score (lightweight endpoint for integrations)."""
         if not self._client or not self._connected:
@@ -166,6 +285,8 @@ class MQTTPublisher:
     async def close(self):
         """Disconnect from MQTT broker."""
         if self._client:
+            if self._connected:
+                self._client.publish(self.availability_topic, "offline", qos=0, retain=True)
             self._client.loop_stop()
             self._client.disconnect()
             self._connected = False

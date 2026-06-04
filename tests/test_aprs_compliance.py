@@ -1,22 +1,32 @@
 import unittest
 import asyncio
+import json
 import tempfile
 from pathlib import Path
 
 import server.analytics as analytics_module
 from server.aprs_is import APRSISClient
 from server.aprs_parser import make_message_packet, parse_packet
-from server.app import _is_valid_message_addressee, _is_valid_station_callsign, _validate_config
+from server.app import (
+    _is_valid_message_addressee,
+    _is_valid_station_callsign,
+    _merge_secret_value,
+    _tile_cache_key,
+    _tile_cache_path,
+    _tile_coords_for_bounds,
+    _validate_config,
+)
 from server.analytics import AnalyticsEngine
 from server.alerts import AlertConfig, AlertManager
 from server.ax25 import AX25Address, AX25Frame
 from server.config import Config, RFPortConfig
 from server.database import Database
 from server.digipeater import Digipeater
+from server.export import MQTTPublisher
 from server.packet_handler import PacketHandler
 from server.station_tracker import StationTracker
 from server.websocket_manager import WebSocketManager
-from server.gps import GPSManager, parse_nmea_position
+from server.gps import GPSManager, parse_gpsd_tpv, parse_nmea_position
 from server.status_report import build_dx_status_text, build_mheard_status_text, build_weather_alert_status_text, trim_status_text
 from server.wxnow import build_wxnow_info, build_wxnow_position_info, parse_weather_body_values, parse_wxnow_text
 
@@ -183,9 +193,9 @@ class APRSISComplianceTests(unittest.TestCase):
         config = Config()
         config.station.callsign = "K5ABC"
         config.aprs_is.passcode = "12345"
-        client = APRSISClient(config, lambda packet: None, app_version="1.5.5.2")
+        client = APRSISClient(config, lambda packet: None, app_version="1.5.5.3")
 
-        self.assertIn("vers APRSPropView 1.5.5.2", client._build_login())
+        self.assertIn("vers APRSPropView 1.5.5.3", client._build_login())
 
     def test_packet_sent_instead_of_logresp_is_not_dropped(self):
         async def run_test():
@@ -238,6 +248,24 @@ class APRSISComplianceTests(unittest.TestCase):
 
 
 class ConfigTests(unittest.TestCase):
+    def test_merge_secret_value_allows_clear_without_resaving_masks(self):
+        self.assertEqual(
+            _merge_secret_value("secret", "", submitted_present=True),
+            "",
+        )
+        self.assertEqual(
+            _merge_secret_value("secret", "*****t", submitted_present=True),
+            "secret",
+        )
+        self.assertEqual(
+            _merge_secret_value("secret", "newsecret", submitted_present=True),
+            "newsecret",
+        )
+        self.assertEqual(
+            _merge_secret_value("secret", "", submitted_present=False),
+            "secret",
+        )
+
     def test_loads_and_saves_multiple_rf_ports(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "config.toml"
@@ -284,6 +312,58 @@ tcp_port = 8100
 
             self.assertEqual([port.name for port in reloaded.rf_ports], ["Vertical", "Yagi", "Backup"])
             self.assertEqual(reloaded.rf_ports[2].tcp_port, 8002)
+
+    def test_loads_and_saves_mqtt_discovery_settings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text(
+                """
+[mqtt]
+enabled = true
+broker = "ha.local"
+port = 1883
+topic_prefix = "ham/aprs"
+username = "propview"
+password = "secret"
+discovery_enabled = true
+discovery_prefix = "homeassistant"
+device_name = "APRS PropView K5ABC"
+device_id = "k5abc_propview"
+""".strip(),
+                encoding="utf-8",
+            )
+
+            config = Config.load(path)
+            self.assertTrue(config.mqtt.discovery_enabled)
+            self.assertEqual(config.mqtt.discovery_prefix, "homeassistant")
+            self.assertEqual(config.mqtt.device_name, "APRS PropView K5ABC")
+            self.assertEqual(config.mqtt.device_id, "k5abc_propview")
+
+            saved_path = Path(tmp) / "saved.toml"
+            config.save(saved_path)
+            reloaded = Config.load(saved_path)
+
+            self.assertTrue(reloaded.mqtt.discovery_enabled)
+            self.assertEqual(reloaded.mqtt.device_name, "APRS PropView K5ABC")
+            self.assertEqual(reloaded.mqtt.device_id, "k5abc_propview")
+
+    def test_tile_cache_key_separates_tile_sources(self):
+        osm = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        local = "http://127.0.0.1:8080/tile/{z}/{x}/{y}.png"
+
+        self.assertNotEqual(_tile_cache_key(osm), _tile_cache_key(local))
+        self.assertNotEqual(_tile_cache_path(osm, 5, 8, 12), _tile_cache_path(local, 5, 8, 12))
+
+    def test_tile_coords_for_current_view_bounds(self):
+        coords = _tile_coords_for_bounds(
+            {"north": 36.0, "south": 35.0, "east": -79.0, "west": -80.0},
+            8,
+            8,
+        )
+
+        self.assertTrue(coords)
+        self.assertTrue(all(z == 8 for z, _x, _y in coords))
+        self.assertEqual(len(coords), len(set(coords)))
 
 
 class WxNowTests(unittest.TestCase):
@@ -875,6 +955,19 @@ class GPSIngestionTests(unittest.TestCase):
     def test_ignores_invalid_nmea_fix(self):
         self.assertIsNone(parse_nmea_position("$GPRMC,123519,V,4807.038,N,01131.000,E,0,0,230394,,*00"))
 
+    def test_parses_gpsd_tpv_position(self):
+        pos = parse_gpsd_tpv('{"class":"TPV","mode":3,"lat":35.1234,"lon":-97.5678,"speed":12.0,"track":184.5,"epx":4.0,"epy":6.0}')
+
+        self.assertIsNotNone(pos)
+        self.assertAlmostEqual(pos["latitude"], 35.1234, places=4)
+        self.assertAlmostEqual(pos["longitude"], -97.5678, places=4)
+        self.assertAlmostEqual(pos["speed_mph"], 26.8432, places=3)
+        self.assertAlmostEqual(pos["course_deg"], 184.5, places=1)
+        self.assertAlmostEqual(pos["accuracy_m"], 6.0, places=1)
+
+    def test_ignores_gpsd_without_2d_fix(self):
+        self.assertIsNone(parse_gpsd_tpv('{"class":"TPV","mode":1,"lat":35.0,"lon":-97.0}'))
+
     def test_live_gps_can_update_station_position_when_unlocked(self):
         config = Config()
         config.gps.enabled = True
@@ -922,6 +1015,18 @@ class GPSIngestionTests(unittest.TestCase):
         status = gps.get_status()
         self.assertIsNone(status["current"])
         self.assertIn("source_status", status)
+
+    def test_any_source_shows_latest_gpsd_fix(self):
+        config = Config()
+        config.gps.enabled = True
+        config.gps.source = "any"
+        gps = GPSManager(config)
+
+        asyncio.run(gps.update_from_gpsd('{"class":"TPV","mode":2,"lat":35.0,"lon":-97.0}'))
+
+        status = gps.get_status()
+        self.assertIsNotNone(status["current"])
+        self.assertEqual(status["current"]["source"], "gpsd")
 
 
 class SporadicEDetectionTests(unittest.TestCase):
@@ -1184,6 +1289,59 @@ class BandOpeningAlertTests(unittest.TestCase):
 
 
 class MQTTIntegrationTests(unittest.TestCase):
+    def test_publisher_builds_home_assistant_discovery_payloads(self):
+        publisher = MQTTPublisher(
+            "localhost",
+            topic_prefix="aprs/propview",
+            discovery_enabled=True,
+            discovery_prefix="homeassistant",
+            device_name="APRS PropView K5ABC",
+            device_id="K5ABC-1 PropView",
+        )
+
+        payloads = publisher._discovery_payloads()
+
+        self.assertEqual(publisher.device_id, "k5abc_1_propview")
+        self.assertIn("regional_score", payloads)
+        self.assertEqual(payloads["regional_score"]["state_topic"], "aprs/propview/propagation")
+        self.assertEqual(payloads["regional_score"]["value_template"], "{{ value_json.regional_score }}")
+        self.assertEqual(payloads["regional_score"]["unique_id"], "k5abc_1_propview_regional_score")
+        self.assertEqual(payloads["regional_score"]["availability_topic"], "aprs/propview/status")
+        self.assertEqual(payloads["max_distance_km"]["unit_of_measurement"], "km")
+
+    def test_publisher_publishes_retained_home_assistant_discovery_configs(self):
+        class FakeClient:
+            def __init__(self):
+                self.published = []
+
+            def publish(self, topic, payload, qos=0, retain=False):
+                self.published.append((topic, payload, qos, retain))
+
+        async def run_test():
+            publisher = MQTTPublisher(
+                "localhost",
+                topic_prefix="aprs/propview",
+                discovery_enabled=True,
+                discovery_prefix="homeassistant",
+                device_id="aprs_propview",
+            )
+            publisher._client = FakeClient()
+            publisher._connected = True
+
+            await publisher.publish_home_assistant_discovery()
+
+            topics = [item[0] for item in publisher._client.published]
+            self.assertIn("homeassistant/sensor/aprs_propview/regional_score/config", topics)
+            self.assertTrue(all(item[3] for item in publisher._client.published))
+            regional_payload = next(
+                item[1]
+                for item in publisher._client.published
+                if item[0] == "homeassistant/sensor/aprs_propview/regional_score/config"
+            )
+            self.assertEqual(json.loads(regional_payload)["unique_id"], "aprs_propview_regional_score")
+
+        asyncio.run(run_test())
+
     def test_tracker_publishes_propagation_payload_and_score_topics(self):
         class FakeMQTTPublisher:
             def __init__(self):
@@ -1225,6 +1383,58 @@ class MQTTIntegrationTests(unittest.TestCase):
             await tracker._publish_mqtt_alert(alert)
 
             self.assertEqual(publisher.alerts, [alert])
+
+        asyncio.run(run_test())
+
+    def test_tracker_publishes_station_automation_events(self):
+        class FakeMQTTPublisher:
+            def __init__(self):
+                self.events = []
+
+            async def publish_event(self, event):
+                self.events.append(event)
+
+        async def run_test():
+            db = Database(":memory:")
+            await db.initialize()
+            try:
+                config = Config()
+                config.station.callsign = "K5ABC"
+                config.station.latitude = 35.0
+                config.station.longitude = -80.0
+                tracker = StationTracker(db, config, WebSocketManager())
+                publisher = FakeMQTTPublisher()
+                tracker.set_mqtt_publisher(publisher)
+
+                first = parse_packet("W1ABC>APRS:!3600.00N/08100.00W-Test", source="rf")
+                await tracker.track_packet(first)
+
+                event_names = [event["event"] for event in publisher.events]
+                self.assertEqual(event_names, ["first_heard", "new_max_distance"])
+                self.assertEqual(publisher.events[0]["callsign"], "W1ABC")
+                self.assertEqual(publisher.events[0]["source"], "rf")
+                self.assertTrue(publisher.events[0]["is_direct"])
+                self.assertGreater(publisher.events[1]["distance_km"], 0)
+                self.assertEqual(publisher.events[1]["previous_distance_km"], 0.0)
+
+                closer = parse_packet("W2ABC>APRS:!3505.00N/08005.00W-Test", source="rf")
+                await tracker.track_packet(closer)
+
+                event_names = [event["event"] for event in publisher.events]
+                self.assertEqual(event_names, ["first_heard", "new_max_distance", "first_heard"])
+
+                farther = parse_packet("W3ABC>APRS:!3800.00N/08400.00W-Test", source="rf")
+                await tracker.track_packet(farther)
+
+                event_names = [event["event"] for event in publisher.events]
+                self.assertEqual(event_names[-2:], ["first_heard", "new_max_distance"])
+                self.assertEqual(publisher.events[-1]["callsign"], "W3ABC")
+                self.assertGreater(
+                    publisher.events[-1]["distance_km"],
+                    publisher.events[1]["distance_km"],
+                )
+            finally:
+                await db.close()
 
         asyncio.run(run_test())
 

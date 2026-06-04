@@ -5,6 +5,7 @@ propview.db
 *.sqlite
 *.sqlite3
 user_audio/
+map_tile_cache/
 
 # Build output
 build/

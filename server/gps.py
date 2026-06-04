@@ -1,6 +1,7 @@
 """GPS ingestion and live station-location state."""
 
 import asyncio
+import json
 import logging
 import time
 from typing import Any, Dict, Optional
@@ -73,6 +74,43 @@ def parse_nmea_position(sentence: str) -> Optional[Dict[str, Any]]:
         result["speed_mph"] = speed_mph
     if course_deg is not None:
         result["course_deg"] = course_deg
+    return result
+
+
+def parse_gpsd_tpv(message: str) -> Optional[Dict[str, Any]]:
+    """Parse a gpsd TPV JSON report into decimal coordinates."""
+    try:
+        data = json.loads(message)
+    except (TypeError, ValueError):
+        return None
+
+    if not isinstance(data, dict) or data.get("class") != "TPV":
+        return None
+    try:
+        mode = int(data.get("mode", 0) or 0)
+        lat = float(data["lat"])
+        lon = float(data["lon"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if mode < 2 or not _valid_lat_lon(lat, lon):
+        return None
+
+    result = {"latitude": lat, "longitude": lon}
+    try:
+        if data.get("speed") is not None:
+            result["speed_mph"] = float(data["speed"]) * 2.2369362921
+    except (TypeError, ValueError):
+        pass
+    try:
+        if data.get("track") is not None:
+            result["course_deg"] = float(data["track"])
+    except (TypeError, ValueError):
+        pass
+    try:
+        if data.get("epx") is not None and data.get("epy") is not None:
+            result["accuracy_m"] = max(float(data["epx"]), float(data["epy"]))
+    except (TypeError, ValueError):
+        pass
     return result
 
 
@@ -192,6 +230,19 @@ class GPSManager:
             course_deg=pos.get("course_deg"),
         )
 
+    async def update_from_gpsd(self, message: str) -> Optional[Dict[str, Any]]:
+        pos = parse_gpsd_tpv(message)
+        if not pos:
+            return None
+        return await self.update_location(
+            pos["latitude"],
+            pos["longitude"],
+            source="gpsd",
+            accuracy_m=pos.get("accuracy_m"),
+            speed_mph=pos.get("speed_mph"),
+            course_deg=pos.get("course_deg"),
+        )
+
     def get_status(self) -> Dict[str, Any]:
         cfg = self.config.gps
         selected = (cfg.source or "browser").strip().lower()
@@ -203,6 +254,8 @@ class GPSManager:
                 source_status = {"state": "waiting", "message": "Waiting for a GPS fix from the selected source.", "timestamp": None}
             elif selected == "browser":
                 source_status = {"state": "waiting", "message": "Start Device GPS to use this browser's location.", "timestamp": None}
+            elif selected == "gpsd":
+                source_status = {"state": "waiting", "message": "Waiting for gpsd TPV reports.", "timestamp": None}
         return {
             "enabled": cfg.enabled,
             "source": cfg.source,
@@ -215,7 +268,7 @@ class GPSManager:
 
     async def run_tcp_nmea(self):
         while True:
-            if not self.enabled or self.config.gps.source != "nmea_tcp":
+            if not self.enabled or self.config.gps.source not in {"nmea_tcp", "any"}:
                 await asyncio.sleep(2)
                 continue
             try:
@@ -231,7 +284,7 @@ class GPSManager:
                 logger.info("GPS NMEA TCP connected to %s:%s", self.config.gps.tcp_host, self.config.gps.tcp_port)
                 await self._set_source_status("nmea_tcp", "connected", "NMEA TCP connected; waiting for GPS sentences.")
                 try:
-                    while self.enabled and self.config.gps.source == "nmea_tcp":
+                    while self.enabled and self.config.gps.source in {"nmea_tcp", "any"}:
                         line = await reader.readline()
                         if not line:
                             break
@@ -248,7 +301,7 @@ class GPSManager:
 
     async def run_serial_nmea(self):
         while True:
-            if not self.enabled or self.config.gps.source != "nmea_serial":
+            if not self.enabled or self.config.gps.source not in {"nmea_serial", "any"}:
                 await asyncio.sleep(2)
                 continue
             try:
@@ -266,7 +319,7 @@ class GPSManager:
                 logger.info("GPS NMEA serial connected to %s", self.config.gps.serial_port)
                 await self._set_source_status("nmea_serial", "connected", "NMEA serial connected; waiting for GPS sentences.")
                 try:
-                    while self.enabled and self.config.gps.source == "nmea_serial":
+                    while self.enabled and self.config.gps.source in {"nmea_serial", "any"}:
                         line = await reader.readline()
                         if not line:
                             break
@@ -292,7 +345,7 @@ class GPSManager:
 
         transport = None
         while True:
-            if not self.enabled or self.config.gps.source != "nmea_udp":
+            if not self.enabled or self.config.gps.source not in {"nmea_udp", "any"}:
                 await asyncio.sleep(2)
                 continue
             try:
@@ -308,7 +361,7 @@ class GPSManager:
                 )
                 logger.info("GPS NMEA UDP listening on %s:%s", self.config.gps.udp_host, self.config.gps.udp_port)
                 await self._set_source_status("nmea_udp", "connected", "NMEA UDP listener active; waiting for GPS sentences.")
-                while self.enabled and self.config.gps.source == "nmea_udp":
+                while self.enabled and self.config.gps.source in {"nmea_udp", "any"}:
                     await asyncio.sleep(2)
             except asyncio.CancelledError:
                 raise
@@ -320,6 +373,42 @@ class GPSManager:
                 if transport:
                     transport.close()
                     transport = None
+
+    async def run_gpsd(self):
+        watch = '?WATCH={"enable":true,"json":true};\n'
+        while True:
+            if not self.enabled or self.config.gps.source not in {"gpsd", "any"}:
+                await asyncio.sleep(2)
+                continue
+            try:
+                await self._set_source_status(
+                    "gpsd",
+                    "connecting",
+                    f"Connecting to gpsd {self.config.gps.gpsd_host}:{self.config.gps.gpsd_port}...",
+                )
+                reader, writer = await asyncio.open_connection(
+                    self.config.gps.gpsd_host,
+                    int(self.config.gps.gpsd_port),
+                )
+                logger.info("GPS gpsd connected to %s:%s", self.config.gps.gpsd_host, self.config.gps.gpsd_port)
+                writer.write(watch.encode("ascii"))
+                await writer.drain()
+                await self._set_source_status("gpsd", "connected", "gpsd connected; waiting for TPV reports.")
+                try:
+                    while self.enabled and self.config.gps.source in {"gpsd", "any"}:
+                        line = await reader.readline()
+                        if not line:
+                            break
+                        await self.update_from_gpsd(line.decode("utf-8", errors="ignore"))
+                finally:
+                    writer.close()
+                    await writer.wait_closed()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.warning("GPS gpsd error: %s", e)
+                await self._set_source_status("gpsd", "error", f"gpsd connection failed: {e}")
+                await asyncio.sleep(5)
 
 
 def distance_from_current(config: Config, gps_manager: Optional[GPSManager], latitude: float, longitude: float):

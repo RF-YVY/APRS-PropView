@@ -4733,6 +4733,36 @@ canvas {
     font-size: 12px;
 }
 
+.about-doc-actions {
+    align-items: center;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 12px;
+    text-align: center;
+}
+
+.about-doc-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    padding: 10px 18px;
+    border: 0;
+    border-radius: 6px;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.about-doc-btn:hover {
+    text-decoration: none;
+}
+
 .about-donate {
     align-items: center;
     text-align: center;
