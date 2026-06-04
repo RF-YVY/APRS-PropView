@@ -736,6 +736,96 @@ class MessagePersistenceTests(unittest.TestCase):
 
         asyncio.run(run_test())
 
+    def test_message_to_sibling_station_ssid_is_stored(self):
+        async def run_test():
+            with tempfile.TemporaryDirectory() as tmp:
+                config = Config()
+                config.station.callsign = "K5YVY"
+                config.station.ssid = 1
+                db = Database(f"{tmp}/test.db")
+                await db.initialize()
+                try:
+                    ws = WebSocketManager()
+                    tracker = StationTracker(db, config, ws)
+                    handler = PacketHandler(config, tracker, None, None, ws)
+                    packet = parse_packet(
+                        "KK7PZE-7>APRS::K5YVY-7  :Sibling SSID hello{42",
+                        source="rf",
+                    )
+
+                    await handler._check_incoming_message(packet, source="rf")
+                    messages = await db.get_recent_messages()
+                finally:
+                    await db.close()
+
+            self.assertEqual(len(messages), 1)
+            self.assertEqual(messages[0]["from"], "KK7PZE-7")
+            self.assertEqual(messages[0]["to"], "K5YVY-7")
+            self.assertEqual(messages[0]["text"], "Sibling SSID hello")
+            self.assertFalse(messages[0]["acked"])
+
+        asyncio.run(run_test())
+
+    def test_message_to_sibling_station_ssid_can_be_disabled(self):
+        async def run_test():
+            with tempfile.TemporaryDirectory() as tmp:
+                config = Config()
+                config.station.callsign = "K5YVY"
+                config.station.ssid = 1
+                config.messaging.receive_sibling_ssids = False
+                db = Database(f"{tmp}/test.db")
+                await db.initialize()
+                try:
+                    ws = WebSocketManager()
+                    tracker = StationTracker(db, config, ws)
+                    handler = PacketHandler(config, tracker, None, None, ws)
+                    sibling_packet = parse_packet(
+                        "KK7PZE-7>APRS::K5YVY-7  :Sibling SSID hello{42",
+                        source="rf",
+                    )
+                    exact_packet = parse_packet(
+                        "KK7PZE-7>APRS::K5YVY-1  :Exact station hello{43",
+                        source="rf",
+                    )
+
+                    await handler._check_incoming_message(sibling_packet, source="rf")
+                    await handler._check_incoming_message(exact_packet, source="rf")
+                    messages = await db.get_recent_messages()
+                finally:
+                    await db.close()
+
+            self.assertEqual(len(messages), 1)
+            self.assertEqual(messages[0]["to"], "K5YVY-1")
+            self.assertEqual(messages[0]["text"], "Exact station hello")
+
+        asyncio.run(run_test())
+
+    def test_message_to_other_base_callsign_is_ignored(self):
+        async def run_test():
+            with tempfile.TemporaryDirectory() as tmp:
+                config = Config()
+                config.station.callsign = "K5YVY"
+                config.station.ssid = 1
+                db = Database(f"{tmp}/test.db")
+                await db.initialize()
+                try:
+                    ws = WebSocketManager()
+                    tracker = StationTracker(db, config, ws)
+                    handler = PacketHandler(config, tracker, None, None, ws)
+                    packet = parse_packet(
+                        "KK7PZE-7>APRS::W5ABC-7  :Not for this station{43",
+                        source="rf",
+                    )
+
+                    await handler._check_incoming_message(packet, source="rf")
+                    messages = await db.get_recent_messages()
+                finally:
+                    await db.close()
+
+            self.assertEqual(messages, [])
+
+        asyncio.run(run_test())
+
     def test_self_message_packet_is_not_tracked_as_rf_station(self):
         async def run_test():
             with tempfile.TemporaryDirectory() as tmp:

@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 import time
 from typing import Optional, List, Dict, Any
 from collections import deque
@@ -146,6 +147,22 @@ class PacketHandler:
             return f"id:{from_call}|{addressee}|{msg_id}"
         text = (packet.message_text or "").strip()
         return f"body:{from_call}|{addressee}|{text}"
+
+    def _is_local_message_addressee(self, addressee: str) -> bool:
+        """Return true for messages addressed to this callsign or sibling SSIDs."""
+        target = (addressee or "").strip().upper()
+        if not target:
+            return False
+
+        my_call = self.config.station.full_callsign.upper()
+        base_call = (self.config.station.callsign or "").strip().upper()
+        if target == my_call or target == base_call:
+            return True
+        if not getattr(self.config.messaging, "receive_sibling_ssids", True):
+            return False
+        if not base_call:
+            return False
+        return bool(re.fullmatch(rf"{re.escape(base_call)}-(?:[0-9]|1[0-5])", target))
 
     def _prune_recent_message_keys(self):
         cutoff = time.time() - 120
@@ -365,6 +382,8 @@ class PacketHandler:
         my_call = self.config.station.full_callsign.upper()
         addressee = packet.addressee.strip().upper()
         from_call = packet.from_call.upper()
+        is_local_addressee = self._is_local_message_addressee(addressee)
+        is_exact_addressee = addressee == my_call
 
         # Handle ACK/REJ for messages we sent
         if packet.message_text and packet.message_text.startswith("ack"):
@@ -383,7 +402,7 @@ class PacketHandler:
 
         # Only store messages involving our station (from us or to us)
         # This filters out telemetry and other station-to-station traffic
-        if addressee != my_call:
+        if not is_local_addressee:
             return
 
         msg_record = {
@@ -400,12 +419,14 @@ class PacketHandler:
         dedupe_key = self._message_dedupe_key(packet)
         self._prune_recent_message_keys()
         if dedupe_key in self._recent_message_keys:
-            if addressee == my_call and packet.message_id:
+            if is_exact_addressee and packet.message_id:
                 await self._send_ack(packet.from_call, packet.message_id, source)
             return
 
-        # If message is addressed to us, send auto-ack and count it
-        if addressee == my_call:
+        # Exact station messages can be ACKed. Sibling SSID messages are stored
+        # locally, but not ACKed because this instance is not transmitting as
+        # that addressed SSID.
+        if is_exact_addressee:
             # Send ACK if message has an ID
             if packet.message_id:
                 await self._send_ack(packet.from_call, packet.message_id, source)
@@ -432,12 +453,11 @@ class PacketHandler:
 
         msg_record = persisted
         self._messages.appendleft(msg_record)
-        if addressee == my_call:
-            self.stats["messages_rx"] += 1
-            if self._alert_manager:
-                asyncio.ensure_future(
-                    self._alert_manager.send_message_notification(msg_record)
-                )
+        self.stats["messages_rx"] += 1
+        if self._alert_manager:
+            asyncio.ensure_future(
+                self._alert_manager.send_message_notification(msg_record)
+            )
         await self.tracker.db.upsert_message_contact(from_call, last_used=msg_record["timestamp"])
 
         # Broadcast to web clients

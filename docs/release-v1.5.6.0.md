@@ -13,6 +13,7 @@ Released: June 4, 2026
 - Added gpsd GPS ingestion for Linux/Pi/mobile deployments.
 - Added visible-map tile caching for offline/field map use.
 - Added macOS source and local `.app` build documentation.
+- Added a Messages setting to receive sibling SSID addressees for the same base callsign, such as `K5YVY-7` while running `K5YVY-1`.
 
 ## Upgrade Notes
 

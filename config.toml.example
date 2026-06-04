@@ -108,6 +108,11 @@ cleanup_interval = 3600
 [messaging]
 # How many days to retain APRS message history in the database
 message_retention_days = 30
+# Also receive messages addressed to the same base callsign with any SSID.
+# Example: if the station ID is K5YVY-1, messages to K5YVY-7 or K5YVY-9
+# appear in the app inbox. Exact station-ID messages are still the only ones
+# auto-ACKed by this running instance.
+receive_sibling_ssids = true
 
 [alerts]
 enabled = false

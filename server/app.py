@@ -2041,6 +2041,7 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
             },
             "messaging": {
                 "message_retention_days": config.messaging.message_retention_days,
+                "receive_sibling_ssids": config.messaging.receive_sibling_ssids,
             },
             "alerts": {
                 "enabled": config.alerts.enabled,
@@ -2468,6 +2469,7 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
             if "messaging" in body:
                 m = body["messaging"]
                 config.messaging.message_retention_days = max(1, int(m.get("message_retention_days", config.messaging.message_retention_days)))
+                config.messaging.receive_sibling_ssids = bool(m.get("receive_sibling_ssids", config.messaging.receive_sibling_ssids))
                 await handler.cleanup_messages()
                 live_applied.append("messaging")
 

@@ -88,6 +88,7 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **Click to Reply** — Click any received message to auto-populate the TO callsign for quick reply
 - **Message Log** — Filterable message history (All / Sent / Received)
 - **Message Sort Order** — Switch messages between newest-first and oldest-first ordering
+- **Sibling SSID Inbox Option** — Optionally receive messages addressed to the same base callsign with another SSID, such as `K5YVY-7` while running `K5YVY-1`
 - **Packet Sort and Digipeat Filter** — The Packets tab loads recent packet history, sorts newest or oldest first, and can show packets your station digipeated
 - **Mobile Message Refresh** — Mobile UI includes a manual message refresh button and closer parity with desktop message behavior
 - **RF + IS Routing** — Messages sent on both RF and APRS-IS simultaneously
@@ -246,7 +247,7 @@ All settings are in `config.toml` and can be edited from the web UI **Settings**
 | `[[rf_ports]]` | Named multi-port RF setup for serial KISS/TNC2 monitor and TCP KISS ports; preferred for all new setups |
 | `[web]` | Web interface bind address, port, font, custom map tile source, ghost time, expire time |
 | `[tracking]` | Station age limits and cleanup intervals |
-| `[messaging]` | APRS message history retention |
+| `[messaging]` | APRS message history retention and sibling-SSID inbox behavior |
 | `[database]` | SQLite database path |
 | `[propagation]` | Scoring thresholds for My Station and Regional propagation meters |
 | `[status]` | Compact APRS status beacon settings: DX summaries, dynamic preset text, direct-RF MHeard summaries, and optional severe weather alert beacons |

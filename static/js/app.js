@@ -2253,6 +2253,7 @@
             setVal('cfg-track-age', Math.round((cfg.tracking?.max_station_age || 0) / 60));
             setVal('cfg-track-cleanup', Math.round((cfg.tracking?.cleanup_interval || 0) / 60));
             setVal('cfg-msg-retention', cfg.messaging?.message_retention_days ?? 30);
+            setChk('cfg-msg-sibling-ssids', cfg.messaging?.receive_sibling_ssids ?? true);
 
             setChk('cfg-status-enabled', cfg.status?.enabled);
             setVal('cfg-status-interval', Math.round((cfg.status?.beacon_interval || 1800) / 60));
@@ -2526,6 +2527,7 @@
             },
             messaging: {
                 message_retention_days: parseInt(getVal('cfg-msg-retention')) || 30,
+                receive_sibling_ssids: getChk('cfg-msg-sibling-ssids'),
             },
             status: {
                 enabled: getChk('cfg-status-enabled'),

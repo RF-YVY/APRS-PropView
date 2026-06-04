@@ -1145,6 +1145,11 @@
                             <label for="cfg-msg-retention">Message Retention (days)</label>
                             <input type="number" id="cfg-msg-retention" min="1" step="1" value="30">
                         </div>
+                        <div class="settings-row">
+                            <label for="cfg-msg-sibling-ssids">Receive Sibling SSIDs</label>
+                            <input type="checkbox" id="cfg-msg-sibling-ssids" checked>
+                        </div>
+                        <p class="settings-note">When enabled, messages to the same base callsign with another SSID appear in the inbox. Exact station-ID messages are the only ones auto-ACKed.</p>
                     </div>
 
                     <div class="settings-section" data-settings-key="status-dx" data-summary="Transmit compact APRS status packets with current DX/propagation information.">
@@ -1921,6 +1926,7 @@
                 <section class="help-section">
                     <h3>💬 Messages Tab</h3>
                     <p>Send and receive APRS messages. Type a destination callsign and message text (max 67 characters), then click Send. Incoming messages appear with ack/rej status indicators. Click any received message's callsign to auto-fill the To field for a quick reply.</p>
+                    <p>Messages addressed to sibling SSIDs can optionally appear in the inbox. For example, a station running as <code>K5YVY-1</code> can show messages sent to <code>K5YVY-7</code> or <code>K5YVY-9</code>; only exact station-ID messages are auto-ACKed.</p>
                     <p>Use the sort selector to view newest-to-oldest or oldest-to-newest. The mobile UI includes the same ordering behavior and a manual refresh button.</p>
                     <p>Message notification channels (Discord, Email, SMS) are configured separately from band-opening alert channels in Settings → Alerts.</p>
                 </section>

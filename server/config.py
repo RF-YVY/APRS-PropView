@@ -341,6 +341,7 @@ class TrackingConfig:
 @dataclass
 class MessagingConfig:
     message_retention_days: int = 30
+    receive_sibling_ssids: bool = True
 
 
 @dataclass
@@ -702,6 +703,7 @@ class Config:
             "",
             "[messaging]",
             f"message_retention_days = {int(self.messaging.message_retention_days)}",
+            f"receive_sibling_ssids = {'true' if self.messaging.receive_sibling_ssids else 'false'}",
             "",
             "[alerts]",
             f"enabled = {'true' if self.alerts.enabled else 'false'}",

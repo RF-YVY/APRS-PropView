@@ -577,6 +577,7 @@ python main.py</code></pre>
             <section id="messaging">
                 <h2>7. APRS Messaging</h2>
                 <p>The Messages tab supports APRS message send, receive, auto-ACK behavior, retries, history, contact-style reply flow, and message notifications.</p>
+                <p>The Messaging settings can optionally accept sibling SSID addressees for the same base callsign. For example, a station configured as <code>K5YVY-1</code> can show messages sent to <code>K5YVY-7</code> or <code>K5YVY-9</code>. Only exact station-ID messages are auto-ACKed by the running app.</p>
                 <figure class="doc-figure">
                     <img src="/static/img/docs/desktop-messages.png" alt="APRS PropView desktop messages tab showing message controls and conversation layout" loading="lazy">
                     <figcaption>Desktop APRS messaging view with filters, contacts, conversation history, and compose controls.</figcaption>
@@ -705,7 +706,7 @@ python main.py</code></pre>
                     <tr><td><code>[[rf_ports]]</code></td><td>Multi-port RF serial/TCP KISS and compatible monitor-style inputs.</td></tr>
                     <tr><td><code>[web]</code></td><td>Bind host, port, UI font, map tile source, station ghosting, station expiry, and mobile PIN.</td></tr>
                     <tr><td><code>[tracking]</code></td><td>Station age windows and cleanup intervals.</td></tr>
-                    <tr><td><code>[messaging]</code></td><td>APRS message history retention.</td></tr>
+                    <tr><td><code>[messaging]</code></td><td>APRS message history retention and optional sibling-SSID receive behavior.</td></tr>
                     <tr><td><code>[database]</code></td><td>SQLite database path.</td></tr>
                     <tr><td><code>[propagation]</code></td><td>Direct and regional propagation scoring thresholds.</td></tr>
                     <tr><td><code>[status]</code></td><td>Status/DX, dynamic, MHeard, and weather-alert beacon options.</td></tr>
