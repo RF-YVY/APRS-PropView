@@ -4,6 +4,10 @@
 
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 
+
+
+<li style="display: inline-block; margin-right: 0.25rem;"><a href="https://www.buymeacoffee.com/k5yvy"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" width="150"/></a></li>
+
 *Thanks to Contributions and Suggestions from many that emailed or submitted issues.*
 
 *Special thanks to Kyle (galaxie67w) and Joe M. for many suggestions and bug finds.*
