@@ -96,7 +96,7 @@ def _write_manifest(path):
   <assemblyIdentity
     type="win32"
     name="WickerMade.APRSPropView"
-    version="1.5.6.0"
+    version="1.5.7.0"
     processorArchitecture="amd64"
   />
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
@@ -158,11 +158,11 @@ VSVersionInfo(
           [
             StringStruct(u'CompanyName', u'Wicker Made, LLC'),
             StringStruct(u'FileDescription', u'APRS PropView - VHF Propagation Monitor'),
-            StringStruct(u'FileVersion', u'1.5.6.0'),
+            StringStruct(u'FileVersion', u'1.5.7.0'),
             StringStruct(u'InternalName', u'APRSPropView'),
             StringStruct(u'OriginalFilename', u'APRSPropView.exe'),
             StringStruct(u'ProductName', u'APRS PropView'),
-            StringStruct(u'ProductVersion', u'1.5.6.0'),
+            StringStruct(u'ProductVersion', u'1.5.7.0'),
           ]
         )
       ]

@@ -37,6 +37,7 @@
         document.getElementById('reliability-hours')?.addEventListener('change', () => loadReliability());
         document.getElementById('besttime-days')?.addEventListener('change', () => loadBestTimes());
         document.getElementById('bearing-hours')?.addEventListener('change', () => loadBearingSectors());
+        document.getElementById('sporadic-e-hours')?.addEventListener('change', () => loadSporadicE());
         document.getElementById('first-heard-hours')?.addEventListener('change', () => loadFirstHeard());
         document.getElementById('first-heard-direct-only')?.addEventListener('change', () => loadFirstHeard());
         document.getElementById('weather-analytics-hours')?.addEventListener('change', () => loadWeatherGraphs());
@@ -700,14 +701,19 @@
     async function loadSporadicE() {
         const statusEl = document.getElementById('es-status');
         const listEl = document.getElementById('es-candidates');
+        const hours = document.getElementById('sporadic-e-hours')?.value || 6;
         if (!statusEl) return;
 
         try {
-            const resp = await fetch('/api/analytics/sporadic-e');
+            const resp = await fetch(`/api/analytics/sporadic-e?hours=${hours}`);
             const data = await resp.json();
 
             const level = data.es_level || 'none';
             const score = (data.es_score ?? data.max_score ?? 0).toFixed(0);
+            const minDistance = data.min_distance_km || 300;
+            const maxObserved = data.max_observed_distance_km || 0;
+            const rfCount = data.rf_station_count || 0;
+            const qualifyingCount = data.qualifying_distance_count || 0;
 
             const levelConfig = {
                 likely: { color: '#f85149', icon: '⚡' },
@@ -720,6 +726,14 @@
             let html = `<div class="es-card" style="border-left: 4px solid ${cfg.color};">`;
             html += `<div class="es-level" style="color:${cfg.color};">${cfg.icon} ${level.toUpperCase()}</div>`;
             html += `<div class="es-score">Score: ${score}/100</div>`;
+            html += `<div class="es-score">Analyzed ${rfCount} RF station${rfCount === 1 ? '' : 's'} over ${data.hours_analyzed || hours}h &middot; strongest ${window.formatDist(maxObserved)} &middot; Es gate ${window.formatDist(minDistance)}</div>`;
+            if (rfCount === 0) {
+                html += '<div class="es-detail">No RF stations with distance data were heard in this window.</div>';
+            } else if (qualifyingCount === 0) {
+                html += '<div class="es-detail">No stations reached the minimum distance used for Sporadic-E candidates.</div>';
+            } else if (!data.candidates || data.candidates.length === 0) {
+                html += '<div class="es-detail">Long-distance stations were present, but none reached the candidate score threshold after path-quality weighting.</div>';
+            }
             html += `</div>`;
             statusEl.innerHTML = html;
 
@@ -739,6 +753,18 @@
                     chtml += `<span class="es-c-dist">${window.formatDist(c.distance_km)}</span>`;
                     const candidateScore = c.es_score ?? c.score ?? 0;
                     chtml += `<span class="es-c-score">score ${candidateScore} · ${tier}${confidence}</span>`;
+                    chtml += `</div>`;
+                });
+                chtml += '</div>';
+                listEl.innerHTML = chtml;
+            } else if (listEl && data.strongest_stations && data.strongest_stations.length > 0) {
+                let chtml = '<h4>Strongest RF Stations Analyzed</h4>';
+                chtml += '<div class="es-candidate-list">';
+                data.strongest_stations.forEach(c => {
+                    chtml += `<div class="es-candidate-item">`;
+                    chtml += `<span class="es-c-call">${_esc(c.callsign)}</span>`;
+                    chtml += `<span class="es-c-dist">${window.formatDist(c.distance_km || 0)}</span>`;
+                    chtml += `<span class="es-c-score">${c.packet_count || 0} pkt</span>`;
                     chtml += `</div>`;
                 });
                 chtml += '</div>';
@@ -938,6 +964,366 @@
         ctx.fillText(`${Math.round(minV * 10) / 10}${unit}`, 4, pad.top + chartH);
     }
 
+    async function showWeatherDashboard() {
+        const hours = document.getElementById('weather-analytics-hours')?.value || 24;
+        document.querySelector('.weather-dashboard-backdrop')?.remove();
+
+        let samples = lastWeatherSamples || [];
+        let weather = null;
+        try {
+            const [weatherResp, analyticsResp] = await Promise.all([
+                fetch('/api/weather').catch(() => null),
+                fetch(`/api/analytics/weather?hours=${hours}`),
+            ]);
+            weather = weatherResp ? await weatherResp.json() : null;
+            const analytics = await analyticsResp.json();
+            samples = analytics.samples || samples;
+            lastWeatherSamples = samples;
+        } catch (e) {
+            console.error('Weather dashboard load failed:', e);
+        }
+
+        const current = weather?.current || newestWeatherSample(samples) || {};
+        const location = weather?.location || {};
+        const mapCenter = dashboardLocation(location);
+        const source = current.location_name || current.location_code || current.source || 'Weather station';
+        const sampleCount = samples.length;
+        const updated = current.timestamp
+            ? new Date(current.timestamp * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+            : 'Live';
+
+        const temp = numberOrNull(current.temperature_f);
+        const humidity = numberOrNull(current.humidity);
+        const pressure = numberOrNull(current.pressure_mb);
+        const wind = numberOrNull(current.wind_speed_mph);
+        const gust = numberOrNull(current.wind_gusts_mph ?? current.wind_gust_mph);
+        const rain = numberOrNull(current.precipitation_in ?? current.rain_1h_in);
+        const dew = calculateDewPointF(temp, humidity);
+        const heatIndex = calculateHeatIndexF(temp, humidity);
+        const records = maxWeatherRecords(samples);
+        const forecast = Array.isArray(weather?.forecast) ? weather.forecast.slice(0, 5) : [];
+
+        const backdrop = document.createElement('div');
+        backdrop.className = 'weather-dashboard-backdrop';
+        backdrop.innerHTML = `
+            <div class="weather-dashboard-pane" role="dialog" aria-modal="true">
+                <div class="weather-dashboard-header">
+                    <div>
+                        <div class="weather-dashboard-title">Weather Dashboard</div>
+                        <div class="weather-dashboard-subtitle">${_esc(source)} · ${sampleCount} sample${sampleCount === 1 ? '' : 's'} · ${_esc(updated)}</div>
+                    </div>
+                    <button type="button" class="weather-dashboard-close" aria-label="Close">x</button>
+                </div>
+                <div class="weather-dashboard-body">
+                    <div class="weather-dashboard-status">
+                        ${statusTile('Conditions', current.description || '--')}
+                        ${statusTile('Feels Like', formatTempValue(current.feels_like_f ?? heatIndex))}
+                        ${statusTile('Wind Direction', current.wind_direction_label || (current.wind_direction != null ? `${Math.round(current.wind_direction)} deg` : '--'))}
+                        ${statusTile('Rain 1h', rain != null ? (window.formatRainIn ? window.formatRainIn(rain) : `${rain.toFixed(2)} in`) : '--')}
+                    </div>
+                    <div class="weather-dashboard-grid">
+                        <div class="weather-dashboard-map-card">
+                            <div class="weather-card-title">Regional Radar</div>
+                            <div id="weather-dashboard-map"></div>
+                            <div class="weather-map-caption">${_esc(mapCenter.label)}</div>
+                        </div>
+                        ${gaugeTile('Temperature', formatTempValue(temp), temp, -20, 115, '#ff7b72', dew != null ? `Dew point ${formatTempValue(dew)}` : 'Current air temperature')}
+                        ${gaugeTile('Humidity', humidity != null ? `${Math.round(humidity)}%` : '--', humidity, 0, 100, '#58a6ff', humidityCaption(humidity))}
+                        ${gaugeTile('Pressure', pressure != null ? `${Math.round(pressure)} mb` : '--', pressure, 960, 1040, '#d2a8ff', pressureCaption(pressure))}
+                        ${gaugeTile('Wind', wind != null ? (window.formatWindMph ? window.formatWindMph(wind) : `${Math.round(wind)} mph`) : '--', wind, 0, 80, '#3fb950', gust != null ? `Gust ${window.formatWindMph ? window.formatWindMph(gust) : `${Math.round(gust)} mph`}` : 'Sustained wind')}
+                        <div class="weather-dashboard-records">
+                            <div class="weather-card-title">Recorded Maximums</div>
+                            <div class="weather-record-grid">
+                                ${recordTile('Max Temp', records.temperature_f, (v) => formatTempValue(v))}
+                                ${recordTile('Max Wind', records.wind_speed_mph, (v) => window.formatWindMph ? window.formatWindMph(v) : `${Math.round(v)} mph`)}
+                                ${recordTile('Max Gust', records.wind_gusts_mph, (v) => window.formatWindMph ? window.formatWindMph(v) : `${Math.round(v)} mph`)}
+                                ${recordTile('Max Humidity', records.humidity, (v) => `${Math.round(v)}%`)}
+                            </div>
+                        </div>
+                        <div class="weather-dashboard-chart">
+                            <canvas id="weather-dashboard-temp" width="520" height="230"></canvas>
+                        </div>
+                        <div class="weather-dashboard-chart">
+                            <canvas id="weather-dashboard-pressure" width="520" height="230"></canvas>
+                        </div>
+                        <div class="weather-dashboard-summary">
+                            <h4>Station Summary</h4>
+                            <div class="weather-summary-list">
+                                ${summaryRow('Comfort', comfortLabel(temp, humidity))}
+                                ${summaryRow('Heat Index', formatTempValue(heatIndex))}
+                                ${summaryRow('Dew Point', formatTempValue(dew))}
+                                ${summaryRow('Samples Window', `${hours}h`)}
+                                ${summaryRow('Data Sources', [...new Set(samples.map(s => s.source).filter(Boolean))].slice(0, 4).join(', ') || source)}
+                            </div>
+                        </div>
+                        <div class="weather-dashboard-chart">
+                            <canvas id="weather-dashboard-wind" width="520" height="230"></canvas>
+                        </div>
+                        <div class="weather-dashboard-forecast">
+                            <div class="weather-card-title">5-Day Forecast</div>
+                            <div class="weather-forecast-grid">
+                                ${forecast.length ? forecast.map(forecastTile).join('') : '<div class="weather-map-caption">Forecast unavailable for this location.</div>'}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const close = () => backdrop.remove();
+        backdrop.addEventListener('click', (e) => {
+            if (e.target === backdrop || e.target.closest('.weather-dashboard-close')) close();
+        });
+        document.addEventListener('keydown', function onKey(e) {
+            if (e.key === 'Escape') {
+                close();
+                document.removeEventListener('keydown', onKey);
+            }
+        });
+        document.body.appendChild(backdrop);
+        initWeatherDashboardMap(mapCenter, weather?.map_overlays || {});
+        drawWeatherLineChart('weather-dashboard-temp', samples, 'temperature_f', 'Temperature Trend', 'F', '#ff7b72');
+        drawWeatherLineChart('weather-dashboard-pressure', samples, 'pressure_mb', 'Pressure Trend', 'mb', '#d2a8ff');
+        drawWeatherLineChart('weather-dashboard-wind', samples, 'wind_speed_mph', 'Wind Trend', 'mph', '#3fb950');
+    }
+
+    function newestWeatherSample(samples) {
+        return [...(samples || [])].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))[0] || null;
+    }
+
+    function dashboardLocation(location) {
+        const stationLat = numberOrNull(window.pvMap?.myPosition?.lat);
+        const stationLon = numberOrNull(window.pvMap?.myPosition?.lng);
+        if (stationLat != null && stationLon != null) {
+            const callsign = window.pvMap?.myCallsign || window.pvApp?.config?.station?.callsign;
+            return {
+                lat: stationLat,
+                lon: stationLon,
+                label: callsign ? `${callsign} station` : 'My station',
+                configured: true,
+            };
+        }
+
+        const lat = numberOrNull(location.latitude);
+        const lon = numberOrNull(location.longitude);
+        return {
+            lat: lat ?? 39.8,
+            lon: lon ?? -98.5,
+            label: location.name || (lat != null && lon != null ? `${lat.toFixed(3)}, ${lon.toFixed(3)}` : 'Regional US view'),
+            configured: lat != null && lon != null,
+        };
+    }
+
+    function numberOrNull(value) {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : null;
+    }
+
+    function maxWeatherRecords(samples) {
+        const fields = {
+            temperature_f: ['temperature_f'],
+            wind_speed_mph: ['wind_speed_mph'],
+            wind_gusts_mph: ['wind_gusts_mph', 'wind_gust_mph'],
+            humidity: ['humidity'],
+        };
+        const result = {};
+        Object.entries(fields).forEach(([key, aliases]) => {
+            (samples || []).forEach((sample) => {
+                const value = aliases.map((alias) => numberOrNull(sample[alias])).find((v) => v != null);
+                if (value == null) return;
+                if (!result[key] || value > result[key].value) {
+                    result[key] = {
+                        value,
+                        timestamp: sample.timestamp,
+                        source: sample.source,
+                    };
+                }
+            });
+        });
+        return result;
+    }
+
+    function recordTile(label, record, formatter) {
+        if (!record) {
+            return `<div class="weather-record-tile"><span>${_esc(label)}</span><strong>--</strong><em>No samples</em></div>`;
+        }
+        const time = record.timestamp
+            ? new Date(record.timestamp * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+            : 'Unknown time';
+        return `
+            <div class="weather-record-tile">
+                <span>${_esc(label)}</span>
+                <strong>${_esc(formatter(record.value))}</strong>
+                <em>${_esc(time)}${record.source ? ` · ${_esc(record.source)}` : ''}</em>
+            </div>
+        `;
+    }
+
+    function forecastTile(day) {
+        const date = day.date
+            ? new Date(`${day.date}T12:00:00`).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+            : '--';
+        const hi = numberOrNull(day.temp_max_f);
+        const lo = numberOrNull(day.temp_min_f);
+        const wind = numberOrNull(day.wind_speed_mph);
+        const precip = numberOrNull(day.precipitation_probability);
+        return `
+            <div class="weather-forecast-tile">
+                <div class="weather-forecast-day">${_esc(date)}</div>
+                <div class="weather-forecast-icon">${_esc(day.icon || '')}</div>
+                <div class="weather-forecast-desc">${_esc(day.description || '--')}</div>
+                <div class="weather-forecast-temp">${hi != null ? Math.round(hi) : '--'} / ${lo != null ? Math.round(lo) : '--'} F</div>
+                <div class="weather-forecast-meta">${wind != null ? `${Math.round(wind)} mph wind` : '--'} · ${precip != null ? `${Math.round(precip)}% precip` : '--'}</div>
+            </div>
+        `;
+    }
+
+    async function initWeatherDashboardMap(center, overlayConfig = {}) {
+        const el = document.getElementById('weather-dashboard-map');
+        if (!el || typeof L === 'undefined') return;
+        const lat = center.lat;
+        const lon = center.lon;
+        const map = L.map(el, {
+            center: [lat, lon],
+            zoom: center.configured ? 7 : 4,
+            zoomControl: false,
+            attributionControl: true,
+            dragging: false,
+            scrollWheelZoom: false,
+            doubleClickZoom: false,
+            boxZoom: false,
+            keyboard: false,
+        });
+        L.tileLayer('/api/map-tiles/{z}/{x}/{y}', {
+            maxZoom: 19,
+            attribution: '&copy; OpenStreetMap contributors',
+        }).addTo(map);
+        L.circleMarker([lat, lon], {
+            radius: 6,
+            color: '#58a6ff',
+            fillColor: '#58a6ff',
+            fillOpacity: 0.9,
+            weight: 2,
+        }).addTo(map);
+
+        await addDashboardRadar(map, overlayConfig);
+        setTimeout(() => map.invalidateSize(), 50);
+    }
+
+    async function addDashboardRadar(map, overlayConfig = {}) {
+        const provider = overlayConfig.radar_provider || 'rainviewer';
+        const opacity = Math.max(0.15, Math.min(0.85, Number(overlayConfig.radar_opacity) || 0.55));
+        if (provider !== 'rainviewer') {
+            if (provider === 'iem_nexrad') {
+                L.tileLayer.wms('https://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad/n0q.cgi', {
+                    layers: 'nexrad-n0q-900913',
+                    format: 'image/png',
+                    transparent: true,
+                    opacity,
+                    attribution: 'Radar: Iowa State IEM',
+                }).addTo(map);
+            }
+            return;
+        }
+
+        try {
+            const data = await fetch('https://api.rainviewer.com/public/weather-maps.json').then((resp) => resp.json());
+            const host = data?.host;
+            const frames = (data?.radar?.past || []).slice(-6);
+            if (!host || !frames.length) return;
+            const layers = frames.map((frame, idx) => {
+                const layer = L.tileLayer(`${host}${frame.path}/512/{z}/{x}/{y}/6/1_1.png`, {
+                    opacity: idx === frames.length - 1 ? opacity : 0,
+                    maxZoom: 19,
+                    maxNativeZoom: 7,
+                    attribution: 'Radar: RainViewer',
+                }).addTo(map);
+                return layer;
+            });
+            if (layers.length > 1) {
+                let idx = layers.length - 1;
+                const timer = setInterval(() => {
+                    if (!document.body.contains(map.getContainer())) {
+                        clearInterval(timer);
+                        return;
+                    }
+                    layers[idx].setOpacity(0);
+                    idx = (idx + 1) % layers.length;
+                    layers[idx].setOpacity(opacity);
+                }, 650);
+            }
+        } catch (e) {
+            console.warn('Dashboard radar unavailable:', e);
+        }
+    }
+
+    function gaugeTile(label, value, rawValue, min, max, color, caption) {
+        const n = numberOrNull(rawValue);
+        const pct = n == null ? 0 : Math.max(0, Math.min(1, (n - min) / (max - min)));
+        return `
+            <div class="weather-gauge">
+                <div class="weather-gauge-label">${_esc(label)}</div>
+                <div class="weather-gauge-ring" style="--pct:${Math.round(pct * 360)}deg;--gauge-color:${color};">
+                    <div class="weather-gauge-value">${_esc(value)}</div>
+                </div>
+                <div class="weather-gauge-caption">${_esc(caption || '')}</div>
+            </div>
+        `;
+    }
+
+    function statusTile(label, value) {
+        return `<div class="weather-status-tile"><div class="weather-status-label">${_esc(label)}</div><div class="weather-status-value">${_esc(value)}</div></div>`;
+    }
+
+    function summaryRow(label, value) {
+        return `<div class="weather-summary-row"><span>${_esc(label)}</span><strong>${_esc(value || '--')}</strong></div>`;
+    }
+
+    function formatTempValue(value) {
+        const n = numberOrNull(value);
+        if (n == null) return '--';
+        return window.formatTempF ? window.formatTempF(n) : `${Math.round(n)} F`;
+    }
+
+    function calculateDewPointF(tempF, humidity) {
+        if (tempF == null || humidity == null || humidity <= 0) return null;
+        const tempC = (tempF - 32) * 5 / 9;
+        const gamma = Math.log(humidity / 100) + (17.62 * tempC) / (243.12 + tempC);
+        return ((243.12 * gamma) / (17.62 - gamma)) * 9 / 5 + 32;
+    }
+
+    function calculateHeatIndexF(tempF, humidity) {
+        if (tempF == null || humidity == null || tempF < 80) return tempF;
+        return -42.379 + 2.04901523 * tempF + 10.14333127 * humidity
+            - 0.22475541 * tempF * humidity - 0.00683783 * tempF * tempF
+            - 0.05481717 * humidity * humidity + 0.00122874 * tempF * tempF * humidity
+            + 0.00085282 * tempF * humidity * humidity - 0.00000199 * tempF * tempF * humidity * humidity;
+    }
+
+    function comfortLabel(tempF, humidity) {
+        if (tempF == null || humidity == null) return '--';
+        if (tempF >= 90 && humidity >= 55) return 'Hot and humid';
+        if (tempF <= 35) return 'Cold';
+        if (humidity >= 80) return 'Very humid';
+        if (humidity <= 25) return 'Dry';
+        if (tempF >= 65 && tempF <= 80) return 'Comfortable';
+        return 'Moderate';
+    }
+
+    function humidityCaption(humidity) {
+        if (humidity == null) return 'Relative humidity';
+        if (humidity >= 80) return 'Saturated air, fog or rain possible';
+        if (humidity <= 30) return 'Dry air';
+        return 'Relative humidity';
+    }
+
+    function pressureCaption(pressure) {
+        if (pressure == null) return 'Sea-level pressure';
+        if (pressure < 1000) return 'Lower pressure pattern';
+        if (pressure > 1025) return 'Higher pressure pattern';
+        return 'Near standard pressure';
+    }
+
     function showWeatherGraphPopout(canvasId) {
         const config = WEATHER_CHARTS[canvasId];
         if (!config) return;
@@ -1016,6 +1402,7 @@
         loadSporadicE,
         loadFirstHeard,
         loadWeatherGraphs,
+        showWeatherDashboard,
         exportData,
     };
 

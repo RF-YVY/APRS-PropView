@@ -1,6 +1,6 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.5.6.0** | June 4, 2026
+**Version 1.5.7.0** | June 5, 2026
 
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 
@@ -17,7 +17,7 @@
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
 
-Version 1.5.6.0 adds Windows setup installers with installer-based in-app updates, platform-aware update UX, Home Assistant MQTT Discovery, MQTT availability/events, gpsd ingestion, visible-map tile caching, and macOS build/run documentation.
+Version 1.5.7.0 expands Home Assistant MQTT Discovery with binary status sensors and watched callsign entities, adds a retained MQTT status snapshot feed, improves Sporadic-E diagnostics, adds a station-symbol size control, adds a full weather analytics dashboard, and hardens first-heard station tracking so duplicate or cleaned-up stations are not announced repeatedly.
 
 Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs/linux-raspberry-pi.md).
 
@@ -29,14 +29,14 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **IGate** — Bidirectional RF ↔ APRS-IS gateway with proper q-construct handling and third-party IS→RF forwarding
 - **RF Station Tracking** — Separate list of stations heard directly on RF
 - **APRS-IS Station Tracking** — Separate list of stations received from APRS-IS
-- **Propagation Map** — Interactive Leaflet map with APRS sprite icons (16px markers, 32px in popup), directional arrowed path lines, map-created APRS objects, and light/dark theme toggle
+- **Propagation Map** — Interactive Leaflet map with APRS sprite icons, adjustable marker size, directional arrowed path lines, map-created APRS objects, and light/dark theme toggle
 - **Custom/Offline Map Tiles** — Point the map at a local XYZ tile server or cache the visible map area for offline/field use
 - **Dual Propagation Meters** — Header gauges: "VHF Propagation My Station" (direct-heard RF only) and "Regional VHF Propagation" (all RF including via digipeater), each with configurable scoring thresholds
 - **Configurable Path Lines** — Directional station-to-station lines support distance or custom coloring, weight, opacity, solid/dashed/dotted patterns, and offset arrows for bidirectional paths
 - **Digipeater-Routed Lines** — RF stations heard through known digipeaters draw TX-to-digi-to-RX paths instead of misleading direct-heard lines
 - **Moving Station Cleanup** — If APRS-IS later reports the same moving callsign at a newer different position, the stale RF marker and path line are removed from the map
 - **Callsign Labels** — Toggle persistent callsign labels above each station icon on the map
-- **Map Callsign Search** — Jump directly to a station by callsign from the map search box
+- **Map Callsign Search** — Expandable/collapsible map search box with Enter-to-jump and Esc-to-collapse keyboard handling
 - **Auto-Fit Zoom** — Automatically zoom the map to fit all visible stations; zooms back in as stations expire; overridden by manual pan/zoom
 - **Station Ghosting** — Configurable fade effect (pulsing dashed border) for stations not heard recently
 - **Station Expiry** — Automatically remove stations from the map after a configurable "last heard" timeout
@@ -52,6 +52,8 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **Propagation Heatmap** — Hour-by-hour visualization of propagation activity over time
 - **Station Reliability Scoring** — Grade (A–F) for each station based on packet consistency
 - **Best Time of Day** — Identify peak propagation windows from historical data
+- **Sporadic-E Diagnostics** — Select 6-hour, 24-hour, or 7-day analysis windows and see RF station counts, strongest stations, qualifying-distance counts, near misses, and path-quality weighting details
+- **Weather Analytics Dashboard** — Pop-out dashboard for current weather, gauges, history, records, forecast, and map context
 
 ### Alerts
 
@@ -63,7 +65,7 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **Alert Destination Tests** — Send preformatted test messages to selected Discord, Email, and SMS destinations from Settings
 - **Quiet Hours** — Configurable quiet time window (HH:MM 24h) to suppress notifications
 - **Message Notifications** — Get notified via Discord/Email/SMS when APRS messages are received
-- **MQTT Publishing** — Publish retained propagation metrics, score/level topics, Home Assistant Discovery sensors, availability state, automation events, and alert events to brokers such as Mosquitto, Home Assistant, Node-RED, or EMQX
+- **MQTT Publishing** — Publish retained propagation metrics, score/level topics, Home Assistant Discovery sensors and binary sensors, watched callsign entities, status snapshots, typed automation events, and alert events to brokers such as Mosquitto, Home Assistant, Node-RED, or EMQX
 - **Discord Webhooks** — Push notifications to a Discord channel
 - **Email (SMTP)** — Email alerts via any SMTP server
 - **SMS Gateway** — Text alerts via carrier email-to-SMS gateways
@@ -209,7 +211,7 @@ the current `APRSPropView.exe`.
 Installer upgrades replace the application executable and bundled files only.
 User data such as `config.toml`, `propview.db`, `map_tile_cache/`, and
 `user_audio/` is left in place. Publish both `APRSPropView.exe` and the setup
-asset on GitHub releases; assets named like `APRSPropViewSetup-1.5.6.0.exe` are
+asset on GitHub releases; assets named like `APRSPropViewSetup-1.5.7.0.exe` are
 detected by the in-app update checker so users can click **Install Update** in
 the About tab. On Linux, Raspberry Pi, and macOS, users still see release
 notices but installer-based update buttons are hidden because those platforms
@@ -262,7 +264,7 @@ All settings are in `config.toml` and can be edited from the web UI **Settings**
 | `[weather]` | Weather enabled, location code (zip/ICAO), WXnow/Open-Meteo current-condition options, banner alert range, radar overlay, map-only alert polygon range, alert scope, and adaptive polling |
 | `[wxnow]` | APRS weather transmit from `WXnow.txt`, including SSID, beacon interval, stale cutoff, position mode, path, and RF/APRS-IS route |
 | `[gps]` | Browser, own-packet, serial, TCP, UDP, and gpsd GPS ingestion |
-| `[mqtt]` | Optional broker settings for propagation, Home Assistant Discovery, automation events, and alert publishing |
+| `[mqtt]` | Optional broker settings for propagation, Home Assistant Discovery, watched callsigns, retained status snapshots, automation events, and alert publishing |
 
 ### Offline Map Tiles
 

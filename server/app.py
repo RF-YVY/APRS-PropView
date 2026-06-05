@@ -654,6 +654,7 @@ def create_app(
             config.mqtt.discovery_prefix,
             config.mqtt.device_name,
             config.mqtt.device_id,
+            tuple(config.mqtt.watched_callsigns),
         )
 
     async def _apply_mqtt_runtime() -> str:
@@ -663,6 +664,7 @@ def create_app(
                 await current.close()
                 mqtt_state["publisher"] = None
                 tracker.set_mqtt_publisher(None)
+                handler.set_mqtt_publisher(None)
 
             if not config.mqtt.enabled:
                 logger.info("MQTT: disabled")
@@ -679,11 +681,15 @@ def create_app(
                 discovery_prefix=config.mqtt.discovery_prefix,
                 device_name=config.mqtt.device_name,
                 device_id=config.mqtt.device_id,
+                station_callsign=config.station.full_callsign,
+                app_version=app_version,
+                watched_callsigns=config.mqtt.watched_callsigns,
             )
             connected = await publisher.connect()
             if connected:
                 mqtt_state["publisher"] = publisher
                 tracker.set_mqtt_publisher(publisher)
+                handler.set_mqtt_publisher(publisher)
                 logger.info("MQTT: reconnected to %s:%s", config.mqtt.broker, config.mqtt.port)
                 return "MQTT reconnected"
 
@@ -954,7 +960,7 @@ $installer = '{installer_arg}'
 $workingDir = '{working_dir_arg}'
 $parentPid = {os.getpid()}
 Wait-Process -Id $parentPid -Timeout 60 -ErrorAction SilentlyContinue
-Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS', '/RESTARTAPPLICATIONS') -WorkingDirectory $workingDir
+Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS', '/FORCECLOSEAPPLICATIONS', '/RESTARTAPPLICATIONS') -WorkingDirectory $workingDir
 """
         encoded_script = base64.b64encode(helper_script.encode("utf-16le")).decode("ascii")
         subprocess.Popen(
@@ -1549,10 +1555,10 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
         return await analytics.get_historical_comparison()
 
     @app.get("/api/analytics/sporadic-e")
-    async def get_sporadic_e():
+    async def get_sporadic_e(hours: int = Query(6, ge=1, le=168)):
         if not analytics:
             return {"es_level": "none", "es_score": 0, "candidates": []}
-        return await analytics.detect_sporadic_e()
+        return await analytics.detect_sporadic_e(hours=hours)
 
     @app.get("/api/analytics/observed-range")
     async def get_observed_range(
@@ -2191,6 +2197,7 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 "discovery_prefix": config.mqtt.discovery_prefix,
                 "device_name": config.mqtt.device_name,
                 "device_id": config.mqtt.device_id,
+                "watched_callsigns": config.mqtt.watched_callsigns,
             },
         }
 
@@ -2745,6 +2752,22 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 config.mqtt.discovery_prefix = (mc.get("discovery_prefix", config.mqtt.discovery_prefix) or "homeassistant").strip().strip("/")
                 config.mqtt.device_name = (mc.get("device_name", config.mqtt.device_name) or "APRS PropView").strip()
                 config.mqtt.device_id = (mc.get("device_id", config.mqtt.device_id) or "aprs_propview").strip()
+                watched = mc.get("watched_callsigns", config.mqtt.watched_callsigns)
+                if isinstance(watched, str):
+                    watched = re.split(r"[\s,]+", watched)
+                if not isinstance(watched, list):
+                    watched = config.mqtt.watched_callsigns
+                normalized_watched = []
+                seen_watched = set()
+                for value in watched:
+                    call = str(value or "").strip().upper()
+                    if not call or call in seen_watched:
+                        continue
+                    if not re.fullmatch(r"[A-Z0-9]{1,9}(?:-[0-9]{1,2})?", call):
+                        continue
+                    seen_watched.add(call)
+                    normalized_watched.append(call)
+                config.mqtt.watched_callsigns = normalized_watched[:40]
 
             # Save to file
             config_path = Path("config.toml")

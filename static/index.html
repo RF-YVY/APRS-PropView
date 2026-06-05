@@ -23,7 +23,7 @@
     </script>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css" />
-    <link rel="stylesheet" href="/static/css/style.css?v=1.5.6.0" />
+    <link rel="stylesheet" href="/static/css/style.css?v=1.5.7.0-r3" />
     <!-- Leaflet JS -->
     <script defer src="/static/vendor/leaflet/leaflet.js"></script>
 </head>
@@ -133,9 +133,10 @@
             </div>
             <!-- Severe weather alert banners -->
             <div id="wx-alerts-container" class="wx-alerts-container"></div>
-            <div class="map-search">
-                <input type="text" id="map-search-call" placeholder="Find callsign" maxlength="12" autocomplete="off">
+            <div class="map-search collapsed" id="map-search-wrap">
+                <input type="text" id="map-search-call" placeholder="Find callsign" maxlength="12" autocomplete="off" aria-label="Find callsign">
                 <button type="button" id="btn-map-search" title="Jump to callsign on map">Find</button>
+                <button type="button" id="btn-map-search-collapse" title="Collapse callsign search" aria-label="Collapse callsign search">&times;</button>
             </div>
             <div id="map"></div>
             <button id="sidebar-toggle" title="Toggle sidebar">▶</button>
@@ -152,6 +153,16 @@
                 <button id="btn-toggle-autofit" title="Auto-zoom to fit all stations">⛶</button>
                 <button id="btn-cache-map" title="Cache visible map tiles for offline use">Cache</button>
                 <div class="map-control-divider"></div>
+                <div id="symbol-size-wrap">
+                    <button id="symbol-size-btn" class="map-wide-control" type="button" title="Station symbol size">Size</button>
+                    <div id="symbol-size-popover" class="line-style-popover">
+                        <label>
+                            <span>Symbols</span>
+                            <input id="station-symbol-size" type="range" min="0.65" max="1.8" step="0.05" value="1">
+                        </label>
+                        <div id="station-symbol-size-value">100%</div>
+                    </div>
+                </div>
                 <select id="line-time-filter" title="Filter lines by time">
                     <option value="1">1h lines</option>
                     <option value="6">6h lines</option>
@@ -574,6 +585,11 @@
                     <div id="sec-sporadic-e" class="analytics-section">
                         <div class="analytics-header">
                             <h3>⚡ Sporadic-E Detection</h3>
+                            <select id="sporadic-e-hours">
+                                <option value="6">Last 6h</option>
+                                <option value="24">Last 24h</option>
+                                <option value="168">Last 7d</option>
+                            </select>
                         </div>
                         <p class="analytics-desc">Heuristic detection of possible sporadic-E openings based on distance, transience, and seasonal patterns.</p>
                         <div id="es-status" class="es-status-card">
@@ -608,6 +624,7 @@
                     <div id="sec-weather" class="analytics-section">
                         <div class="analytics-header">
                             <h3>Weather Graphs</h3>
+                            <button type="button" id="btn-weather-dashboard" class="analytics-action-btn" onclick="window.pvAnalytics?.showWeatherDashboard?.()">Dashboard</button>
                             <select id="weather-analytics-hours">
                                 <option value="6">6h</option>
                                 <option value="12">12h</option>
@@ -1701,6 +1718,10 @@
                             <label for="cfg-mqtt-device-id">Device ID</label>
                             <input type="text" id="cfg-mqtt-device-id" placeholder="aprs_propview">
                         </div>
+                        <div class="settings-row full-width">
+                            <label for="cfg-mqtt-watched-callsigns">Watched Callsigns</label>
+                            <textarea id="cfg-mqtt-watched-callsigns" rows="3" placeholder="K5YVY-1, WB5TZN-1"></textarea>
+                        </div>
                         <div class="settings-row">
                             <label></label>
                             <button type="button" class="btn-small" id="btn-mqtt-guide">Open MQTT Setup Guide</button>
@@ -1720,7 +1741,7 @@
                 <div class="about-panel">
                     <div class="about-header">
                         <h2>APRS PropView</h2>
-                        <span id="about-version" class="about-version">v1.5.6.0</span>
+                        <span id="about-version" class="about-version">v1.5.7.0</span>
                     </div>
                     <div class="about-section">
                         <p>A real-time APRS digipeater and IGate focused on VHF propagation, live mapping, APRS messaging, analytics, and weather-aware situational awareness.</p>
@@ -1736,9 +1757,9 @@
                     </div>
                     <div class="about-section">
                         <h3>Build Info</h3>
-                        <p>Version: <span id="about-version-detail">1.5.6.0</span></p>
-                        <p>Release Date: <span id="about-date">June 4, 2026</span></p>
-                        <p>Highlights: Windows setup installer and in-app update handoff, platform-aware update UX, Home Assistant MQTT Discovery/events, gpsd ingestion, visible-map tile caching, and macOS build/run documentation.</p>
+                        <p>Version: <span id="about-version-detail">1.5.7.0</span></p>
+                        <p>Release Date: <span id="about-date">June 5, 2026</span></p>
+                        <p>Highlights: expanded Home Assistant MQTT Discovery/status entities, watched callsign MQTT publishing, richer Sporadic-E diagnostics, station symbol sizing, weather analytics dashboard, and first-heard tracking hardening.</p>
                     </div>
                     <div class="about-section">
                         <h3>Video Guide</h3>
@@ -1905,11 +1926,12 @@
                         <tr><td>🔎</td><td><b>Auto-Fit</b> — Automatically zoom to fit all visible stations. Turns off when you manually pan or zoom; click again to re-enable.</td></tr>
                         <tr><td>⏱️</td><td><b>Line Time Filter</b> — Only show path lines from stations heard within the selected window (1h, 6h, 12h, 24h, or all time).</td></tr>
                         <tr><td>Line</td><td><b>Line Style</b> - Choose distance or custom color, line weight, opacity, and solid/dashed/dotted patterns. Bidirectional arrows are offset so opposing paths remain readable.</td></tr>
+                        <tr><td>Size</td><td><b>Station Symbol Size</b> - Scale map station symbols from compact to large for dense desktop views, touch screens, or presentation displays.</td></tr>
                         <tr><td>Obj</td><td><b>Create APRS Object</b> - Click a map location, enter object details, choose the transmit route/path, and save it to the scheduled APRS object list.</td></tr>
                         <tr><td>🏷️ Types ▾</td><td><b>Type Filter</b> — Check/uncheck station categories (Digipeater, Weather, House, Car, etc.) to control which types appear on the map.</td></tr>
-                        <tr><td>Search</td><td><b>Callsign Search</b> — Enter a callsign to jump to that station marker on the map.</td></tr>
+                        <tr><td>Search</td><td><b>Callsign Search</b> — Expand the search box, enter a callsign, press Enter or Find to jump to that marker, and press Esc to collapse the search.</td></tr>
                     </table>
-                    <p>Weather radar and NWS polygons are managed from Settings - Weather. All map toggle states, zoom level, position, and filter selections are saved automatically and persist across restarts. Expanded weather alert banners rise above map controls and scroll when alert text is long.</p>
+                    <p>Weather radar and NWS polygons are managed from Settings - Weather. All map toggle states, zoom level, position, and filter selections are saved automatically and persist across restarts. Expanded weather alert banners rise above map controls and scroll when alert text is long; use the X on an alert banner to clear that alert from view.</p>
                     <p>Application update checks are managed from Settings - Web Interface. You can disable release checks entirely or choose how often the app rechecks GitHub while it stays running. Windows setup installs can download and launch newer setup installers from the About tab; Linux, Raspberry Pi, and macOS installs show release notices without the Windows-only installer button.</p>
                 </section>
 
@@ -1944,6 +1966,8 @@
                         <li><b>Heatmap</b> — Time-of-day vs. distance heatmap showing when propagation peaks.</li>
                         <li><b>Station Reliability</b> — Which stations are heard most consistently.</li>
                         <li><b>Best Times</b> — Hourly chart showing the best time of day for propagation.</li>
+                        <li><b>Sporadic-E</b> — Select 6h, 24h, or 7d windows and review RF station counts, strongest stations, candidate gates, and path-weighted Es scores.</li>
+                        <li><b>Weather Dashboard</b> — Pop out current weather gauges, records, charts, forecast tiles, and map context from the Weather Graphs section.</li>
                         <li><b>Alerts</b> — History of band-opening alerts triggered by the system.</li>
                     </ul>
                 </section>
@@ -2010,7 +2034,7 @@
                     <h4>MQTT Integration</h4>
                     <p>MQTT is for sending APRS PropView events and propagation status to other systems. It is not needed for normal APRS, digipeater, IGate, mapping, or messaging operation; enable it when you have an MQTT broker such as Mosquitto, Home Assistant, Node-RED, EMQX, or another dashboard/automation system that should receive PropView data.</p>
                     <p>Common use cases include showing current propagation level on a wall dashboard, triggering Home Assistant or Node-RED automations when a band opening alert fires, logging propagation metrics into another time-series system, or bridging PropView status to a shack display without scraping the web UI.</p>
-                    <p>Configure the broker host, port, topic prefix, and optional username/password. The default topic prefix is <code>aprs/propview</code>. APRS PropView publishes retained propagation metrics on <code>aprs/propview/propagation</code>, retained summary values on <code>aprs/propview/score</code> and <code>aprs/propview/level</code>, and alert events on <code>aprs/propview/alert</code>. MQTT reconnects live after saving settings.</p>
+                    <p>Configure the broker host, port, topic prefix, optional username/password, Home Assistant device identity, and optional watched callsigns. The default topic prefix is <code>aprs/propview</code>. APRS PropView publishes retained propagation metrics on <code>aprs/propview/propagation</code>, retained summary values on <code>aprs/propview/score</code> and <code>aprs/propview/level</code>, retained Home Assistant status on <code>aprs/propview/ha/status</code>, watched station state on <code>aprs/propview/watched/&lt;callsign&gt;</code>, and alert/event payloads on aggregate and typed event topics. MQTT reconnects live after saving settings.</p>
                 </section>
 
                 <section class="help-section">
@@ -2039,12 +2063,12 @@
 
     <!-- ── Scripts ────────────────────────────────────────────── -->
     <script defer src="/static/js/websocket.js"></script>
-    <script defer src="/static/js/map.js?v=1.5.6.0"></script>
-    <script defer src="/static/js/stations.js?v=1.5.6.0"></script>
+    <script defer src="/static/js/map.js?v=1.5.7.0-r3"></script>
+    <script defer src="/static/js/stations.js?v=1.5.7.0-r3"></script>
     <script defer src="/static/js/icons.js"></script>
-    <script defer src="/static/js/analytics.js?v=1.5.6.0"></script>
-    <script defer src="/static/js/messages.js?v=1.5.6.0"></script>
-    <script defer src="/static/js/weather.js?v=1.5.6.0"></script>
-    <script defer src="/static/js/app.js?v=1.5.6.0"></script>
+    <script defer src="/static/js/analytics.js?v=1.5.7.0-r3"></script>
+    <script defer src="/static/js/messages.js?v=1.5.7.0-r3"></script>
+    <script defer src="/static/js/weather.js?v=1.5.7.0-r3"></script>
+    <script defer src="/static/js/app.js?v=1.5.7.0-r3"></script>
 </body>
 </html>

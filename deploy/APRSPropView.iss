@@ -3,7 +3,7 @@
 ; Build through build_installer.py so MyAppVersion is supplied from main.py.
 
 #ifndef MyAppVersion
-#define MyAppVersion "1.5.6.0"
+#define MyAppVersion "1.5.7.0"
 #endif
 
 #define MyAppName "APRS PropView"
@@ -68,3 +68,21 @@ Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: no
 [UninstallDelete]
 ; Keep config.toml, propview.db, map_tile_cache, and user_audio intact.
 Type: files; Name: "{app}\config.toml.example"
+
+[Code]
+procedure StopRunningApp();
+var
+  ResultCode: Integer;
+begin
+  { PyInstaller one-file builds can keep the old EXE locked while the web UI,
+    tray icon, or update handoff is still shutting down. Ask Windows to close
+    any running APRS PropView process before file replacement begins. }
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM {#MyAppExeName} /T /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(1500);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssInstall then
+    StopRunningApp();
+end;

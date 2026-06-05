@@ -227,6 +227,7 @@ discovery_enabled = false
 discovery_prefix = "homeassistant"
 device_name = "APRS PropView"
 device_id = "aprs_propview"
+watched_callsigns = []
 """
 
 
@@ -508,6 +509,7 @@ class MQTTConfig:
     discovery_prefix: str = "homeassistant"
     device_name: str = "APRS PropView"
     device_id: str = "aprs_propview"
+    watched_callsigns: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -877,5 +879,6 @@ class Config:
             f'discovery_prefix = "{esc(self.mqtt.discovery_prefix)}"',
             f'device_name = "{esc(self.mqtt.device_name)}"',
             f'device_id = "{esc(self.mqtt.device_id)}"',
+            'watched_callsigns = [' + ', '.join('"' + esc(str(call).strip().upper()) + '"' for call in self.mqtt.watched_callsigns if str(call).strip()) + ']',
         ])
         path.write_text("\n".join(lines) + "\n")

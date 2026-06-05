@@ -372,6 +372,47 @@ async def fetch_current_weather(lat: float, lon: float) -> Optional[Dict[str, An
 
 # ── Tropospheric Ducting Index ───────────────────────────────────────
 
+def _list_value(data: Dict[str, Any], key: str, idx: int):
+    values = data.get(key) or []
+    return values[idx] if idx < len(values) else None
+
+
+async def fetch_5day_forecast(lat: float, lon: float) -> List[Dict[str, Any]]:
+    """Fetch a compact 5-day forecast from Open-Meteo."""
+    url = (
+        f"https://api.open-meteo.com/v1/forecast?"
+        f"latitude={lat:.4f}&longitude={lon:.4f}"
+        f"&daily=weather_code,temperature_2m_max,temperature_2m_min,"
+        f"precipitation_sum,precipitation_probability_max,wind_speed_10m_max,"
+        f"wind_gusts_10m_max"
+        f"&temperature_unit=fahrenheit"
+        f"&wind_speed_unit=mph"
+        f"&precipitation_unit=inch"
+        f"&forecast_days=5"
+        f"&timezone=auto"
+    )
+    data = await _async_http_get(url, timeout=15)
+    daily = data.get("daily", {}) if data else {}
+    dates = daily.get("time") or []
+    forecast: List[Dict[str, Any]] = []
+    for idx, date_value in enumerate(dates[:5]):
+        code = _list_value(daily, "weather_code", idx)
+        desc, icon = WMO_CODES.get(code, ("Unknown", "â“"))
+        forecast.append({
+            "date": date_value,
+            "weather_code": code,
+            "description": desc,
+            "icon": icon,
+            "temp_max_f": _list_value(daily, "temperature_2m_max", idx),
+            "temp_min_f": _list_value(daily, "temperature_2m_min", idx),
+            "precipitation_in": _list_value(daily, "precipitation_sum", idx),
+            "precipitation_probability": _list_value(daily, "precipitation_probability_max", idx),
+            "wind_speed_mph": _list_value(daily, "wind_speed_10m_max", idx),
+            "wind_gusts_mph": _list_value(daily, "wind_gusts_10m_max", idx),
+        })
+    return forecast
+
+
 async def fetch_ducting_data(lat: float, lon: float) -> Optional[Dict[str, Any]]:
     """Fetch atmospheric data and compute a VHF ducting probability index.
 
@@ -871,10 +912,12 @@ class WeatherManager:
         self._alerts: List[Dict[str, Any]] = []
         self._overlay_alerts: List[Dict[str, Any]] = []
         self._ducting: Optional[Dict[str, Any]] = None
+        self._forecast: List[Dict[str, Any]] = []
         self._last_fetch: float = 0
         self._last_alert_fetch: float = 0
         self._last_overlay_alert_fetch: float = 0
         self._last_ducting_fetch: float = 0
+        self._last_forecast_fetch: float = 0
         self._location_code_resolved: str = ""  # last code we resolved
         self._alert_scope_info: Optional[Dict[str, Any]] = None
         self._elevated_polling_until: float = 0
@@ -899,6 +942,7 @@ class WeatherManager:
             self._last_alert_fetch = 0
             self._last_overlay_alert_fetch = 0
             self._last_ducting_fetch = 0
+            self._last_forecast_fetch = 0
             self._alert_scope_info = None
             country = f", {result.get('country')}" if result.get("country") else ""
             logger.info("Weather location resolved: %s%s", result["name"], country)
@@ -1162,12 +1206,28 @@ class WeatherManager:
 
         return self._ducting
 
+    async def get_forecast(self, force: bool = False) -> List[Dict[str, Any]]:
+        """Get a compact 5-day forecast for the resolved weather location."""
+        if not self.is_configured or not self._location:
+            return []
+
+        if not force and self._forecast and (time.time() - self._last_forecast_fetch < 1800):
+            return self._forecast
+
+        self._forecast = await fetch_5day_forecast(
+            self._location["latitude"],
+            self._location["longitude"],
+        )
+        self._last_forecast_fetch = time.time()
+        return self._forecast
+
     async def get_all(self, force: bool = False) -> Dict[str, Any]:
         """Get combined weather + alerts + ducting payload."""
         current = await self.get_current_weather(force=force)
         alerts = await self.get_alerts(force=force)
         overlay_alerts = await self.get_overlay_alerts(force=force)
         ducting = await self.get_ducting(force=force)
+        forecast = await self.get_forecast(force=force)
 
         return {
             "enabled": self.config.weather.enabled,
@@ -1180,6 +1240,7 @@ class WeatherManager:
             "alerts": alerts,
             "overlay_alerts": overlay_alerts,
             "ducting": ducting,
+            "forecast": forecast,
             "alert_count": len(alerts),
             "warning_count": sum(1 for a in alerts if a["alert_type"] == "warning"),
             "watch_count": sum(1 for a in alerts if a["alert_type"] == "watch"),

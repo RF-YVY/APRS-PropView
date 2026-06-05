@@ -11,6 +11,7 @@ window.pvWeather = (function () {
     let lastWeatherData = null;
     let alertPulseAcknowledged = false;
     let lastAlertSignature = '';
+    const dismissedAlertKeys = new Set();
 
     function init() {
         updateMapSearchOffset();
@@ -158,6 +159,8 @@ window.pvWeather = (function () {
         const container = document.getElementById('wx-alerts-container');
         if (!container) return;
 
+        const visibleAlerts = (alerts || []).filter((alert) => !dismissedAlertKeys.has(alertKey(alert)));
+
         if (!alerts || alerts.length === 0) {
             container.innerHTML = '';
             updateAlertStackState();
@@ -167,10 +170,21 @@ window.pvWeather = (function () {
             hasRenderedAlerts = true;
             return;
         }
+
+        if (visibleAlerts.length === 0) {
+            container.innerHTML = '';
+            updateAlertStackState();
+            lastAlertCount = alerts.length;
+            lastAlertSignature = alerts.map(alertKey).join('||');
+            alertPulseAcknowledged = true;
+            hasRenderedAlerts = true;
+            return;
+        }
+
         // Flash effect when new alerts appear
         const isNew = alerts.length > lastAlertCount;
-        const alertSignature = alerts
-            .map((alert) => alert.id || `${alert.event || ''}|${alert.expires || ''}|${alert.area_desc || ''}`)
+        const alertSignature = visibleAlerts
+            .map(alertKey)
             .join('||');
         if (alertSignature !== lastAlertSignature) {
             alertPulseAcknowledged = false;
@@ -183,15 +197,16 @@ window.pvWeather = (function () {
         }
         hasRenderedAlerts = true;
 
-        container.innerHTML = alerts.map((alert, i) => {
+        container.innerHTML = visibleAlerts.map((alert, i) => {
             const isWarning = alert.alert_type === 'warning';
             const cls = isWarning ? 'wx-alert-warning' : 'wx-alert-watch';
             const icon = isWarning ? '&#128308;' : '&#128992;';
             const alertId = `wx-alert-${i}`;
             const detailId = `${alertId}-detail`;
+            const key = alertKey(alert);
 
             return `
-                <div class="wx-alert ${cls}" title="${escHtml(alert.headline || alert.event)}" id="${alertId}">
+                <div class="wx-alert ${cls}" title="${escHtml(alert.headline || alert.event)}" id="${alertId}" data-alert-key="${escHtml(key)}">
                     <button
                         type="button"
                         class="wx-alert-summary"
@@ -205,6 +220,13 @@ window.pvWeather = (function () {
                         <span class="wx-alert-severity">${escHtml(alert.severity)}</span>
                         <span class="wx-alert-expand">Show details</span>
                     </button>
+                    <button
+                        type="button"
+                        class="wx-alert-dismiss"
+                        onclick="pvWeather.dismissAlert('${escapeJsString(key)}')"
+                        aria-label="Clear ${escHtml(alert.event || 'weather alert')} from view"
+                        title="Clear this alert from view"
+                    >X</button>
                     <div class="wx-alert-detail" id="${detailId}" hidden>
                         ${renderAlertMeta(alert)}
                         ${renderAlertDetail(alert)}
@@ -212,9 +234,43 @@ window.pvWeather = (function () {
                 </div>
             `;
         }).join('');
-        const hasWarning = alerts.some((alert) => alert.alert_type === 'warning');
+        const hasWarning = visibleAlerts.some((alert) => alert.alert_type === 'warning');
         container.classList.toggle('has-unacknowledged-alerts', hasWarning && !alertPulseAcknowledged);
         updateAlertStackState();
+    }
+
+    function alertKey(alert) {
+        return String(alert?.id || `${alert?.event || ''}|${alert?.headline || ''}|${alert?.expires || ''}|${alert?.area_desc || ''}`);
+    }
+
+    function escapeJsString(value) {
+        return String(value || '')
+            .replace(/\\/g, '\\\\')
+            .replace(/'/g, "\\'")
+            .replace(/\r/g, '\\r')
+            .replace(/\n/g, '\\n')
+            .replace(/\u2028/g, '\\u2028')
+            .replace(/\u2029/g, '\\u2029');
+    }
+
+    function dismissAlert(key) {
+        if (!key) return;
+        dismissedAlertKeys.add(String(key));
+        acknowledgeAlertPulse();
+
+        const container = document.getElementById('wx-alerts-container');
+        const card = container?.querySelector(`.wx-alert[data-alert-key="${cssEscape(String(key))}"]`);
+        if (card) card.remove();
+        if (container && !container.querySelector('.wx-alert')) {
+            container.innerHTML = '';
+        }
+        updateAlertStackState();
+        updateMapSearchOffset();
+    }
+
+    function cssEscape(value) {
+        if (window.CSS?.escape) return window.CSS.escape(value);
+        return String(value || '').replace(/["\\]/g, '\\$&');
     }
 
     function renderAlertMeta(alert) {
@@ -378,5 +434,6 @@ window.pvWeather = (function () {
         fetchWeather,
         rerender,
         toggleAlertDetail,
+        dismissAlert,
     };
 })();

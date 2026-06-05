@@ -4,7 +4,7 @@
 Launch this to start the application. The web interface opens automatically.
 """
 
-APP_VERSION = "1.5.6.0"
+APP_VERSION = "1.5.7.0"
 
 import asyncio
 import sys
@@ -372,12 +372,16 @@ async def main():
             discovery_prefix=config.mqtt.discovery_prefix,
             device_name=config.mqtt.device_name,
             device_id=config.mqtt.device_id,
+            station_callsign=config.station.full_callsign,
+            app_version=APP_VERSION,
+            watched_callsigns=config.mqtt.watched_callsigns,
         )
         connected = await mqtt_publisher.connect()
         if connected:
             logger.info(f"MQTT: connected to {config.mqtt.broker}:{config.mqtt.port}")
             mqtt_state["publisher"] = mqtt_publisher
             tracker.set_mqtt_publisher(mqtt_publisher)
+            handler.set_mqtt_publisher(mqtt_publisher)
         else:
             logger.warning("MQTT: failed to connect (check broker settings or paho-mqtt installation)")
             mqtt_publisher = None

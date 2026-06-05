@@ -384,8 +384,8 @@
         <h1>APRS PropView Documentation</h1>
         <p class="lede">A complete field guide for installing, configuring, operating, and understanding APRS PropView: a real-time APRS digipeater, IGate, propagation monitor, weather-aware map, analytics dashboard, and messaging console.</p>
         <div class="meta">
-            <span class="pill">Version covered: 1.5.6.0</span>
-            <span class="pill">Updated: June 4, 2026</span>
+            <span class="pill">Version covered: 1.5.7.0</span>
+            <span class="pill">Updated: June 5, 2026</span>
             <span class="pill">License: Apache 2.0</span>
         </div>
     </div>
@@ -441,7 +441,7 @@
                     <li>Track direct RF stations separately from digipeated and APRS-IS stations.</li>
                     <li>Operate from a vehicle, portable site, or Raspberry Pi using the mobile companion view.</li>
                     <li>Send APRS messages, scheduled bulletins, station status, weather, and map-created APRS objects.</li>
-                    <li>Publish propagation metrics into Home Assistant, Node-RED, or other MQTT consumers.</li>
+                    <li>Publish propagation, status, alert, and watched-station metrics into Home Assistant, Node-RED, or other MQTT consumers.</li>
                 </ul>
                 <a class="backtop" href="#top">Back to top</a>
             </section>
@@ -522,6 +522,7 @@ python main.py</code></pre>
                     <tr><td>Auto-fit</td><td>Zooms the map to include visible stations until manually overridden.</td></tr>
                     <tr><td>Cache</td><td>Downloads currently visible map tiles so they remain available offline later.</td></tr>
                     <tr><td>Line</td><td>Configures line color mode, custom color, weight, opacity, and pattern.</td></tr>
+                    <tr><td>Size</td><td>Scales APRS station symbols up or down and saves the choice in browser UI state.</td></tr>
                     <tr><td>Types</td><td>Filters visible stations by APRS symbol/type categories.</td></tr>
                     </tbody>
                 </table>
@@ -608,7 +609,7 @@ python main.py</code></pre>
                     <li>Solar data widget from hamqsl.com.</li>
                 </ul>
                 <h3>Analytics</h3>
-                <p>The Analytics tab adds historical views including longest path leaderboard, propagation heatmap, station reliability grades, and best time-of-day analysis.</p>
+                <p>The Analytics tab adds historical views including longest path leaderboard, propagation heatmap, station reliability grades, best time-of-day analysis, selectable-window Sporadic-E diagnostics, and a weather dashboard with gauges, records, charts, forecast, and map context.</p>
                 <h3>Alert Tuning</h3>
                 <p>The alert tuning helper can analyze recent RF path history and recommend more selective alert thresholds based on your local station baseline.</p>
                 <a class="backtop" href="#top">Back to top</a>
@@ -622,7 +623,7 @@ python main.py</code></pre>
                     <li>Current conditions banner with temperature, wind, humidity, pressure, feels-like, and location.</li>
                     <li>Metric or imperial units for weather and station displays.</li>
                     <li>Optional animated radar overlay with opacity control.</li>
-                    <li>NWS alert banners and map polygons with radius and category filters.</li>
+                    <li>NWS alert banners and map polygons with radius and category filters. Each alert banner includes an X to clear it from the current view.</li>
                     <li>County/zone geometry fallback for alerts without native polygons.</li>
                 </ul>
                 <h3>WXnow.txt</h3>
@@ -661,11 +662,12 @@ python main.py</code></pre>
 
             <section id="mqtt">
                 <h2>12. MQTT Integration</h2>
-                <p>MQTT publishes propagation state, summary values, availability, Home Assistant Discovery sensors, automation events, and alerts to a broker such as Mosquitto, Home Assistant, Node-RED, or EMQX.</p>
+                <p>MQTT publishes propagation state, summary values, availability, retained Home Assistant status snapshots, watched callsign state, Home Assistant Discovery sensors/binary sensors, automation events, and alerts to a broker such as Mosquitto, Home Assistant, Node-RED, or EMQX.</p>
                 <h3>Basic Setup</h3>
                 <ol>
                     <li>Enable MQTT in Settings.</li>
                     <li>Enter broker host, port, topic prefix, and credentials if needed.</li>
+                    <li>Enter optional watched callsigns if Home Assistant should track whether specific stations were heard recently.</li>
                     <li>Enable Home Assistant Discovery if Home Assistant should create entities automatically.</li>
                     <li>Save. PropView reconnects MQTT live and republishes discovery config topics.</li>
                 </ol>
@@ -680,6 +682,9 @@ python main.py</code></pre>
                     <tr><td><code>aprs/propview/level</code></td><td>Retained regional propagation level text.</td></tr>
                     <tr><td><code>aprs/propview/alert</code></td><td>JSON alert event payload.</td></tr>
                     <tr><td><code>aprs/propview/event</code></td><td>Automation-friendly non-retained events.</td></tr>
+                    <tr><td><code>aprs/propview/event/&lt;type&gt;</code></td><td>Typed event topics for routing specific alerts, messages, and milestones.</td></tr>
+                    <tr><td><code>aprs/propview/ha/status</code></td><td>Retained Home Assistant status JSON for connectivity, counts, packet age, warnings, messages, and band-opening state.</td></tr>
+                    <tr><td><code>aprs/propview/watched/&lt;callsign&gt;</code></td><td>Retained watched-station presence, last-heard, distance, path, and comment details.</td></tr>
                     <tr><td><code>aprs/propview/status</code></td><td>Availability state for Home Assistant.</td></tr>
                     </tbody>
                 </table>
@@ -717,7 +722,7 @@ python main.py</code></pre>
                     <tr><td><code>[weather]</code></td><td>Weather source settings, alerts, radar overlay, NWS scopes, alert categories, and adaptive polling.</td></tr>
                     <tr><td><code>[wxnow]</code></td><td>WXnow weather packet transmit settings.</td></tr>
                     <tr><td><code>[gps]</code></td><td>Browser, APRS self-packet, NMEA, and gpsd ingestion settings.</td></tr>
-                    <tr><td><code>[mqtt]</code></td><td>Broker, topics, Home Assistant Discovery, device identity, and publish behavior.</td></tr>
+                    <tr><td><code>[mqtt]</code></td><td>Broker, topics, Home Assistant Discovery, device identity, watched callsigns, status snapshots, and publish behavior.</td></tr>
                     </tbody>
                 </table>
                 <h3>Backup And Restore</h3>
@@ -737,7 +742,7 @@ python main.py</code></pre>
                 </ul>
                 <h3>Updates</h3>
                 <p>The About tab checks GitHub releases for newer builds unless update checks are disabled. The app can also show an update banner in the dashboard.</p>
-                <p>On Windows installer-based releases, the update checker looks for a GitHub release asset named like <code>APRSPropViewSetup-1.5.6.0.exe</code>. When an installer asset is available, the About tab shows <b>Install Update</b>. Clicking it downloads the setup executable, asks APRS PropView to shut down cleanly, and launches setup after the server exits so newer application files can replace the existing install while keeping user settings and data intact. On Linux, Raspberry Pi, and macOS, release notices remain visible but the Windows-only installer action is hidden.</p>
+                <p>On Windows installer-based releases, the update checker looks for a GitHub release asset named like <code>APRSPropViewSetup-1.5.7.0.exe</code>. When an installer asset is available, the About tab shows <b>Install Update</b>. Clicking it downloads the setup executable, asks APRS PropView to shut down cleanly, and launches setup after the server exits so newer application files can replace the existing install while keeping user settings and data intact. On Linux, Raspberry Pi, and macOS, release notices remain visible but the Windows-only installer action is hidden.</p>
                 <h3>Data Files</h3>
                 <table>
                     <thead>

@@ -49,6 +49,7 @@ class PacketHandler:
         self._last_beacon_tx = 0.0
         self._last_beacon_info = ""
         self._transmit_history: List[Dict[str, Any]] = []
+        self._mqtt_publisher = None
 
         # Alert manager (set later via set_alert_manager)
         self._alert_manager = None
@@ -189,6 +190,10 @@ class PacketHandler:
     def set_aprs_is(self, client):
         """Set the APRS-IS client."""
         self.aprs_is = client
+
+    def set_mqtt_publisher(self, mqtt_publisher):
+        """Inject the optional MQTT publisher for Home Assistant state."""
+        self._mqtt_publisher = mqtt_publisher
 
     def _weather_alert_symbol_override(self) -> Optional[Dict[str, str]]:
         if not getattr(self.config.weather, "weather_alert_symbol_enabled", False):
@@ -465,6 +470,16 @@ class PacketHandler:
             "type": "message",
             "data": msg_record,
         })
+        if getattr(self.tracker, "_mqtt_publisher", None):
+            await self.tracker._publish_mqtt_event({
+                "event": "message_received",
+                "timestamp": time.time(),
+                "from": msg_record["from"],
+                "to": msg_record["to"],
+                "source": source,
+                "message_id": msg_record.get("message_id", ""),
+                "text": msg_record.get("text", ""),
+            })
 
     def _handle_ack(self, from_call: str, ack_id: str):
         """Mark a sent message as acknowledged."""
@@ -967,6 +982,37 @@ class PacketHandler:
     async def _broadcast_stats(self):
         """Push current stats to all connected web clients."""
         await self.ws.broadcast({"type": "stats", "data": dict(self.stats)})
+        if self._mqtt_publisher:
+            try:
+                await self._mqtt_publisher.publish_status_snapshot(self._mqtt_status_snapshot())
+            except Exception as e:
+                logger.error(f"MQTT status publish error: {e}")
+
+    def _mqtt_status_snapshot(self) -> Dict[str, Any]:
+        now = time.time()
+        rf_connected = any(iface.connected for iface in self.rf_interfaces)
+        is_connected = bool(self.aprs_is and self.aprs_is.connected)
+        last_rf_packet_time = getattr(self.tracker, "_last_rf_packet_time", 0.0)
+        return {
+            "rf_station_count": len(getattr(self.tracker, "_rf_stations", {}) or {}),
+            "aprs_is_station_count": len(getattr(self.tracker, "_is_stations", {}) or {}),
+            "last_rf_packet_time": last_rf_packet_time or None,
+            "last_rf_packet_age_seconds": round(now - last_rf_packet_time) if last_rf_packet_time else None,
+            "aprs_is_connected": "ON" if is_connected else "OFF",
+            "rf_interface_connected": "ON" if rf_connected else "OFF",
+            "band_opening_active": "OFF",
+            "sporadic_e_possible": "OFF",
+            "new_station_heard": "ON" if now < getattr(self.tracker, "_recent_first_heard_until", 0.0) else "OFF",
+            "weather_warning_active": "OFF",
+            "aprs_message_waiting": "ON" if any(
+                msg.get("direction") == "rx" and not msg.get("acked")
+                for msg in self._messages
+            ) else "OFF",
+            "rf_interface_down": "ON" if self.rf_interfaces and not rf_connected else "OFF",
+            "aprs_is_down": "ON" if self.config.aprs_is.enabled and not is_connected else "OFF",
+            "weather_alert_count": 0,
+            "timestamp": now,
+        }
 
     def get_status(self) -> dict:
         """Get current system status."""

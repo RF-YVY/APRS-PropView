@@ -1577,7 +1577,7 @@
 
     function renderUpdateStatus(data, els) {
         const { messageEl, detailEl, linkEl, footerEl } = els;
-        const currentVersion = data?.current_version || '1.5.6.0';
+        const currentVersion = data?.current_version || '1.5.7.0';
         const latestVersion = data?.latest_version || currentVersion;
         const releaseUrl = 'https://github.com/RF-YVY/APRS-PropView/releases';
         const publishedAt = data?.published_at ? formatReleaseDate(data.published_at) : '';
@@ -1738,9 +1738,23 @@
     }
 
     function initMapSearch() {
+        const wrap = document.getElementById('map-search-wrap');
         const input = document.getElementById('map-search-call');
         const button = document.getElementById('btn-map-search');
+        const collapse = document.getElementById('btn-map-search-collapse');
+        const expand = () => {
+            wrap?.classList.remove('collapsed');
+            setTimeout(() => input?.focus(), 0);
+        };
+        const collapseSearch = () => {
+            wrap?.classList.add('collapsed');
+            if (input) input.value = '';
+        };
         const run = () => {
+            if (wrap?.classList.contains('collapsed')) {
+                expand();
+                return;
+            }
             const result = window.pvMap?.searchStation(input?.value || '');
             if (!result?.found) {
                 showSystemNotification(result?.message || 'Station not found on map.', 'error');
@@ -1749,10 +1763,14 @@
             showSystemNotification(`Centered on ${result.callsign}.`, 'info');
         };
         button?.addEventListener('click', run);
+        collapse?.addEventListener('click', collapseSearch);
         input?.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
                 run();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                collapseSearch();
             }
         });
         input?.addEventListener('input', (e) => {
@@ -2398,6 +2416,7 @@
             setVal('cfg-mqtt-discovery-prefix', cfg.mqtt?.discovery_prefix || 'homeassistant');
             setVal('cfg-mqtt-device-name', cfg.mqtt?.device_name || 'APRS PropView');
             setVal('cfg-mqtt-device-id', cfg.mqtt?.device_id || 'aprs_propview');
+            setVal('cfg-mqtt-watched-callsigns', (cfg.mqtt?.watched_callsigns || []).join('\n'));
 
         } catch (e) {
             console.error('Failed to load settings:', e);
@@ -2624,6 +2643,7 @@
                 discovery_prefix: getVal('cfg-mqtt-discovery-prefix') || 'homeassistant',
                 device_name: getVal('cfg-mqtt-device-name') || 'APRS PropView',
                 device_id: getVal('cfg-mqtt-device-id') || 'aprs_propview',
+                watched_callsigns: getVal('cfg-mqtt-watched-callsigns') || '',
             },
         };
 

@@ -801,7 +801,46 @@ class AnalyticsEngine:
         - Time of year (May-August in Northern Hemisphere)
         - Time of day (late morning and early evening peaks)
         """
+        hours = max(1, min(168, int(hours or 6)))
         cutoff = time.time() - (hours * 3600)
+        min_distance_km = 300.0
+        min_candidate_score = 25.0
+
+        stats_cursor = await self.db.db.execute(
+            """SELECT COUNT(*) AS rf_station_count,
+                      MAX(distance_km) AS max_distance_km,
+                      AVG(distance_km) AS avg_distance_km
+               FROM stations
+               WHERE source = 'rf'
+                 AND last_heard >= ?
+                 AND distance_km IS NOT NULL""",
+            (cutoff,),
+        )
+        stats_row = await stats_cursor.fetchone()
+        rf_station_count = int(stats_row["rf_station_count"] or 0) if stats_row else 0
+        max_observed_distance_km = float(stats_row["max_distance_km"] or 0) if stats_row else 0.0
+        avg_observed_distance_km = float(stats_row["avg_distance_km"] or 0) if stats_row else 0.0
+
+        top_cursor = await self.db.db.execute(
+            """SELECT callsign, distance_km, heading, last_heard, packet_count
+               FROM stations
+               WHERE source = 'rf'
+                 AND last_heard >= ?
+                 AND distance_km IS NOT NULL
+               ORDER BY distance_km DESC
+               LIMIT 5""",
+            (cutoff,),
+        )
+        strongest_stations = [
+            {
+                "callsign": row["callsign"],
+                "distance_km": round(row["distance_km"], 1) if row["distance_km"] is not None else None,
+                "heading": round(row["heading"], 1) if row["heading"] is not None else None,
+                "last_heard": row["last_heard"],
+                "packet_count": row["packet_count"],
+            }
+            for row in await top_cursor.fetchall()
+        ]
 
         # Get RF stations with large distances and weight them by path quality.
         # APRS-IS is excluded entirely; direct RF remains the gold-standard Es
@@ -824,16 +863,17 @@ class AnalyticsEngine:
                INNER JOIN path_history ph ON ph.callsign = s.callsign
                WHERE s.source = 'rf'
                  AND s.distance_km IS NOT NULL
-                 AND s.distance_km >= 300
+                 AND s.distance_km >= ?
                  AND s.last_heard >= ?
                  AND ph.timestamp >= ?
                GROUP BY s.callsign, s.source
                ORDER BY s.distance_km DESC""",
-            (cutoff, cutoff),
+            (min_distance_km, cutoff, cutoff),
         )
         rows = await cursor.fetchall()
 
         es_candidates = []
+        near_misses = []
         for row in rows:
             dist = row["distance_km"]
             score = 0
@@ -877,26 +917,30 @@ class AnalyticsEngine:
 
             path_confidence = float(row["path_confidence"] or 0)
             weighted_score = score * path_confidence
+            item = {
+                "callsign": row["callsign"],
+                "distance_km": round(dist, 1),
+                "heading": round(row["heading"], 1) if row["heading"] else None,
+                "latitude": row["latitude"],
+                "longitude": row["longitude"],
+                "first_heard": row["first_heard"],
+                "last_heard": row["last_heard"],
+                "packet_count": row["packet_count"],
+                "raw_score": min(score, 100),
+                "es_score": min(round(weighted_score, 1), 100),
+                "path_confidence": round(path_confidence, 2),
+                "path_tier": row["path_tier"],
+                "min_hop_count": row["min_hop_count"],
+                "indicators": indicators,
+            }
 
-            if weighted_score >= 25:
-                es_candidates.append({
-                    "callsign": row["callsign"],
-                    "distance_km": round(dist, 1),
-                    "heading": round(row["heading"], 1) if row["heading"] else None,
-                    "latitude": row["latitude"],
-                    "longitude": row["longitude"],
-                    "first_heard": row["first_heard"],
-                    "last_heard": row["last_heard"],
-                    "packet_count": row["packet_count"],
-                    "raw_score": min(score, 100),
-                    "es_score": min(round(weighted_score, 1), 100),
-                    "path_confidence": round(path_confidence, 2),
-                    "path_tier": row["path_tier"],
-                    "min_hop_count": row["min_hop_count"],
-                    "indicators": indicators,
-                })
+            if weighted_score >= min_candidate_score:
+                es_candidates.append(item)
+            else:
+                near_misses.append(item)
 
         es_candidates.sort(key=lambda c: c["es_score"], reverse=True)
+        near_misses.sort(key=lambda c: c["es_score"], reverse=True)
 
         # Overall Es probability
         if es_candidates:
@@ -923,6 +967,14 @@ class AnalyticsEngine:
             "candidate_count": len(es_candidates),
             "candidates": es_candidates[:20],  # Top 20
             "hours_analyzed": hours,
+            "rf_station_count": rf_station_count,
+            "qualifying_distance_count": len(rows),
+            "max_observed_distance_km": round(max_observed_distance_km, 1),
+            "avg_observed_distance_km": round(avg_observed_distance_km, 1),
+            "min_distance_km": min_distance_km,
+            "min_candidate_score": min_candidate_score,
+            "strongest_stations": strongest_stations,
+            "near_misses": near_misses[:5],
         }
 
     # ── Dynamic Range Data (actual coverage footprint) ──────────

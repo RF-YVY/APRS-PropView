@@ -267,3 +267,5 @@ discovery_prefix = "homeassistant"
 device_name = "APRS PropView"
 # Keep this stable once Home Assistant discovers the entities.
 device_id = "aprs_propview"
+# Optional callsigns to publish as retained Home Assistant watched-station entities.
+watched_callsigns = []

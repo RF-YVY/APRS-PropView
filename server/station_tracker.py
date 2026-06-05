@@ -38,6 +38,8 @@ class StationTracker:
         self._gps_manager = None
         self._mqtt_publisher = None
         self._mqtt_max_distance_km: Optional[float] = None
+        self._last_rf_packet_time: float = 0.0
+        self._recent_first_heard_until: float = 0.0
 
     def set_alert_manager(self, alert_manager):
         """Inject the AlertManager instance for band-opening detection."""
@@ -126,6 +128,8 @@ class StationTracker:
         port_name = packet.port_name if source == "rf" else ""
         is_direct = source == "rf" and self._is_direct_path(packet.path)
         digipeated_by_me = self.packet_digipeated_by_me(packet.path)
+        if source == "rf":
+            self._last_rf_packet_time = time.time()
 
         if not callsign:
             return
@@ -266,7 +270,7 @@ class StationTracker:
 
         # Log and alert on first-heard stations
         if is_first_heard:
-            await self.db.log_first_heard(
+            first_heard_logged = await self.db.log_first_heard(
                 callsign=callsign,
                 source=source,
                 distance_km=distance_km,
@@ -279,6 +283,11 @@ class StationTracker:
                 is_direct=is_direct,
                 commit=False,
             )
+            if not first_heard_logged:
+                is_first_heard = False
+
+        if is_first_heard:
+            self._recent_first_heard_until = time.time() + 300
             # Broadcast first-heard event to web clients
             await self.ws.broadcast({
                 "type": "first_heard",
@@ -340,6 +349,7 @@ class StationTracker:
         # Update in-memory cache
         cache = self._rf_stations if source == "rf" else self._is_stations
         cache[callsign] = station
+        await self._publish_mqtt_watched_station(callsign, station)
 
         # Push update to web clients
         await self.ws.broadcast(
@@ -626,6 +636,9 @@ class StationTracker:
                 prop_data.get("score", 0),
                 prop_data.get("level", "none"),
             )
+            await self._mqtt_publisher.publish_status_snapshot(
+                self._mqtt_status_snapshot(prop_data=prop_data)
+            )
         except Exception as e:
             logger.error(f"MQTT propagation publish error: {e}")
 
@@ -635,6 +648,9 @@ class StationTracker:
             return
         try:
             await self._mqtt_publisher.publish_alert(alert)
+            await self._mqtt_publisher.publish_status_snapshot(
+                self._mqtt_status_snapshot(active_alert=alert)
+            )
         except Exception as e:
             logger.error(f"MQTT alert publish error: {e}")
 
@@ -679,6 +695,42 @@ class StationTracker:
             await self._mqtt_publisher.publish_event(event)
         except Exception as e:
             logger.error(f"MQTT event publish error: {e}")
+
+    async def _publish_mqtt_watched_station(self, callsign: str, station: Dict[str, Any]):
+        """Publish a watched-callsign presence snapshot when one is heard."""
+        if not self._mqtt_publisher:
+            return
+        try:
+            normalized = (callsign or "").strip().upper()
+            if normalized in set(getattr(self._mqtt_publisher, "watched_callsigns", []) or []):
+                await self._mqtt_publisher.publish_watched_station(normalized, station, True)
+        except Exception as e:
+            logger.error(f"MQTT watched station publish error: {e}")
+
+    def _mqtt_status_snapshot(
+        self,
+        prop_data: Optional[Dict[str, Any]] = None,
+        active_alert: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Build retained Home Assistant state for summary and binary sensors."""
+        now = time.time()
+        prop_data = prop_data or {}
+        active_alert = active_alert or {}
+        alert_type = str(active_alert.get("type") or active_alert.get("event") or "").lower()
+        band_opening = alert_type in {"my_station_opening", "regional_watch"}
+        weather_warning = "weather" in alert_type
+        return {
+            "rf_station_count": len(self._rf_stations),
+            "aprs_is_station_count": len(self._is_stations),
+            "last_rf_packet_time": self._last_rf_packet_time or None,
+            "last_rf_packet_age_seconds": round(now - self._last_rf_packet_time) if self._last_rf_packet_time else None,
+            "band_opening_active": "ON" if band_opening or float(prop_data.get("score", 0) or 0) >= 70 else "OFF",
+            "sporadic_e_possible": "ON" if float(prop_data.get("sporadic_e_score", 0) or 0) >= 60 else "OFF",
+            "new_station_heard": "ON" if now < self._recent_first_heard_until else "OFF",
+            "weather_warning_active": "ON" if weather_warning else "OFF",
+            "weather_alert_count": 1 if weather_warning else 0,
+            "timestamp": now,
+        }
 
     @staticmethod
     def _score_to_level(score: float) -> str:

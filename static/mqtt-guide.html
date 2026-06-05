@@ -87,7 +87,7 @@
 <body>
 <main>
     <h1>APRS PropView MQTT Setup Guide</h1>
-    <p class="lede">MQTT support publishes PropView propagation status and alert events to an MQTT broker. PropView is a publisher, not a broker, so Home Assistant, Node-RED, and dashboards need a broker such as Mosquitto between them and PropView.</p>
+    <p class="lede">MQTT support publishes PropView propagation status, Home Assistant entities, watched callsigns, and alert/event payloads to an MQTT broker. PropView is a publisher, not a broker, so Home Assistant, Node-RED, and dashboards need a broker such as Mosquitto between them and PropView.</p>
 
     <section class="card">
         <h2>How The Pieces Fit</h2>
@@ -105,6 +105,7 @@
             <li><b>Port:</b> usually <code>1883</code></li>
             <li><b>Topic Prefix:</b> usually <code>aprs/propview</code></li>
             <li><b>Username/Password:</b> the broker credentials, if your broker requires them</li>
+            <li><b>Watched Callsigns:</b> optional callsigns that should get retained Home Assistant presence, last-heard, and distance entities</li>
         </ul>
         <p>Save settings. PropView reconnects MQTT live after broker, login, topic, or discovery settings change.</p>
     </section>
@@ -116,7 +117,10 @@
             <li><code>aprs/propview/propagation</code> retained JSON with current propagation metrics</li>
             <li><code>aprs/propview/score</code> retained numeric regional propagation score</li>
             <li><code>aprs/propview/level</code> retained regional propagation level text</li>
+            <li><code>aprs/propview/ha/status</code> retained JSON for connectivity, station counts, packet age, warnings, message waiting, and band-opening state</li>
+            <li><code>aprs/propview/watched/&lt;callsign&gt;</code> retained JSON for each configured watched callsign</li>
             <li><code>aprs/propview/alert</code> JSON event payload when alerts fire</li>
+            <li><code>aprs/propview/event</code> and <code>aprs/propview/event/&lt;type&gt;</code> JSON automation event payloads</li>
         </ul>
         <p>Example propagation payload:</p>
         <pre><code>{
@@ -157,14 +161,17 @@ sudo systemctl enable --now mosquitto</code></pre>
 
     <section>
         <h2>Home Assistant Entities</h2>
-        <p>With Home Assistant Discovery enabled, PropView publishes retained discovery configs for these sensors:</p>
+        <p>With Home Assistant Discovery enabled, PropView publishes retained discovery configs for these sensors and binary sensors:</p>
         <ul>
             <li>My Station Propagation Score and Level</li>
             <li>Regional Propagation Score and Level</li>
             <li>RF Stations 1h</li>
             <li>Max RF Distance</li>
+            <li>RF/APRS-IS station counts, last RF packet age, and weather alert count</li>
+            <li>APRS-IS connected, RF interface connected, band opening active, Sporadic-E possible, new station heard, message waiting, weather warning active, and interface-down binary sensors</li>
+            <li>Watched callsign heard-recently, last-heard, and distance entities for each configured watched callsign</li>
         </ul>
-        <p>Discovery uses <code>homeassistant/sensor/&lt;device_id&gt;/&lt;sensor&gt;/config</code> topics and <code>aprs/propview/status</code> for availability. Keep the Device ID stable after entities are created.</p>
+        <p>Discovery uses <code>homeassistant/sensor/&lt;device_id&gt;/&lt;sensor&gt;/config</code> and <code>homeassistant/binary_sensor/&lt;device_id&gt;/&lt;sensor&gt;/config</code> topics plus <code>aprs/propview/status</code> for availability. Keep the Device ID stable after entities are created.</p>
         <p>If Home Assistant discovery is disabled or unavailable, add MQTT sensors in <code>configuration.yaml</code>:</p>
         <pre><code>mqtt:
   sensor:
@@ -223,7 +230,7 @@ return msg;</code></pre>
   "is_direct": true,
   "hop_count": 0
 }</code></pre>
-        <p>Current events are <code>first_heard</code> and <code>new_max_distance</code>. Automations can speak the callsign, flash lights, send mobile notifications, or log achievement records.</p>
+        <p>Current events include <code>first_heard</code>, <code>new_max_distance</code>, and <code>message_received</code>. PropView publishes them to the aggregate event topic and a typed topic such as <code>aprs/propview/event/message_received</code> so automations can route them without parsing every event first.</p>
     </section>
 
     <section>

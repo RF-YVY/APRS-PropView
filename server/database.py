@@ -175,6 +175,17 @@ class Database:
             for name, statement in table_additions.items():
                 if name not in table_columns:
                     await self.db.execute(statement)
+        await self.db.execute(
+            """DELETE FROM first_heard_log
+               WHERE id NOT IN (
+                   SELECT MIN(id)
+                   FROM first_heard_log
+                   GROUP BY UPPER(callsign), source
+               )"""
+        )
+        await self.db.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_first_heard_unique_station ON first_heard_log(UPPER(callsign), source)"
+        )
 
     async def close(self):
         if self.db:
@@ -665,16 +676,21 @@ class Database:
         hop_count: int = 0,
         is_direct: bool = False,
         commit: bool = True,
-    ):
+    ) -> bool:
+        callsign = (callsign or "").strip().upper()
+        source = (source or "").strip().lower()
+        if not callsign or source not in {"rf", "aprs_is"}:
+            return False
         now = time.time()
-        await self.db.execute(
-            """INSERT INTO first_heard_log
+        cursor = await self.db.execute(
+            """INSERT OR IGNORE INTO first_heard_log
                (timestamp, callsign, source, distance_km, heading, latitude, longitude, path, port_name, hop_count, is_direct)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (now, callsign, source, distance_km, heading, latitude, longitude, path, port_name, hop_count, 1 if is_direct else 0),
         )
         if commit:
             await self.db.commit()
+        return cursor.rowcount > 0
 
     async def get_first_heard_log(self, hours: int = 24, direct_only: bool = False) -> List[Dict[str, Any]]:
         cutoff = time.time() - (hours * 3600)
@@ -697,8 +713,17 @@ class Database:
 
     async def is_station_known(self, callsign: str, source: str) -> bool:
         """Check if a station has ever been seen before."""
+        callsign = (callsign or "").strip().upper()
+        source = (source or "").strip().lower()
         cursor = await self.db.execute(
             "SELECT 1 FROM stations WHERE callsign = ? AND source = ?",
+            (callsign, source),
+        )
+        row = await cursor.fetchone()
+        if row is not None:
+            return True
+        cursor = await self.db.execute(
+            "SELECT 1 FROM first_heard_log WHERE UPPER(callsign) = ? AND source = ?",
             (callsign, source),
         )
         row = await cursor.fetchone()

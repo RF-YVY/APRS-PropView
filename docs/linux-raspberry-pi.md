@@ -30,6 +30,24 @@ cd APRS-PropView
 If you already have the source on the Pi, run the installer from the repository
 root.
 
+## Update To v1.5.7.0
+
+For an existing Linux or Raspberry Pi service install, update the repository,
+rerun the installer so `/opt/aprs-propview` receives the new application files,
+and restart the service:
+
+```bash
+git pull
+sudo bash ./scripts/install_linux.sh
+sudo systemctl restart aprs-propview
+```
+
+Version 1.5.7.0 adds expanded MQTT/Home Assistant status entities, optional
+watched callsign MQTT publishing, richer Sporadic-E diagnostics, station symbol
+sizing, weather analytics dashboard updates, and first-heard log deduplication.
+Existing `config.toml`, `propview.db`, cached map tiles, and user audio files
+are preserved by the installer.
+
 ## Install As A Service
 
 ```bash

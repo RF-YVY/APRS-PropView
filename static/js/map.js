@@ -60,6 +60,7 @@ class PropViewMap {
         this.baseTileLayer = null;
         this.mapTileConfig = this._defaultTileConfig();
         this.myStationInfo = { symbol_table: '/', symbol_code: '#' };
+        this.stationSymbolScale = 1;
         this.lineStyle = {
             colorMode: 'distance',
             customColor: '#58a6ff',
@@ -192,6 +193,49 @@ class PropViewMap {
         this.mapTileConfig = next;
     }
 
+    _markerMetrics(isMine = false) {
+        const scale = Math.max(0.65, Math.min(1.8, Number(this.stationSymbolScale) || 1));
+        const box = Math.round((isMine ? 26 : 22) * scale);
+        const sprite = Math.round((isMine ? 20 : 16) * scale);
+        const font = Math.round((isMine ? 15 : 14) * scale);
+        const icon = Math.max(18, box + 4);
+        return { box, sprite, font, icon };
+    }
+
+    _markerStyle(isMine = false) {
+        const m = this._markerMetrics(isMine);
+        return `width:${m.box}px;height:${m.box}px;line-height:${m.box}px;font-size:${m.font}px;`;
+    }
+
+    _markerIconSize(isMine = false) {
+        const m = this._markerMetrics(isMine);
+        return [m.icon, m.icon];
+    }
+
+    _markerIconAnchor(isMine = false) {
+        const m = this._markerMetrics(isMine);
+        const center = Math.round(m.icon / 2);
+        return [center, center];
+    }
+
+    setStationSymbolScale(scale, persist = true) {
+        this.stationSymbolScale = Math.max(0.65, Math.min(1.8, Number(scale) || 1));
+        this._syncSymbolSizeControls();
+        if (this.myPosition) {
+            this.setMyPosition(
+                this.myPosition.lat,
+                this.myPosition.lng,
+                this.myCallsign,
+                this.myStationInfo,
+            );
+        }
+        Object.values(this.stationMeta || {}).forEach((meta) => {
+            if (meta.station) this.addOrUpdateStation(meta.station);
+        });
+        this._applyLabelsToAll();
+        if (persist) this._saveUIState();
+    }
+
     setMyPosition(lat, lng, callsign, stationInfo = {}) {
         this.myPosition = { lat, lng };
         this.myCallsign = (callsign || '').toUpperCase();
@@ -199,7 +243,7 @@ class PropViewMap {
         const symCode = stationInfo?.symbol_code || '#';
         this.myStationInfo = { symbol_table: symTable, symbol_code: symCode };
         const markerSprite = (typeof getAPRSSpriteHTML === 'function')
-            ? getAPRSSpriteHTML(symTable, symCode, 20)
+            ? getAPRSSpriteHTML(symTable, symCode, this._markerMetrics(true).sprite)
             : 'MY';
         const popupSprite = (typeof getAPRSSpriteHTML === 'function')
             ? getAPRSSpriteHTML(symTable, symCode, 32)
@@ -209,10 +253,10 @@ class PropViewMap {
             : '';
         const icon = L.divIcon({
             className: 'aprs-icon-wrapper my-station-icon-wrapper',
-            html: `<div class="aprs-emoji-marker aprs-emoji-my">${markerSprite}</div>`,
-            iconSize: [28, 28],
-            iconAnchor: [14, 14],
-            popupAnchor: [0, -14],
+            html: `<div class="aprs-emoji-marker aprs-emoji-my" style="${this._markerStyle(true)}">${markerSprite}</div>`,
+            iconSize: this._markerIconSize(true),
+            iconAnchor: this._markerIconAnchor(true),
+            popupAnchor: [0, -this._markerIconAnchor(true)[1]],
         });
         const popup = `
             <div class="popup-header">
@@ -439,15 +483,15 @@ class PropViewMap {
         `;
 
         const borderColor = source === 'rf' ? '#f85149' : '#58a6ff';
-        const markerSprite = (typeof getAPRSSpriteHTML === 'function') ? getAPRSSpriteHTML(symTable, symCode, 16) : emoji;
+        const markerSprite = (typeof getAPRSSpriteHTML === 'function') ? getAPRSSpriteHTML(symTable, symCode, this._markerMetrics(false).sprite) : emoji;
 
-        const iconHtml = `<div class="aprs-emoji-marker aprs-emoji-${source}" style="border-color:${borderColor};">${markerSprite}</div>`;
+        const iconHtml = `<div class="aprs-emoji-marker aprs-emoji-${source}" style="border-color:${borderColor};${this._markerStyle(false)}">${markerSprite}</div>`;
         const aprsIcon = L.divIcon({
             className: 'aprs-icon-wrapper',
             html: iconHtml,
-            iconSize: [24, 24],
-            iconAnchor: [12, 12],
-            popupAnchor: [0, -12],
+            iconSize: this._markerIconSize(false),
+            iconAnchor: this._markerIconAnchor(false),
+            popupAnchor: [0, -this._markerIconAnchor(false)[1]],
         });
 
         if (markers[call]) {
@@ -1270,6 +1314,7 @@ class PropViewMap {
             autoFit: this.autoFit,
             darkMode: this.darkMode,
             lineTimeFilter: this.lineTimeFilter,
+            stationSymbolScale: this.stationSymbolScale,
             lineStyle: this.lineStyle,
             zoom: this.map?.getZoom(),
             center: this.map ? [this.map.getCenter().lat, this.map.getCenter().lng] : null,
@@ -1337,6 +1382,11 @@ class PropViewMap {
             const sel = document.getElementById('line-time-filter');
             if (sel) sel.value = String(state.lineTimeFilter);
         }
+
+        if (state.stationSymbolScale !== undefined) {
+            this.stationSymbolScale = Math.max(0.65, Math.min(1.8, Number(state.stationSymbolScale) || 1));
+        }
+        this._syncSymbolSizeControls();
 
         if (state.lineStyle) {
             const savedStyle = state.lineStyle || {};
@@ -1446,6 +1496,7 @@ class PropViewMap {
         });
 
         this._initLineStyleControls();
+        this._initSymbolSizeControls();
 
         // Callsign label toggle
         document.getElementById('btn-toggle-labels')?.addEventListener('click', (e) => {
@@ -1539,6 +1590,36 @@ class PropViewMap {
         setValue('line-opacity', style.opacity || 0.7);
         const customColor = document.getElementById('line-custom-color');
         if (customColor) customColor.disabled = style.colorMode !== 'custom';
+    }
+
+    _initSymbolSizeControls() {
+        const btn = document.getElementById('symbol-size-btn');
+        const popover = document.getElementById('symbol-size-popover');
+        const slider = document.getElementById('station-symbol-size');
+        if (!btn || !popover || !slider) return;
+
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            popover.classList.toggle('open');
+        });
+        document.addEventListener('click', (e) => {
+            if (!popover.contains(e.target) && e.target !== btn) {
+                popover.classList.remove('open');
+            }
+        });
+        slider.addEventListener('input', () => this.setStationSymbolScale(slider.value));
+        slider.addEventListener('change', () => this.setStationSymbolScale(slider.value));
+        this._syncSymbolSizeControls();
+    }
+
+    _syncSymbolSizeControls() {
+        const slider = document.getElementById('station-symbol-size');
+        const value = document.getElementById('station-symbol-size-value');
+        const percent = Math.round((Number(this.stationSymbolScale) || 1) * 100);
+        if (slider && slider.value !== String(this.stationSymbolScale)) {
+            slider.value = String(this.stationSymbolScale);
+        }
+        if (value) value.textContent = `${percent}%`;
     }
 
     /**

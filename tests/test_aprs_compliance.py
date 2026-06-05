@@ -329,6 +329,7 @@ discovery_enabled = true
 discovery_prefix = "homeassistant"
 device_name = "APRS PropView K5ABC"
 device_id = "k5abc_propview"
+watched_callsigns = ["WB5TZN-1", "KJ4AJP-5"]
 """.strip(),
                 encoding="utf-8",
             )
@@ -338,6 +339,7 @@ device_id = "k5abc_propview"
             self.assertEqual(config.mqtt.discovery_prefix, "homeassistant")
             self.assertEqual(config.mqtt.device_name, "APRS PropView K5ABC")
             self.assertEqual(config.mqtt.device_id, "k5abc_propview")
+            self.assertEqual(config.mqtt.watched_callsigns, ["WB5TZN-1", "KJ4AJP-5"])
 
             saved_path = Path(tmp) / "saved.toml"
             config.save(saved_path)
@@ -346,6 +348,7 @@ device_id = "k5abc_propview"
             self.assertTrue(reloaded.mqtt.discovery_enabled)
             self.assertEqual(reloaded.mqtt.device_name, "APRS PropView K5ABC")
             self.assertEqual(reloaded.mqtt.device_id, "k5abc_propview")
+            self.assertEqual(reloaded.mqtt.watched_callsigns, ["WB5TZN-1", "KJ4AJP-5"])
 
     def test_tile_cache_key_separates_tile_sources(self):
         osm = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -997,6 +1000,76 @@ class FirstHeardLogTests(unittest.TestCase):
 
         asyncio.run(run_test())
 
+    def test_first_heard_log_is_unique_by_station_identity(self):
+        async def run_test():
+            with tempfile.TemporaryDirectory() as tmp:
+                db = Database(f"{tmp}/test.db")
+                await db.initialize()
+                try:
+                    first_inserted = await db.log_first_heard(
+                        "W1ABC",
+                        "rf",
+                        75.0,
+                        90.0,
+                        35.0,
+                        -97.0,
+                        is_direct=True,
+                    )
+                    duplicate_inserted = await db.log_first_heard(
+                        "w1abc",
+                        "rf",
+                        76.0,
+                        91.0,
+                        35.1,
+                        -97.1,
+                        is_direct=True,
+                    )
+                    rows = await db.get_first_heard_log(hours=1)
+                finally:
+                    await db.close()
+
+            self.assertTrue(first_inserted)
+            self.assertFalse(duplicate_inserted)
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["callsign"], "W1ABC")
+
+        asyncio.run(run_test())
+
+    def test_first_heard_survives_station_cleanup(self):
+        class FakeWebSocketManager:
+            def __init__(self):
+                self.messages = []
+
+            async def broadcast(self, message):
+                self.messages.append(message)
+
+        async def run_test():
+            with tempfile.TemporaryDirectory() as tmp:
+                db = Database(f"{tmp}/test.db")
+                await db.initialize()
+                try:
+                    config = Config()
+                    config.station.callsign = "K5YVY"
+                    ws = FakeWebSocketManager()
+                    tracker = StationTracker(db, config, ws)
+                    packet = parse_packet("W1ABC>APRS:!3600.00N/08100.00W-Test", source="rf")
+
+                    await tracker.track_packet(packet)
+                    await db.delete_old_stations(-1)
+                    await tracker.track_packet(packet)
+
+                    rows = await db.get_first_heard_log(hours=1)
+                    first_heard_messages = [
+                        msg for msg in ws.messages if msg.get("type") == "first_heard"
+                    ]
+                finally:
+                    await db.close()
+
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(len(first_heard_messages), 1)
+
+        asyncio.run(run_test())
+
 
 class StationCallsignValidationTests(unittest.TestCase):
     def test_accepts_country_neutral_station_identifiers(self):
@@ -1120,6 +1193,34 @@ class GPSIngestionTests(unittest.TestCase):
 
 
 class SporadicEDetectionTests(unittest.TestCase):
+    def test_reports_diagnostics_when_no_es_candidates(self):
+        async def run_test():
+            with tempfile.TemporaryDirectory() as tmp:
+                db = Database(f"{tmp}/test.db")
+                await db.initialize()
+                try:
+                    await db.upsert_station(
+                        callsign="LOCAL",
+                        source="rf",
+                        latitude=35.0,
+                        longitude=-97.0,
+                        distance_km=125,
+                        heading=180,
+                    )
+
+                    result = await AnalyticsEngine(db).detect_sporadic_e(hours=24)
+                finally:
+                    await db.close()
+
+            self.assertEqual(result["candidate_count"], 0)
+            self.assertEqual(result["es_score"], 0)
+            self.assertEqual(result["rf_station_count"], 1)
+            self.assertEqual(result["qualifying_distance_count"], 0)
+            self.assertEqual(result["max_observed_distance_km"], 125.0)
+            self.assertEqual(result["strongest_stations"][0]["callsign"], "LOCAL")
+
+        asyncio.run(run_test())
+
     def test_weights_direct_rf_above_digipeated_rf(self):
         async def run_test():
             with tempfile.TemporaryDirectory() as tmp:
@@ -1387,17 +1488,25 @@ class MQTTIntegrationTests(unittest.TestCase):
             discovery_prefix="homeassistant",
             device_name="APRS PropView K5ABC",
             device_id="K5ABC-1 PropView",
+            station_callsign="K5ABC-1",
+            app_version="1.5.6.0",
+            watched_callsigns=["WB5TZN-1"],
         )
 
         payloads = publisher._discovery_payloads()
 
         self.assertEqual(publisher.device_id, "k5abc_1_propview")
         self.assertIn("regional_score", payloads)
+        self.assertIn("band_opening_active", payloads)
+        self.assertIn("watched_wb5tzn_1", payloads)
         self.assertEqual(payloads["regional_score"]["state_topic"], "aprs/propview/propagation")
         self.assertEqual(payloads["regional_score"]["value_template"], "{{ value_json.regional_score }}")
         self.assertEqual(payloads["regional_score"]["unique_id"], "k5abc_1_propview_regional_score")
         self.assertEqual(payloads["regional_score"]["availability_topic"], "aprs/propview/status")
         self.assertEqual(payloads["max_distance_km"]["unit_of_measurement"], "km")
+        self.assertEqual(payloads["band_opening_active"]["_component"], "binary_sensor")
+        self.assertEqual(payloads["watched_wb5tzn_1"]["_component"], "binary_sensor")
+        self.assertEqual(payloads["regional_score"]["device"]["sw_version"], "1.5.6.0")
 
     def test_publisher_publishes_retained_home_assistant_discovery_configs(self):
         class FakeClient:
@@ -1414,6 +1523,7 @@ class MQTTIntegrationTests(unittest.TestCase):
                 discovery_enabled=True,
                 discovery_prefix="homeassistant",
                 device_id="aprs_propview",
+                watched_callsigns=["WB5TZN-1"],
             )
             publisher._client = FakeClient()
             publisher._connected = True
@@ -1422,6 +1532,8 @@ class MQTTIntegrationTests(unittest.TestCase):
 
             topics = [item[0] for item in publisher._client.published]
             self.assertIn("homeassistant/sensor/aprs_propview/regional_score/config", topics)
+            self.assertIn("homeassistant/binary_sensor/aprs_propview/band_opening_active/config", topics)
+            self.assertIn("homeassistant/binary_sensor/aprs_propview/watched_wb5tzn_1/config", topics)
             self.assertTrue(all(item[3] for item in publisher._client.published))
             regional_payload = next(
                 item[1]
@@ -1429,6 +1541,31 @@ class MQTTIntegrationTests(unittest.TestCase):
                 if item[0] == "homeassistant/sensor/aprs_propview/regional_score/config"
             )
             self.assertEqual(json.loads(regional_payload)["unique_id"], "aprs_propview_regional_score")
+
+        asyncio.run(run_test())
+
+    def test_publisher_merges_home_assistant_status_snapshots(self):
+        class FakeClient:
+            def __init__(self):
+                self.published = []
+
+            def publish(self, topic, payload, qos=0, retain=False):
+                self.published.append((topic, payload, qos, retain))
+
+        async def run_test():
+            publisher = MQTTPublisher("localhost", topic_prefix="aprs/propview")
+            publisher._client = FakeClient()
+            publisher._connected = True
+
+            await publisher.publish_status_snapshot({"aprs_is_connected": "ON"})
+            await publisher.publish_status_snapshot({"band_opening_active": "ON"})
+
+            topic, payload, qos, retain = publisher._client.published[-1]
+            self.assertEqual(topic, "aprs/propview/ha/status")
+            self.assertTrue(retain)
+            merged = json.loads(payload)
+            self.assertEqual(merged["aprs_is_connected"], "ON")
+            self.assertEqual(merged["band_opening_active"], "ON")
 
         asyncio.run(run_test())
 
@@ -1443,6 +1580,9 @@ class MQTTIntegrationTests(unittest.TestCase):
 
             async def publish_prop_score(self, score, level):
                 self.scores.append((score, level))
+
+            async def publish_status_snapshot(self, status):
+                self.status = status
 
         async def run_test():
             tracker = StationTracker(None, Config(), WebSocketManager())
@@ -1463,6 +1603,9 @@ class MQTTIntegrationTests(unittest.TestCase):
 
             async def publish_alert(self, alert):
                 self.alerts.append(alert)
+
+            async def publish_status_snapshot(self, status):
+                self.status = status
 
         async def run_test():
             tracker = StationTracker(None, Config(), WebSocketManager())
