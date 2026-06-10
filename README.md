@@ -3,6 +3,10 @@
 **Version 1.5.7.0** | June 5, 2026
 
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
+![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/RF-YVY/APRS-PropView/total)
+![GitHub Tag](https://img.shields.io/github/v/tag/RF-YVY/APRS-PropView)
+![GitHub Release Date](https://img.shields.io/github/release-date/RF-YVY/APRS-PropView?display_date=published_at&style=plastic)
+![YouTube Channel Views](https://img.shields.io/youtube/channel/views/UC0qq--bOgSHn442vvenO0xg)
 
 
 
