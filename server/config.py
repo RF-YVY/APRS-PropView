@@ -64,6 +64,7 @@ port = 8001
 [web]
 host = "127.0.0.1"
 port = 14501
+launch_browser = ""
 font_family = ""
 map_tile_source = "osm"
 map_tile_url = ""
@@ -315,6 +316,7 @@ class RFPortConfig:
 class WebConfig:
     host: str = "127.0.0.1"
     port: int = 14501
+    launch_browser: str = ""
     font_family: str = ""
     map_tile_source: str = "osm"
     map_tile_url: str = ""
@@ -684,6 +686,7 @@ class Config:
             "[web]",
             f'host = "{esc(self.web.host)}"',
             f"port = {int(self.web.port)}",
+            f'launch_browser = "{esc(self.web.launch_browser)}"',
             f'font_family = "{esc(self.web.font_family)}"',
             f'map_tile_source = "{esc(self.web.map_tile_source)}"',
             f'map_tile_url = "{esc(self.web.map_tile_url)}"',

@@ -20,6 +20,7 @@ class PropViewMap {
         this.rfLayer = null;
         this.isLayer = null;
         this.lineLayer = null;
+        this.spiderLayer = null;
         this.rangeCircles = null;
         this.observedRangeLayer = null;
         this.pickMode = false;
@@ -92,6 +93,7 @@ class PropViewMap {
         this.lineLayer = L.layerGroup().addTo(this.map);
         this.rfLayer = L.layerGroup().addTo(this.map);
         this.isLayer = L.layerGroup().addTo(this.map);
+        this.spiderLayer = L.layerGroup().addTo(this.map);
         this.map.createPane('weatherRadarPane');
         this.map.getPane('weatherRadarPane').style.zIndex = 320;
         this.map.getPane('weatherRadarPane').style.pointerEvents = 'none';
@@ -109,6 +111,7 @@ class PropViewMap {
         this.map.on('zoomstart', () => {
             if (!this._autoFitPending) this._handleManualViewportChange();
         });
+        this.map.on('click zoomstart movestart', () => this._clearSpiderfiedStations());
 
         // Save map position on moveend (debounced)
         let _moveTimer = null;
@@ -435,6 +438,7 @@ class PropViewMap {
         const spriteHtml = (typeof getAPRSSpriteHTML === 'function') ? getAPRSSpriteHTML(symTable, symCode, 28) : emoji;
 
         const popupSprite = (typeof getAPRSSpriteHTML === 'function') ? getAPRSSpriteHTML(symTable, symCode, 32) : emoji;
+        const aprsFiUrl = `https://aprs.fi/info/a/${encodeURIComponent(call || '')}`;
 
         // Determine direct-heard vs via-digi for RF stations
         const isDirect = source === 'rf' ? this._isDirectPath(station.last_path) : null;
@@ -479,6 +483,7 @@ class PropViewMap {
             </table>
             <div class="popup-actions">
                 <button type="button" class="popup-action-btn" onclick="window.pvMessages?.startNewMessage?.('${safeCall}')">Send Message</button>
+                <a class="popup-action-btn" href="${aprsFiUrl}" target="_blank" rel="noopener noreferrer">aprs.fi</a>
             </div>
         `;
 
@@ -508,6 +513,7 @@ class PropViewMap {
                     className: 'callsign-label',
                 })
                 .addTo(layer);
+            markers[call].on('click', (e) => this._handleStationMarkerClick(call, source, e));
             // Respect current label visibility
             if (!this.showLabels) markers[call].closeTooltip();
         }
@@ -552,6 +558,95 @@ class PropViewMap {
         }
         this._clearLineVisuals(callsign);
         delete this.rfLineData[callsign];
+    }
+
+    _handleStationMarkerClick(callsign, source, event) {
+        const marker = this._markerForStation(callsign, source);
+        if (!marker || !this.map) return;
+        const stack = this._overlappingStationMarkers(marker);
+        if (stack.length <= 1) {
+            this._clearSpiderfiedStations();
+            return;
+        }
+
+        if (event?.originalEvent) L.DomEvent.stop(event.originalEvent);
+        marker.closePopup();
+        this.map.closePopup();
+        this._showSpiderfiedStations(stack, marker.getLatLng());
+    }
+
+    _markerForStation(callsign, source) {
+        const markers = source === 'rf' ? this.rfMarkers : this.isMarkers;
+        return markers?.[callsign] || null;
+    }
+
+    _overlappingStationMarkers(marker) {
+        const center = this.map.latLngToLayerPoint(marker.getLatLng());
+        const threshold = Math.max(24, Math.round(this._markerMetrics(false).icon * 0.95));
+        const records = [];
+        for (const [callsign, meta] of Object.entries(this.stationMeta || {})) {
+            const candidate = this._markerForStation(callsign, meta.source);
+            const layer = meta.source === 'rf' ? this.rfLayer : this.isLayer;
+            if (!candidate || !layer?.hasLayer(candidate)) continue;
+            const point = this.map.latLngToLayerPoint(candidate.getLatLng());
+            if (center.distanceTo(point) <= threshold) {
+                records.push({ callsign, source: meta.source, marker: candidate, meta });
+            }
+        }
+        records.sort((a, b) => {
+            const heardA = Number(a.meta?.last_heard || 0);
+            const heardB = Number(b.meta?.last_heard || 0);
+            if (heardA !== heardB) return heardB - heardA;
+            return String(a.callsign).localeCompare(String(b.callsign));
+        });
+        return records;
+    }
+
+    _showSpiderfiedStations(records, centerLatLng) {
+        this._clearSpiderfiedStations();
+        if (!this.spiderLayer || !records.length) return;
+
+        const centerPoint = this.map.latLngToLayerPoint(centerLatLng);
+        const radius = Math.max(34, Math.min(58, 26 + records.length * 3));
+        const startAngle = -Math.PI / 2;
+        records.forEach((record, index) => {
+            const angle = startAngle + (Math.PI * 2 * index / records.length);
+            const point = L.point(
+                centerPoint.x + Math.cos(angle) * radius,
+                centerPoint.y + Math.sin(angle) * radius,
+            );
+            const latLng = this.map.layerPointToLatLng(point);
+            const leg = L.polyline([centerLatLng, latLng], {
+                color: record.source === 'rf' ? '#f85149' : '#58a6ff',
+                weight: 1.5,
+                opacity: 0.75,
+                interactive: false,
+                dashArray: '3 4',
+            }).addTo(this.spiderLayer);
+            const pickMarker = L.marker(latLng, {
+                icon: record.marker.options.icon,
+                zIndexOffset: 2500,
+                riseOnHover: true,
+            })
+                .bindTooltip(this._escapeHtml(record.callsign), {
+                    permanent: true,
+                    direction: 'top',
+                    offset: [0, -14],
+                    className: 'callsign-label spider-callsign-label',
+                })
+                .addTo(this.spiderLayer);
+            pickMarker.on('click', (clickEvent) => {
+                if (clickEvent?.originalEvent) L.DomEvent.stop(clickEvent.originalEvent);
+                this._clearSpiderfiedStations();
+                record.marker.openPopup();
+            });
+            leg.bringToBack?.();
+            setTimeout(() => pickMarker.getElement?.()?.classList.add('spider-station-marker'), 0);
+        });
+    }
+
+    _clearSpiderfiedStations() {
+        if (this.spiderLayer) this.spiderLayer.clearLayers();
     }
 
     /** Apply or remove ghhost CSS on a marker's icon element. */
@@ -1726,7 +1821,7 @@ class PropViewMap {
 
         // One-time click handler
         this._pickHandler = (e) => {
-            const { lat, lng } = e.latlng;
+            const { lat, lng } = this._normalizeLatLng(e.latlng);
             this._placePickMarker(lat, lng);
 
             // Fill settings fields
@@ -1753,6 +1848,13 @@ class PropViewMap {
             this.disablePickMode();
         };
         this.map.once('click', this._pickHandler);
+    }
+
+    _normalizeLatLng(latlng) {
+        const lat = Math.max(-90, Math.min(90, Number(latlng?.lat) || 0));
+        let lng = Number(latlng?.lng) || 0;
+        lng = ((lng + 180) % 360 + 360) % 360 - 180;
+        return { lat, lng };
     }
 
     /**
@@ -2036,6 +2138,8 @@ class PropViewMap {
             ? getAPRSSpriteHTML(symTable, symCode, 16)
             : 'MY';
         this._legendEl.innerHTML = `
+            <div class="legend-title">Legend</div>
+            <div class="legend-body">
             <div class="legend-item">
                 <div class="legend-emoji legend-my-station">${mySprite}</div>
                 <span>My Station</span>
@@ -2066,6 +2170,7 @@ class PropViewMap {
             </div>
             <div class="legend-unit-toggle">
                 <button id="btn-dist-unit" title="Toggle miles / kilometers">${u.toUpperCase()} ↔ ${isMi ? 'KM' : 'MI'}</button>
+            </div>
             </div>
         `;
         // Wire toggle button

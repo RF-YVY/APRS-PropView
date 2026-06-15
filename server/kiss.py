@@ -3,6 +3,8 @@
 import asyncio
 import struct
 import logging
+import socket
+import time
 from typing import Callable, Optional, Awaitable
 
 logger = logging.getLogger("propview.kiss")
@@ -239,7 +241,7 @@ class KISSSerialClient:
                     except Exception as e:
                         logger.error(f"{self._name}: Frame handler error: {e}")
         except asyncio.CancelledError:
-            pass
+            raise
         except Exception as e:
             logger.error(f"{self._name}: Read error: {e}")
         finally:
@@ -289,6 +291,13 @@ class KISSTCPClient:
         self.reader: Optional[asyncio.StreamReader] = None
         self.parser = KISSFrameParser()
         self.connected = False
+        self.connection_state = "disconnected"
+        self.last_error = ""
+        self.last_connected_at = 0.0
+        self.last_disconnected_at = 0.0
+        self.next_retry_at = 0.0
+        self.reconnect_attempts = 0
+        self._status_callback: Optional[Callable[[object], Awaitable[None]]] = None
         self._name = name or f"KISS-TCP({host}:{port})"
         self._reconnect_delay = 5
 
@@ -296,23 +305,76 @@ class KISSTCPClient:
     def name(self) -> str:
         return self._name
 
+    def set_status_callback(self, callback: Callable[[object], Awaitable[None]]):
+        self._status_callback = callback
+
+    async def _set_connection_state(self, state: str, error: str = "", next_retry_at: float = 0.0):
+        changed = (
+            self.connection_state != state
+            or self.last_error != (error or "")
+            or self.next_retry_at != (next_retry_at or 0.0)
+        )
+        self.connection_state = state
+        self.last_error = error or ""
+        self.next_retry_at = next_retry_at or 0.0
+        if state == "connected":
+            self.connected = True
+            self.last_connected_at = time.time()
+            self.reconnect_attempts = 0
+        elif state in {"disconnected", "reconnecting", "connecting"}:
+            self.connected = False
+            if state in {"disconnected", "reconnecting"}:
+                self.last_disconnected_at = time.time()
+        if changed and self._status_callback:
+            try:
+                await self._status_callback(self)
+            except Exception as e:
+                logger.error(f"{self._name}: Status callback error: {e}")
+
+    def _enable_tcp_keepalive(self):
+        if not self.writer:
+            return
+        sock = self.writer.get_extra_info("socket")
+        if not sock:
+            return
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+            if hasattr(socket, "TCP_KEEPIDLE"):
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 30)
+            if hasattr(socket, "TCP_KEEPINTVL"):
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 10)
+            if hasattr(socket, "TCP_KEEPCNT"):
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)
+        except OSError as e:
+            logger.debug(f"{self._name}: TCP keepalive setup skipped: {e}")
+
     async def connect(self):
         """Connect to TCP KISS TNC with auto-reconnect and exponential backoff."""
         delay = self._reconnect_delay
         while True:
             try:
-                self.reader, self.writer = await asyncio.open_connection(
-                    self.host, self.port
+                await self._set_connection_state("connecting")
+                self.reader, self.writer = await asyncio.wait_for(
+                    asyncio.open_connection(self.host, self.port),
+                    timeout=15,
                 )
-                self.connected = True
+                self._enable_tcp_keepalive()
                 delay = self._reconnect_delay  # Reset backoff
                 logger.info(f"{self._name}: Connected")
+                await self._set_connection_state("connected")
                 await self._read_loop()
+                logger.warning(f"{self._name}: Remote connection closed; reconnecting")
             except Exception as e:
                 logger.error(f"{self._name}: Connection failed: {e}")
-                self.connected = False
+                await self._set_connection_state("reconnecting", str(e), time.time() + delay)
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 60)
+                self.reconnect_attempts += 1
+            else:
+                await self._set_connection_state("reconnecting", "Remote connection closed", time.time() + delay)
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 60)
+                self.reconnect_attempts += 1
 
     async def _read_loop(self):
         """Read data from TCP and extract KISS frames."""
@@ -328,25 +390,39 @@ class KISSTCPClient:
                     except Exception as e:
                         logger.error(f"{self._name}: Frame handler error: {e}")
         except asyncio.CancelledError:
-            pass
+            raise
         except Exception as e:
             logger.error(f"{self._name}: Read error: {e}")
         finally:
-            self.connected = False
             logger.info(f"{self._name}: Disconnected")
+            if self.writer:
+                self.writer.close()
+                try:
+                    await self.writer.wait_closed()
+                except Exception:
+                    pass
+            self.writer = None
+            self.reader = None
 
     async def send(self, ax25_data: bytes):
         """Send an AX.25 frame via KISS."""
         if self.writer and self.connected:
-            frame = make_kiss_frame(ax25_data)
-            self.writer.write(frame)
-            await self.writer.drain()
-            logger.debug(f"{self._name}: Sent {len(ax25_data)} bytes")
+            try:
+                frame = make_kiss_frame(ax25_data)
+                self.writer.write(frame)
+                await self.writer.drain()
+                logger.debug(f"{self._name}: Sent {len(ax25_data)} bytes")
+            except Exception as e:
+                logger.error(f"{self._name}: Send error: {e}")
+                await self._set_connection_state("reconnecting", str(e))
+                if self.writer:
+                    self.writer.close()
+                raise
 
     async def close(self):
         if self.writer:
             self.writer.close()
-            self.connected = False
+        await self._set_connection_state("disconnected")
 
 
 def _agwpe_header(kind: str, data_len: int = 0, port: int = 0, pid: int = 0) -> bytes:
@@ -398,6 +474,13 @@ class AGWPETCPClient:
         self.writer: Optional[asyncio.StreamWriter] = None
         self.reader: Optional[asyncio.StreamReader] = None
         self.connected = False
+        self.connection_state = "disconnected"
+        self.last_error = ""
+        self.last_connected_at = 0.0
+        self.last_disconnected_at = 0.0
+        self.next_retry_at = 0.0
+        self.reconnect_attempts = 0
+        self._status_callback: Optional[Callable[[object], Awaitable[None]]] = None
         self._name = name or f"AGWPE({host}:{port})"
         self._reconnect_delay = 5
 
@@ -405,21 +488,76 @@ class AGWPETCPClient:
     def name(self) -> str:
         return self._name
 
+    def set_status_callback(self, callback: Callable[[object], Awaitable[None]]):
+        self._status_callback = callback
+
+    async def _set_connection_state(self, state: str, error: str = "", next_retry_at: float = 0.0):
+        changed = (
+            self.connection_state != state
+            or self.last_error != (error or "")
+            or self.next_retry_at != (next_retry_at or 0.0)
+        )
+        self.connection_state = state
+        self.last_error = error or ""
+        self.next_retry_at = next_retry_at or 0.0
+        if state == "connected":
+            self.connected = True
+            self.last_connected_at = time.time()
+            self.reconnect_attempts = 0
+        elif state in {"disconnected", "reconnecting", "connecting"}:
+            self.connected = False
+            if state in {"disconnected", "reconnecting"}:
+                self.last_disconnected_at = time.time()
+        if changed and self._status_callback:
+            try:
+                await self._status_callback(self)
+            except Exception as e:
+                logger.error(f"{self._name}: Status callback error: {e}")
+
+    def _enable_tcp_keepalive(self):
+        if not self.writer:
+            return
+        sock = self.writer.get_extra_info("socket")
+        if not sock:
+            return
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+            if hasattr(socket, "TCP_KEEPIDLE"):
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 30)
+            if hasattr(socket, "TCP_KEEPINTVL"):
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 10)
+            if hasattr(socket, "TCP_KEEPCNT"):
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)
+        except OSError as e:
+            logger.debug(f"{self._name}: TCP keepalive setup skipped: {e}")
+
     async def connect(self):
         delay = self._reconnect_delay
         while True:
             try:
-                self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
-                self.connected = True
+                await self._set_connection_state("connecting")
+                self.reader, self.writer = await asyncio.wait_for(
+                    asyncio.open_connection(self.host, self.port),
+                    timeout=15,
+                )
+                self._enable_tcp_keepalive()
                 delay = self._reconnect_delay
                 logger.info(f"{self._name}: Connected")
+                await self._set_connection_state("connected")
                 await self._enable_raw_frames()
                 await self._read_loop()
+                logger.warning(f"{self._name}: Remote connection closed; reconnecting")
             except Exception as e:
                 logger.error(f"{self._name}: Connection failed: {e}")
-                self.connected = False
+                await self._set_connection_state("reconnecting", str(e), time.time() + delay)
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 60)
+                self.reconnect_attempts += 1
+            else:
+                await self._set_connection_state("reconnecting", "Remote connection closed", time.time() + delay)
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 60)
+                self.reconnect_attempts += 1
 
     async def _enable_raw_frames(self):
         if not self.writer:
@@ -446,24 +584,38 @@ class AGWPETCPClient:
         except asyncio.IncompleteReadError:
             pass
         except asyncio.CancelledError:
-            pass
+            raise
         except Exception as e:
             logger.error(f"{self._name}: Read error: {e}")
         finally:
-            self.connected = False
             logger.info(f"{self._name}: Disconnected")
+            if self.writer:
+                self.writer.close()
+                try:
+                    await self.writer.wait_closed()
+                except Exception:
+                    pass
+            self.writer = None
+            self.reader = None
 
     async def send(self, ax25_data: bytes):
         if self.writer and self.connected:
-            payload = bytes([0]) + ax25_data
-            self.writer.write(_agwpe_header("K", len(payload)) + payload)
-            await self.writer.drain()
-            logger.debug(f"{self._name}: Sent {len(ax25_data)} bytes")
+            try:
+                payload = bytes([0]) + ax25_data
+                self.writer.write(_agwpe_header("K", len(payload)) + payload)
+                await self.writer.drain()
+                logger.debug(f"{self._name}: Sent {len(ax25_data)} bytes")
+            except Exception as e:
+                logger.error(f"{self._name}: Send error: {e}")
+                await self._set_connection_state("reconnecting", str(e))
+                if self.writer:
+                    self.writer.close()
+                raise
 
     async def close(self):
         if self.writer:
             self.writer.close()
-            self.connected = False
+        await self._set_connection_state("disconnected")
 
 
 class TNC2MonitorSerialClient:
@@ -556,7 +708,7 @@ class TNC2MonitorSerialClient:
                         except Exception as e:
                             logger.error(f"{self._name}: Packet handler error: {e}")
         except asyncio.CancelledError:
-            pass
+            raise
         except Exception as e:
             logger.error(f"{self._name}: Read error: {e}")
         finally:

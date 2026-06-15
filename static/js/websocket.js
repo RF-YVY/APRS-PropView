@@ -83,11 +83,12 @@ class PropViewWebSocket {
     }
 
     _updateStatus(connected) {
-        const el = document.getElementById('ws-status');
-        if (el) {
-            el.classList.toggle('connected', connected);
-            el.classList.toggle('disconnected', !connected);
-        }
+        const chip = document.getElementById('ws-chip');
+        const chipText = document.getElementById('ws-chip-text');
+        if (!chip || !chipText) return;
+        chip.classList.remove('online', 'partial', 'read-only', 'reconnecting', 'offline');
+        chip.classList.add(connected ? 'online' : 'reconnecting');
+        chipText.textContent = connected ? 'Connected' : 'Retrying';
     }
 }
 

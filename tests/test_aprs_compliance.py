@@ -26,7 +26,7 @@ from server.export import MQTTPublisher
 from server.packet_handler import PacketHandler
 from server.station_tracker import StationTracker
 from server.websocket_manager import WebSocketManager
-from server.gps import GPSManager, parse_gpsd_tpv, parse_nmea_position
+from server.gps import GPSManager, parse_gpsd_tpv, parse_nmea_position, split_nmea_stream
 from server.status_report import build_dx_status_text, build_mheard_status_text, build_weather_alert_status_text, trim_status_text
 from server.wxnow import build_wxnow_info, build_wxnow_position_info, parse_weather_body_values, parse_wxnow_text
 
@@ -1077,6 +1077,11 @@ class StationCallsignValidationTests(unittest.TestCase):
             self.assertTrue(_is_valid_station_callsign(callsign))
             self.assertIsNone(_validate_config({"station": {"callsign": callsign}}))
 
+    def test_accepts_guam_station_callsigns(self):
+        for callsign in ("KH2A", "KH2AB", "KH2ABC", "AH2A", "AH2AB", "AH2XYZ"):
+            self.assertTrue(_is_valid_station_callsign(callsign))
+            self.assertIsNone(_validate_config({"station": {"callsign": callsign}}))
+
     def test_rejects_only_packet_unsafe_station_identifiers(self):
         for callsign in ("", "TOO-LONG10", "BAD/CALL", "CALL-7", "CALL SIGN"):
             self.assertFalse(_is_valid_station_callsign(callsign))
@@ -1117,6 +1122,30 @@ class GPSIngestionTests(unittest.TestCase):
 
     def test_ignores_invalid_nmea_fix(self):
         self.assertIsNone(parse_nmea_position("$GPRMC,123519,V,4807.038,N,01131.000,E,0,0,230394,,*00"))
+
+    def test_splits_cr_only_nmea_stream(self):
+        buffer = bytearray()
+        lines = split_nmea_stream(
+            buffer,
+            b"$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A\r"
+            b"$GPGGA,123520,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47\r",
+        )
+
+        self.assertEqual(len(lines), 2)
+        self.assertEqual(buffer, bytearray())
+        self.assertIsNotNone(parse_nmea_position(lines[0]))
+        self.assertIsNotNone(parse_nmea_position(lines[1]))
+
+    def test_nmea_stream_recovers_after_oversized_noise(self):
+        buffer = bytearray(b"x" * 32)
+        lines = split_nmea_stream(
+            buffer,
+            b"$GPRMC,123519,A,4807.038,N,01131.000,E,0,0,230394,,*00",
+            max_buffer=40,
+        )
+
+        self.assertEqual(lines, [])
+        self.assertTrue(buffer.startswith(b"$GPRMC"))
 
     def test_parses_gpsd_tpv_position(self):
         pos = parse_gpsd_tpv('{"class":"TPV","mode":3,"lat":35.1234,"lon":-97.5678,"speed":12.0,"track":184.5,"epx":4.0,"epy":6.0}')

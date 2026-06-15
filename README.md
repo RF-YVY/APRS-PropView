@@ -1,10 +1,9 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.5.7.0** | June 5, 2026
+**Version 1.6.0** | June 15, 2026
 
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/RF-YVY/APRS-PropView/total)
-
 
 ![GitHub Release Date](https://img.shields.io/github/release-date/RF-YVY/APRS-PropView?display_date=published_at&style=plastic)
 ![YouTube Channel Views](https://img.shields.io/youtube/channel/views/UC0qq--bOgSHn442vvenO0xg)
@@ -22,7 +21,7 @@
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
 
-Version 1.5.7.0 expands Home Assistant MQTT Discovery with binary status sensors and watched callsign entities, adds a retained MQTT status snapshot feed, improves Sporadic-E diagnostics, adds a station-symbol size control, adds a full weather analytics dashboard, and hardens first-heard station tracking so duplicate or cleaned-up stations are not announced repeatedly.
+Version 1.6.0 focuses on long-running station reliability and operator UX: TCP TNC disconnect detection with automatic reconnect/status notifications, a unified RF/APRS-IS/WebSocket connection header, a notification drawer for RF TCP issues and incoming APRS messages, expanded GPS/NMEA handling, map-coordinate fixes, Guam/worldwide callsign acceptance, DXView integration, optional browser auto-open selection, and refreshed desktop/mobile documentation.
 
 Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs/linux-raspberry-pi.md).
 
@@ -46,10 +45,12 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **Station Ghosting** — Configurable fade effect (pulsing dashed border) for stations not heard recently
 - **Station Expiry** — Automatically remove stations from the map after a configurable "last heard" timeout
 - **Mobile Companion** — Touch-optimized `/mobile` page with bottom tab bar for phone browsers (via Tailscale or LAN)
+- **Tailscale/VPN Mobile Access** - Documentation for safely using `/mobile` away from home through Tailscale or another private VPN without public port forwarding
 - **Propagation Indicator** — Live gauge showing current VHF band conditions based on station count and distance trends
 - **Filters** — Filter stations by last-heard time, distance, packet type, callsign, source, and direct/via-digipeater RF path
 - **Solar Data Widget** — Live HF propagation summary image (solar flux, K-index, band conditions) from hamqsl.com in the Propagation tab
 - **Real-time Updates** — WebSocket-driven live dashboard
+- **Connection Status UX** - Unified RF/APRS-IS/WebSocket status pills with connected/retrying/disconnected states and a header notification drawer for TCP RF issues and received APRS messages
 
 ### Analytics
 
@@ -59,6 +60,7 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **Best Time of Day** — Identify peak propagation windows from historical data
 - **Sporadic-E Diagnostics** — Select 6-hour, 24-hour, or 7-day analysis windows and see RF station counts, strongest stations, qualifying-distance counts, near misses, and path-quality weighting details
 - **Weather Analytics Dashboard** — Pop-out dashboard for current weather, gauges, history, records, forecast, and map context
+- **DXView Link** - Propagation tab link opens VHF DXView centered on the configured station latitude/longitude
 
 ### Alerts
 
@@ -116,6 +118,7 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **Minute-based Timers** — All timer settings (beacon interval, dedupe, cleanup, cooldown) displayed in minutes for simplicity
 - **Pick Location on Map** — Click the map to set your station coordinates
 - **GPS Ingestion** — Use browser/mobile GPS, own APRS position packets, NMEA serial/TCP/UDP streams, or gpsd to move the map marker or update station coordinates
+- **Robust NMEA Handling** - NMEA serial/TCP/UDP ingestion tolerates chunked GPS streams used by common GPS software and devices
 - **Smart Beaconing** — Optional GPS-speed-aware station beacon intervals for mobile/portable use
 - **Map Object Creation** — Drop APRS objects from the map, choose symbol/comment/routing, and save them into the scheduled object list
 - **APRS Symbol Picker** — Visual icon chooser with both primary and alternate symbol tables
@@ -125,6 +128,7 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **Collapsible Sidebar** — Toggle button to collapse/expand the sidebar for a larger map view
 - **Persistent Weather Banner** — Weather conditions stay visible on the map unless disabled in settings
 - **Font Selector** — Choose from multiple fonts in Settings for crisp, readable text
+- **Opening Browser Selector** - Choose the browser APRS PropView opens on startup, or leave it blank/system default to avoid unwanted browser launch behavior on headless/service deployments
 - **About Tab** — Application version, build info, and attribution
 - **Help & User Guide** — In-app help modal covering every feature, control, and setting
 - **Installer-Based Updates** - Windows setup installs can detect GitHub setup assets, download the newer installer from the About tab, close APRS PropView cleanly, and launch setup while keeping user settings and data intact
@@ -190,6 +194,19 @@ macOS usually appear as `/dev/cu.usbserial-*`, `/dev/cu.usbmodem-*`, or similar
 paths rather than Windows-style `COM` ports. If a USB serial adapter does not
 appear, install the vendor's macOS driver and grant any requested permissions.
 
+To update an existing macOS source checkout:
+
+```bash
+git pull
+source .venv/bin/activate
+pip install -r requirements.txt
+python main.py
+```
+
+If macOS blocks serial or network permissions, open System Settings and review
+Privacy & Security prompts for Terminal, Python, your USB serial driver, or the
+packaged app.
+
 ### Standalone Executable
 
 ```bash
@@ -216,7 +233,7 @@ the current `APRSPropView.exe`.
 Installer upgrades replace the application executable and bundled files only.
 User data such as `config.toml`, `propview.db`, `map_tile_cache/`, and
 `user_audio/` is left in place. Publish both `APRSPropView.exe` and the setup
-asset on GitHub releases; assets named like `APRSPropViewSetup-1.5.7.0.exe` are
+asset on GitHub releases; assets named like `APRSPropViewSetup-1.6.0.exe` are
 detected by the in-app update checker so users can click **Install Update** in
 the About tab. On Linux, Raspberry Pi, and macOS, users still see release
 notices but installer-based update buttons are hidden because those platforms
@@ -243,6 +260,26 @@ This produces `dist/APRS PropView.app`. On first launch, the app stores
 The local `.app` build is unsigned unless you set `MACOS_CODESIGN_IDENTITY`
 before running `build_macos.py`. Unsigned builds are suitable for local testing,
 but public macOS releases should be code-signed and notarized.
+
+For a public macOS release, build on macOS, then sign, zip, and notarize the
+bundle with your Apple Developer credentials. This Windows build host cannot
+produce a real `.app` bundle; use the macOS builder script on a Mac or macOS CI.
+
+### Raspberry Pi / Linux Service Update
+
+Linux and Raspberry Pi installs are normally source/service deployments:
+
+```bash
+git pull
+sudo bash ./scripts/install_linux.sh
+sudo systemctl restart aprs-propview
+journalctl -u aprs-propview -f
+```
+
+The installer preserves `config.toml`, `propview.db`, map tile cache, and user
+audio. For remote mobile companion use, bind the web host to `0.0.0.0`, keep the
+port reachable only over a private VPN such as Tailscale, and open
+`http://TAILSCALE-IP:14501/mobile` from the phone.
 
 ## Configuration
 
@@ -383,4 +420,4 @@ APRS PropView was created by **Brett Wicker - K5YVY** with the assistance of an 
 Official project support: [Donate via PayPal](https://www.paypal.com/ncp/payment/2TZHQAECTSDGC)
 
 **Wicker Made, LLC**\
-Contact: [madebywicker@gmail.com](mailto:madebywicker@gmail.com)
+Contact: [k5yvy.radio@gmail.com](mailto:k5yvy.radio@gmail.com)

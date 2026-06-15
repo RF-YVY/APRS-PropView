@@ -26,6 +26,14 @@
     --accent-purple: #bc8cff;
     --nav-height: 56px;
 }
+html.ui-light {
+    --bg: #f5f7fb;
+    --bg-card: #ffffff;
+    --bg-input: #eef2f7;
+    --border: #ccd6e3;
+    --text: #152033;
+    --text-muted: #607086;
+}
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body {
     height: 100%; width: 100%;
@@ -122,6 +130,22 @@ html, body {
 }
 
 /* ── Messages ───────────────────────────── */
+.home-scroll { padding: 10px; gap: 10px; }
+.home-hero { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.home-card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 10px; min-height: 74px;
+}
+.home-card.wide { grid-column: 1 / -1; }
+.home-label { color: var(--text-muted); font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.home-value { margin-top: 5px; font-size: 21px; font-weight: 800; color: var(--text); }
+.home-copy { margin-top: 3px; font-size: 12px; color: var(--text-muted); line-height: 1.35; }
+.home-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.home-action {
+    border: 1px solid var(--border); border-radius: 10px; background: var(--bg-input);
+    color: var(--text); font-size: 13px; font-weight: 700; padding: 11px 10px;
+}
+.home-alert { border-color: rgba(210,153,34,.45); background: rgba(210,153,34,.12); }
 .msg-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
 .msg-bubble {
     max-width: 85%; padding: 8px 12px; border-radius: 12px; font-size: 13px;
@@ -173,50 +197,31 @@ html, body {
 }
 .msg-filter-bar select { color: var(--text); max-width: 120px; }
 .msg-filter-bar button.active { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
-.msg-conversations {
-    display: flex;
-    gap: 8px;
-    overflow-x: auto;
+.msg-conversation-picker {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(92px, 34%);
+    gap: 6px;
     padding: 8px;
     background: var(--bg);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
-    -webkit-overflow-scrolling: touch;
 }
-.msg-conv-card {
-    min-width: 118px;
-    max-width: 160px;
-    padding: 8px 10px;
+.msg-conversation-picker select,
+.msg-conversation-picker input {
+    width: 100%;
+    min-width: 0;
+    background: var(--bg-input);
     border: 1px solid var(--border);
     border-radius: 8px;
-    background: var(--bg-card);
     color: var(--text);
-    text-align: left;
-    cursor: pointer;
-}
-.msg-conv-card.active {
-    border-color: var(--accent-blue);
-    background: rgba(88,166,255,0.12);
-}
-.msg-conv-card.unread {
-    border-color: rgba(248,81,73,0.6);
-}
-.msg-conv-card .call {
     font-size: 13px;
-    font-weight: 700;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.msg-conv-card .preview {
-    color: var(--text-muted);
-    font-size: 11px;
-    margin-top: 2px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    padding: 8px 9px;
 }
 .msg-thread-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
     padding: 8px 10px;
     background: rgba(88,166,255,0.08);
     border-bottom: 1px solid var(--border);
@@ -225,6 +230,24 @@ html, body {
     flex-shrink: 0;
 }
 .msg-thread-header strong { color: var(--text); }
+.msg-thread-actions {
+    display: flex;
+    gap: 5px;
+    flex-shrink: 0;
+}
+.msg-thread-actions button {
+    border: 1px solid var(--border);
+    background: var(--bg-input);
+    color: var(--text);
+    border-radius: 7px;
+    padding: 5px 7px;
+    font-size: 11px;
+    font-weight: 700;
+}
+.msg-thread-actions button.danger {
+    color: var(--accent-red);
+    border-color: rgba(248,81,73,.45);
+}
 
 /* ── Map ────────────────────────────────── */
 #m-map { flex: 1; }
@@ -252,6 +275,23 @@ html, body {
 .m-map-tools button.active {
     border-color: var(--accent-blue);
     color: var(--accent-blue);
+}
+.m-map-segment {
+    display: inline-flex;
+    background: rgba(22,27,34,0.92);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
+.m-map-segment button {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: transparent;
+}
+.m-map-segment button.active {
+    background: rgba(88,166,255,0.18);
 }
 .aprs-icon-wrapper { background: transparent !important; border: none !important; }
 .aprs-sprite { display: inline-block; image-rendering: pixelated; image-rendering: -moz-crisp-edges; vertical-align: middle; flex-shrink: 0; }
@@ -294,6 +334,18 @@ html, body {
 .stn-card .stn-call { font-size: 13px; font-weight: 600; }
 .stn-card .stn-detail { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stn-card .stn-time { font-size: 10px; color: var(--text-muted); text-align: right; white-space: nowrap; }
+.stn-actions { display: flex; gap: 5px; margin-top: 7px; }
+.stn-actions button,
+.stn-actions a {
+    border: 1px solid var(--border);
+    background: var(--bg-input);
+    color: var(--text);
+    border-radius: 7px;
+    padding: 5px 7px;
+    font-size: 11px;
+    font-weight: 700;
+    text-decoration: none;
+}
 
 /* ── Propagation ────────────────────────── */
 .prop-section { padding: 12px; }
@@ -370,18 +422,55 @@ html, body {
     <div class="wx-alert" id="m-wx-alert"></div>
     <div class="wx-banner" id="m-wx-banner"></div>
     <div class="m-quick-actions">
+        <button type="button" data-quick-tab="mtab-home">Home</button>
         <button type="button" data-quick-tab="mtab-messages">Messages<span class="qa-badge" id="m-qa-msg-badge">0</span></button>
         <button type="button" data-quick-tab="mtab-map">Map</button>
         <button type="button" id="m-btn-lines" class="active">Lines</button>
         <button type="button" id="m-btn-center">Center Me</button>
         <button type="button" id="m-btn-gps">Share GPS</button>
-        <button type="button" data-quick-tab="mtab-stations">Stations</button>
     </div>
 
     <!-- Content panels -->
     <div class="m-content">
+        <!-- Home -->
+        <div class="m-tab active home-scroll" id="mtab-home">
+            <div class="home-hero">
+                <div class="home-card">
+                    <div class="home-label">APRS-IS</div>
+                    <div class="home-value" id="m-home-is">Offline</div>
+                    <div class="home-copy" id="m-home-call">Station --</div>
+                </div>
+                <div class="home-card">
+                    <div class="home-label">Messages</div>
+                    <div class="home-value" id="m-home-msg">0</div>
+                    <div class="home-copy" id="m-home-msg-copy">No unread messages</div>
+                </div>
+                <div class="home-card">
+                    <div class="home-label">RF Heard</div>
+                    <div class="home-value" id="m-home-rf">0</div>
+                    <div class="home-copy">Stations in memory</div>
+                </div>
+                <div class="home-card">
+                    <div class="home-label">Max Path</div>
+                    <div class="home-value" id="m-home-max">--</div>
+                    <div class="home-copy">Current propagation window</div>
+                </div>
+                <div class="home-card wide" id="m-home-alert-card">
+                    <div class="home-label">Conditions</div>
+                    <div class="home-value" id="m-home-prop">Waiting</div>
+                    <div class="home-copy" id="m-home-prop-copy">Waiting for live propagation data.</div>
+                </div>
+            </div>
+            <div class="home-actions">
+                <button class="home-action" type="button" data-quick-tab="mtab-messages">Messages</button>
+                <button class="home-action" type="button" data-quick-tab="mtab-map">Map</button>
+                <button class="home-action" type="button" data-quick-tab="mtab-stations">Stations</button>
+                <button class="home-action" type="button" data-quick-tab="mtab-prop">Propagation</button>
+            </div>
+        </div>
+
         <!-- Messages -->
-        <div class="m-tab active" id="mtab-messages">
+        <div class="m-tab" id="mtab-messages">
             <div class="msg-filter-bar">
                 <button class="active" data-f="all">All</button>
                 <button data-f="mine">Mine</button>
@@ -393,7 +482,10 @@ html, body {
                 </select>
                 <button id="m-btn-refresh" type="button" title="Refresh messages and weather">Refresh</button>
             </div>
-            <div class="msg-conversations" id="m-msg-conversations"></div>
+            <div class="msg-conversation-picker">
+                <select id="m-msg-conversation" title="Conversation"></select>
+                <input type="search" id="m-msg-search" placeholder="Find call" autocomplete="off" autocapitalize="characters">
+            </div>
             <div class="msg-thread-header" id="m-msg-thread-header">Select a conversation.</div>
             <div class="msg-list" id="m-msg-list"><div class="msg-empty">No messages yet.</div></div>
             <div class="msg-compose">
@@ -407,7 +499,10 @@ html, body {
         <div class="m-tab m-map-tab" id="mtab-map">
             <div class="m-map-tools">
                 <button id="m-map-lines" type="button" class="active">Lines</button>
-                <button id="m-map-theme" type="button">Light</button>
+                <div class="m-map-segment" aria-label="Map theme">
+                    <button id="m-map-theme-dark" type="button">Dark</button>
+                    <button id="m-map-theme-light" type="button">Light</button>
+                </div>
                 <button id="m-map-fit" type="button">Fit</button>
             </div>
             <div id="m-map"></div>
@@ -454,8 +549,8 @@ html, body {
                     Digipeater &bull; IGate &bull; Analytics &bull; Weather<br><br>
                     Created by <strong>Brett Wicker - K5YVY</strong><br>
                     with the assistance of an AI agent.<br><br>
-                    <strong>Wicker Made, LLC</strong><br>
-                    <a href="mailto:madebywicker@gmail.com">madebywicker@gmail.com</a><br><br>
+                    <strong>CONTACT</strong><br>
+                    <a href="mailto:k5yvy.radio@gmail.com">k5yvy.radio@gmail.com</a><br><br>
                     <a href="https://www.youtube.com/watch?v=OyX6RaNevUk&amp;t=76s" target="_blank" rel="noreferrer">Video Guide</a><br>
                     <a href="/static/documentation.html" target="_blank" rel="noreferrer">HTML Documentation</a><br>
                     <a href="/" target="_blank">Open Desktop View</a>
@@ -466,11 +561,12 @@ html, body {
 
     <!-- Bottom nav -->
     <nav class="m-nav">
-        <button class="active" data-tab="mtab-messages"><span class="icon">💬</span><span>Messages</span><span class="badge" id="m-msg-badge">0</span></button>
+        <button class="active" data-tab="mtab-home"><span class="icon">⌂</span><span>Home</span></button>
+        <button data-tab="mtab-messages"><span class="icon">Msg</span><span>Messages</span><span class="badge" id="m-msg-badge">0</span></button>
         <button data-tab="mtab-map"><span class="icon">🗺️</span><span>Map</span></button>
         <button data-tab="mtab-stations"><span class="icon">📻</span><span>Stations</span></button>
         <button data-tab="mtab-prop"><span class="icon">📊</span><span>Propag.</span></button>
-        <button data-tab="mtab-about"><span class="icon">ℹ️</span><span>About</span></button>
+        <button data-tab="mtab-about"><span class="icon">Info</span><span>About</span></button>
     </nav>
 </div>
 
@@ -550,8 +646,8 @@ const S = {
     map: null, mapReady: false, rfMarkers: {}, isMarkers: {},
     rfLayer: null, isLayer: null, lineLayer: null, rfLines: {}, isLines: {}, myMarker: null, myPos: null, baseTileLayer: null,
     startTime: 0, ghostMinutes: 60, stationMeta: {},
-    unreadCount: 0, activeTab: 'mtab-messages', propData: null,
-    messagesLoaded: false, stationsLoaded: false, replyContext: null, selectedConversation: '',
+    unreadCount: 0, activeTab: 'mtab-home', propData: null,
+    messagesLoaded: false, stationsLoaded: false, replyContext: null, selectedConversation: '', msgSearch: '',
     aprsIsConnected: false, aprsIsVerified: false,
     gpsWatchId: null, lastGpsPost: 0, config: null, showLines: true, mapTheme: 'dark',
 };
@@ -629,7 +725,7 @@ document.querySelector('.m-nav').addEventListener('click', e => {
     activateTab(btn.dataset.tab);
 });
 
-document.querySelector('.m-quick-actions').addEventListener('click', e => {
+document.addEventListener('click', e => {
     const btn = e.target.closest('button[data-quick-tab]');
     if (!btn) return;
     activateTab(btn.dataset.quickTab);
@@ -702,13 +798,59 @@ $('m-msg-list').addEventListener('click', e => {
     $('m-msg-text').focus();
 });
 
-$('m-msg-conversations').addEventListener('click', e => {
-    const card = e.target.closest('.msg-conv-card');
-    if (!card) return;
-    S.selectedConversation = normalizeCall(card.dataset.call);
-    $('m-msg-to').value = S.selectedConversation;
+$('m-msg-conversation')?.addEventListener('change', e => {
+    S.selectedConversation = normalizeCall(e.target.value);
+    if (S.selectedConversation) $('m-msg-to').value = S.selectedConversation;
     renderMessages();
 });
+
+$('m-msg-search')?.addEventListener('input', e => {
+    S.msgSearch = normalizeCall(e.target.value);
+    renderMessages();
+});
+
+document.addEventListener('click', async e => {
+    const action = e.target.closest('[data-thread-action]');
+    if (!action) return;
+    const call = S.selectedConversation;
+    if (!call) return;
+    if (action.dataset.threadAction === 'message') {
+        $('m-msg-to').value = call;
+        $('m-msg-text').focus();
+        return;
+    }
+    if (action.dataset.threadAction === 'remove-contact') {
+        if (!confirm(`Remove ${call} from saved message contacts?`)) return;
+        await deleteMobileContact(call);
+        return;
+    }
+    if (action.dataset.threadAction === 'clear-thread') {
+        if (!confirm(`Clear message history with ${call}?`)) return;
+        await clearMobileConversation(call);
+    }
+});
+
+async function deleteMobileContact(call) {
+    try {
+        await fetch(`/api/messages/contacts/${encodeURIComponent(call)}`, { method: 'DELETE' });
+        renderMessages();
+    } catch {
+        alert('Unable to remove contact.');
+    }
+}
+
+async function clearMobileConversation(call) {
+    try {
+        const r = await fetch(`/api/messages/conversation/${encodeURIComponent(call)}`, { method: 'DELETE' });
+        const j = await r.json();
+        if (!r.ok || !j.success) throw new Error(j.message || 'Clear failed');
+        S.messages = S.messages.filter(m => conversationCall(m) !== call);
+        S.selectedConversation = '';
+        renderMessages();
+    } catch (err) {
+        alert(err.message || 'Unable to clear conversation.');
+    }
+}
 
 // ── Render messages ────────────────────────────────────────
 function renderMessages() {
@@ -777,23 +919,27 @@ function buildConversations(msgs) {
 }
 
 function renderConversations(convs) {
-    const strip = $('m-msg-conversations');
-    if (!strip) return;
-    if (!convs.length) {
-        strip.innerHTML = '';
+    const select = $('m-msg-conversation');
+    if (!select) return;
+    const search = S.msgSearch || '';
+    const visible = search
+        ? convs.filter(c => c.call.includes(search))
+        : convs;
+    if (!visible.length) {
+        select.innerHTML = '<option value="">No conversations</option>';
         S.selectedConversation = '';
         return;
     }
-    if (!S.selectedConversation || !convs.some(c => c.call === S.selectedConversation)) {
-        S.selectedConversation = convs[0].call;
+    if (!S.selectedConversation || !visible.some(c => c.call === S.selectedConversation)) {
+        S.selectedConversation = visible[0].call;
     }
-    strip.innerHTML = convs.map(c => {
+    select.innerHTML = visible.map(c => {
         const latest = [...c.messages].sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0))[0] || {};
-        return `<button type="button" class="msg-conv-card ${c.call === S.selectedConversation ? 'active' : ''} ${c.unread ? 'unread' : ''}" data-call="${escHtml(c.call)}">
-            <div class="call">${escHtml(c.call)}${c.unread ? ` (${c.unread})` : ''}</div>
-            <div class="preview">${escHtml(latest.text || '')}</div>
-        </button>`;
+        const unread = c.unread ? ` (${c.unread} new)` : '';
+        const preview = latest.text ? ` - ${String(latest.text).slice(0, 28)}` : '';
+        return `<option value="${escHtml(c.call)}">${escHtml(c.call + unread + preview)}</option>`;
     }).join('');
+    select.value = S.selectedConversation;
 }
 
 function renderMessages() {
@@ -802,6 +948,13 @@ function renderMessages() {
     const msgs = filteredMessages();
     const convs = buildConversations(msgs);
     renderConversations(convs);
+    if (!S.selectedConversation && msgs.length) {
+        if (header) header.textContent = convs.length ? 'No matching conversation.' : 'No conversation selected.';
+        list.innerHTML = convs.length
+            ? '<div class="m-empty"><div class="title">No match</div><div class="copy">Adjust the callsign search to choose a conversation.</div></div>'
+            : '<div class="m-empty"><div class="title">No messages yet</div><div class="copy">Send a message or wait for incoming APRS traffic.</div></div>';
+        return;
+    }
 
     if (!msgs.length) {
         if (header) header.textContent = 'No conversation selected.';
@@ -819,7 +972,13 @@ function renderMessages() {
     const thread = msgs.filter(m => conversationCall(m) === S.selectedConversation);
     if (header) {
         const count = thread.length;
-        header.innerHTML = `<strong>${escHtml(S.selectedConversation || 'Conversation')}</strong> &middot; ${count} message${count === 1 ? '' : 's'}`;
+        header.innerHTML = `
+            <span><strong>${escHtml(S.selectedConversation || 'Conversation')}</strong> &middot; ${count} message${count === 1 ? '' : 's'}</span>
+            <span class="msg-thread-actions">
+                <button type="button" data-thread-action="message">Reply</button>
+                <button type="button" data-thread-action="remove-contact">Remove</button>
+                <button type="button" class="danger" data-thread-action="clear-thread">Clear</button>
+            </span>`;
     }
 
     const sorted = [...thread].sort((a, b) => {
@@ -872,6 +1031,30 @@ function updateBadge() {
         b.style.display = 'none';
         if (qa) qa.style.display = 'none';
     }
+    updateHomeSummary();
+}
+
+function updateHomeSummary() {
+    const isText = S.connected
+        ? (S.aprsIsConnected ? (S.aprsIsVerified ? 'Online' : 'Read-only') : 'Offline')
+        : 'Reconnecting';
+    const setText = (id, value) => { const el = $(id); if (el) el.textContent = value; };
+    setText('m-home-is', isText);
+    setText('m-home-call', `Station ${S.myCall || '--'}`);
+    setText('m-home-msg', String(S.unreadCount || 0));
+    setText('m-home-msg-copy', S.unreadCount ? 'Unread messages waiting' : 'No unread messages');
+    setText('m-home-rf', String(Object.keys(S.rfStations || {}).length));
+    setText('m-home-max', S.propData ? fmtDist(S.propData.max_distance_km || 0) : '--');
+    const rf = S.propData?.rf_stations_1h || 0;
+    const maxD = S.propData?.max_distance_km || 0;
+    let level = 'Quiet';
+    if (rf >= 10 && maxD >= 200) level = 'Strong';
+    else if (rf >= 5 && maxD >= 100) level = 'Active';
+    else if (rf >= 2) level = 'Light';
+    setText('m-home-prop', level);
+    setText('m-home-prop-copy', S.propData
+        ? `${rf} RF stations in 1h · ${fmtDist(maxD)} max path.`
+        : 'Waiting for live propagation data.');
 }
 
 // ── Map ────────────────────────────────────────────────────
@@ -934,11 +1117,18 @@ function getMapTileConfig() {
 }
 
 function updateMapThemeButton() {
-    const btn = $('m-map-theme');
-    if (!btn) return;
+    const darkBtn = $('m-map-theme-dark');
+    const lightBtn = $('m-map-theme-light');
     const customTiles = !!(S.config?.web?.map_tile_source === 'custom' && S.config?.web?.map_tile_url);
-    btn.textContent = S.mapTheme === 'light' ? 'Dark' : 'Light';
-    btn.title = customTiles ? 'Custom tile source is configured; theme toggle uses default tiles only.' : 'Toggle mobile map light/dark tiles';
+    document.documentElement.classList.toggle('ui-light', S.mapTheme === 'light');
+    if (darkBtn) {
+        darkBtn.classList.toggle('active', S.mapTheme !== 'light');
+        darkBtn.title = customTiles ? 'Custom tile source is configured; theme toggle uses default tiles only.' : 'Use dark mobile map tiles';
+    }
+    if (lightBtn) {
+        lightBtn.classList.toggle('active', S.mapTheme === 'light');
+        lightBtn.title = customTiles ? 'Custom tile source is configured; theme toggle uses default tiles only.' : 'Use light mobile map tiles';
+    }
 }
 
 function applyMobileMapTheme() {
@@ -957,8 +1147,8 @@ function applyMobileMapTheme() {
     if (S.isLayer) S.isLayer.bringToFront();
 }
 
-function toggleMobileMapTheme() {
-    S.mapTheme = S.mapTheme === 'light' ? 'dark' : 'light';
+function setMobileMapTheme(theme) {
+    S.mapTheme = theme === 'light' ? 'light' : 'dark';
     localStorage.setItem(MOBILE_MAP_THEME_KEY, S.mapTheme);
     applyMobileMapTheme();
 }
@@ -1023,6 +1213,30 @@ function startMessageTo(call, source = '') {
 }
 window.startMessageTo = startMessageTo;
 
+function showStationOnMap(call, source = '') {
+    const normalized = normalizeCall(call);
+    const station = source === 'rf' ? S.rfStations[normalized] : S.isStations[normalized];
+    if (!station?.latitude || !station?.longitude) return;
+    activateTab('mtab-map');
+    if (!S.mapReady) initMap();
+    setTimeout(() => {
+        S.map?.setView([station.latitude, station.longitude], 12);
+        const markers = source === 'rf' ? S.rfMarkers : S.isMarkers;
+        markers[normalized]?.openPopup();
+    }, 80);
+}
+
+document.addEventListener('click', e => {
+    const action = e.target.closest('[data-station-action]');
+    if (!action) return;
+    const card = action.closest('.stn-card');
+    const call = normalizeCall(card?.dataset.call);
+    const source = card?.dataset.source || '';
+    if (!call) return;
+    if (action.dataset.stationAction === 'message') startMessageTo(call, source);
+    if (action.dataset.stationAction === 'map') showStationOnMap(call, source);
+});
+
 function addMapMarker(st) {
     if (!st.latitude || !st.longitude) return;
     if (st.latitude === 0 && st.longitude === 0) return;
@@ -1051,6 +1265,7 @@ function addMapMarker(st) {
         Pkts: ${st.packet_count || 1}${st.last_path ? '<br>Path: ' + escHtml(st.last_path) : ''}${st.last_comment ? '<br>' + escHtml(st.last_comment) : ''}</div>
         <div class="popup-actions">
             <button type="button" class="popup-action-btn" onclick="startMessageTo('${escHtml(call)}', '${source}')">Send Message</button>
+            <a class="popup-action-btn" href="https://aprs.fi/info/a/${encodeURIComponent(call)}" target="_blank" rel="noopener noreferrer">aprs.fi</a>
         </div>`;
 
     if (markers[call]) {
@@ -1090,6 +1305,7 @@ function ghostStaleMarkers() {
 function renderStations() {
     renderStationList(S.rfStations, $('m-rf-list'), $('m-rf-count'));
     renderStationList(S.isStations, $('m-is-list'), $('m-is-count'));
+    updateHomeSummary();
 }
 
 function renderStationList(stations, container, countEl) {
@@ -1110,11 +1326,18 @@ function renderStationList(stations, container, countEl) {
     }
     container.innerHTML = arr.map(st => {
         const sym = (typeof getAPRSSpriteHTML === 'function') ? getAPRSSpriteHTML(st.symbol_table || '/', st.symbol_code || '-', 20) : '📍';
-        return `<div class="stn-card">
+        const source = st.source === 'rf' ? 'rf' : 'aprs_is';
+        const call = escHtml(st.callsign || '');
+        return `<div class="stn-card" data-call="${call}" data-source="${source}">
             <div class="stn-icon">${sym}</div>
             <div class="stn-info">
-                <div class="stn-call">${escHtml(st.callsign)}</div>
+                <div class="stn-call">${call}</div>
                 <div class="stn-detail">${fmtDist(st.distance_km)} · ${st.packet_count || 1} pkts${st.last_comment ? ' · ' + escHtml(st.last_comment).substring(0, 30) : ''}</div>
+                <div class="stn-actions">
+                    <button type="button" data-station-action="message">Message</button>
+                    <button type="button" data-station-action="map">Map</button>
+                    <a href="https://aprs.fi/info/a/${encodeURIComponent(st.callsign || '')}" target="_blank" rel="noopener noreferrer">aprs.fi</a>
+                </div>
             </div>
             <div class="stn-time" data-last-heard="${st.last_heard || 0}">${timeAgo(st.last_heard)}</div>
         </div>`;
@@ -1164,6 +1387,7 @@ function updatePropDisplay(data) {
     const rft = $('m-rf-total'); if (rft) rft.textContent = rf;
     const md = $('m-max-dist'); if (md) md.textContent = fmtDist(maxD);
     const pc = $('m-pkt-count'); if (pc) pc.textContent = data.packets_1h || 0;
+    updateHomeSummary();
 }
 
 async function loadLeaderboard() {
@@ -1214,8 +1438,12 @@ async function loadWeather() {
             const severity = (a.severity || '').toLowerCase();
             alertEl.textContent = '\u26a0\ufe0f ' + (a.headline || a.event || 'Weather Alert');
             alertEl.className = 'wx-alert ' + (severity.includes('warning') ? 'warn' : 'watch');
+            $('m-home-alert-card')?.classList.add('home-alert');
+            const copy = $('m-home-prop-copy');
+            if (copy) copy.textContent = a.headline || a.event || 'Weather alert active.';
         } else if (alertEl) {
             alertEl.className = 'wx-alert';
+            $('m-home-alert-card')?.classList.remove('home-alert');
         }
     } catch { /* silent */ }
 }
@@ -1354,6 +1582,7 @@ function updateAprsIsChip() {
     chip.classList.remove('online', 'read-only', 'reconnecting', 'offline');
     chip.classList.add(state);
     text.textContent = label;
+    updateHomeSummary();
 }
 
 function handleStatus(data) {
@@ -1370,6 +1599,7 @@ function handleStatus(data) {
     S.aprsIsConnected = !!data.aprs_is_connected;
     S.aprsIsVerified = !!data.aprs_is_verified;
     updateAprsIsChip();
+    updateHomeSummary();
 
     handleGpsStatus(data.gps);
 
@@ -1439,6 +1669,9 @@ function toggleMobileGps() {
 // ── Init ───────────────────────────────────────────────────
 async function init() {
     S.activeTab = localStorage.getItem(MOBILE_TAB_KEY) || S.activeTab;
+    if (!['mtab-home', 'mtab-messages', 'mtab-map', 'mtab-stations', 'mtab-prop', 'mtab-about'].includes(S.activeTab)) {
+        S.activeTab = 'mtab-home';
+    }
     S.msgFilter = localStorage.getItem(MOBILE_MSG_FILTER_KEY) || S.msgFilter;
     S.msgSort = localStorage.getItem(MOBILE_MSG_SORT_KEY) || S.msgSort;
     S.mapTheme = localStorage.getItem(MOBILE_MAP_THEME_KEY) === 'light' ? 'light' : 'dark';
@@ -1486,7 +1719,8 @@ $('m-btn-center').addEventListener('click', () => {
 $('m-btn-gps').addEventListener('click', toggleMobileGps);
 $('m-btn-lines')?.addEventListener('click', () => setLinesVisible(!S.showLines));
 $('m-map-lines')?.addEventListener('click', () => setLinesVisible(!S.showLines));
-$('m-map-theme')?.addEventListener('click', toggleMobileMapTheme);
+$('m-map-theme-dark')?.addEventListener('click', () => setMobileMapTheme('dark'));
+$('m-map-theme-light')?.addEventListener('click', () => setMobileMapTheme('light'));
 $('m-map-fit')?.addEventListener('click', fitMobileMap);
 
 document.addEventListener('DOMContentLoaded', init);

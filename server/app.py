@@ -28,6 +28,7 @@ from server.config import (
     KISSSerialConfig, KISSTCPConfig, RFPortConfig, WebConfig, DatabaseConfig, TrackingConfig,
     MessagingConfig, AlertsConfig, PropagationConfig, WeatherConfig, GPSConfig, MQTTConfig,
 )
+from server.browser_launch import available_browsers, browser_ids
 from server.database import Database
 from server.station_tracker import StationTracker
 from server.websocket_manager import WebSocketManager
@@ -488,6 +489,9 @@ def _validate_config(body: Dict[str, Any]) -> Optional[str]:
         unit_system = (w.get("unit_system", "imperial") or "imperial").strip().lower()
         if unit_system not in {"imperial", "metric"}:
             return "Unit system must be imperial or metric."
+        launch_browser = (w.get("launch_browser", "") or "").strip().lower()
+        if launch_browser and launch_browser not in browser_ids():
+            return "Unknown launch browser."
         tile_url = (w.get("map_tile_url", "") or "").strip()
         if tile_source == "custom":
             if not tile_url:
@@ -1188,6 +1192,18 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
         """Clear all stored messages."""
         await handler.clear_messages()
         return {"success": True, "message": "Messages cleared."}
+
+    @app.delete("/api/messages/conversation/{callsign}")
+    async def clear_message_conversation(callsign: str):
+        """Clear stored messages involving one station or addressee."""
+        call = (callsign or "").strip().upper()
+        if not _is_valid_message_addressee(call):
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": "Invalid station callsign or addressee."},
+            )
+        deleted = await handler.clear_message_conversation(call)
+        return {"success": True, "deleted": deleted, "message": f"Cleared {deleted} message(s) for {call}."}
 
     @app.get("/api/messages/contacts")
     async def get_message_contacts():
@@ -2026,6 +2042,7 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
             "web": {
                 "host": config.web.host,
                 "port": config.web.port,
+                "launch_browser": config.web.launch_browser,
                 "font_family": config.web.font_family,
                 "map_tile_source": config.web.map_tile_source,
                 "map_tile_url": config.web.map_tile_url,
@@ -2247,12 +2264,17 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 "needRestart": True,
                 "message": "Settings imported. Restart APRS PropView to load the imported configuration.",
             }
+
         except Exception as e:
             logger.warning("Config import failed: %s", e)
             return JSONResponse(
                 status_code=400,
                 content={"success": False, "message": "Imported settings could not be read as a valid PropView TOML config."},
             )
+
+    @app.get("/api/browsers")
+    async def get_browsers():
+        return {"browsers": available_browsers()}
 
     @app.post("/api/config/save")
     async def save_config(request: Request):
@@ -2416,6 +2438,7 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 old_port = config.web.port
                 config.web.host = w.get("host", config.web.host)
                 config.web.port = int(w.get("port", config.web.port))
+                config.web.launch_browser = (w.get("launch_browser", config.web.launch_browser) or "").strip().lower()
                 config.web.font_family = w.get("font_family", config.web.font_family) or ""
                 config.web.map_tile_source = (w.get("map_tile_source", config.web.map_tile_source) or "osm").strip().lower()
                 config.web.map_tile_url = (w.get("map_tile_url", config.web.map_tile_url) or "").strip()

@@ -384,8 +384,8 @@
         <h1>APRS PropView Documentation</h1>
         <p class="lede">A complete field guide for installing, configuring, operating, and understanding APRS PropView: a real-time APRS digipeater, IGate, propagation monitor, weather-aware map, analytics dashboard, and messaging console.</p>
         <div class="meta">
-            <span class="pill">Version covered: 1.5.7.0</span>
-            <span class="pill">Updated: June 5, 2026</span>
+            <span class="pill">Version covered: 1.6.0</span>
+            <span class="pill">Updated: June 15, 2026</span>
             <span class="pill">License: Apache 2.0</span>
         </div>
     </div>
@@ -475,7 +475,7 @@ python main.py</code></pre>
             <section id="interface">
                 <h2>3. Interface Tour</h2>
                 <h3>Header</h3>
-                <p>The header shows your station callsign, RF/APRS-IS/WebSocket status dots, direct and regional propagation gauges, station counts, max distance, UI theme toggle, and a manual beacon control with route selection.</p>
+                <p>The header shows your station callsign, unified RF/APRS-IS/WebSocket status pills, direct and regional propagation gauges, station counts, max distance, UI theme toggle, notification bell, and a manual beacon control with route selection. Connection pills use green for connected, pulsing yellow-green for retrying/reconnecting, and red for disconnected.</p>
 
                 <h3>Main Map</h3>
                 <p>The map occupies the primary work area. It displays your station, RF stations, APRS-IS stations, APRS objects, path lines, radar, alert polygons, and weather banners depending on enabled layers.</p>
@@ -494,7 +494,7 @@ python main.py</code></pre>
                     <tr><td>APRS-IS</td><td>Stations received from the APRS-IS network.</td></tr>
                     <tr><td>Packets</td><td>Live and historical decoded packet feed with source and sort controls.</td></tr>
                     <tr><td>Messages</td><td>Send, receive, reply to, sort, and review APRS messages.</td></tr>
-                    <tr><td>Propagation</td><td>Current propagation cards, histograms, charts, and solar data.</td></tr>
+                    <tr><td>Propagation</td><td>Current propagation cards, histograms, charts, DXView link centered on your station, and solar data.</td></tr>
                     <tr><td>Analytics</td><td>Longest paths, heatmaps, reliability scores, and best time-of-day views.</td></tr>
                     <tr><td>Settings</td><td>Web configuration editor for station, RF, APRS-IS, weather, alerts, MQTT, GPS, and more.</td></tr>
                     <tr><td>About</td><td>Version, credits, update checks, support link, help modal, and this documentation.</td></tr>
@@ -552,6 +552,8 @@ python main.py</code></pre>
                 <div class="callout danger">
                     <p><b>Important:</b> RF-to-APRS-IS gating requires a valid APRS-IS passcode. Read-only passcode mode can receive but cannot inject packets into APRS-IS.</p>
                 </div>
+                <h3>TCP TNC Reliability</h3>
+                <p>TCP RF ports report connection state to the dashboard. If a remote TCP TNC disconnects, the RF status pill changes state, a short notification is added to the header drawer, and PropView attempts to reconnect automatically.</p>
                 <h3>Beaconing</h3>
                 <p>Station beacon preview shows exact packet text before transmit. Manual beacon controls can transmit over RF, APRS-IS, or both depending on available connections and route choice.</p>
                 <a class="backtop" href="#top">Back to top</a>
@@ -607,6 +609,7 @@ python main.py</code></pre>
                     <li>Distance distribution histogram.</li>
                     <li>24-hour propagation history chart.</li>
                     <li>Solar data widget from hamqsl.com.</li>
+                    <li>External VHF DXView map link centered on the configured station latitude/longitude.</li>
                 </ul>
                 <h3>Analytics</h3>
                 <p>The Analytics tab adds historical views including longest path leaderboard, propagation heatmap, station reliability grades, best time-of-day analysis, selectable-window Sporadic-E diagnostics, and a weather dashboard with gauges, records, charts, forecast, and map context.</p>
@@ -643,6 +646,19 @@ python main.py</code></pre>
                 <p>Smart beaconing chooses between slow/parked and faster moving intervals based on GPS speed. This is useful for mobile or portable operation. APRS-IS-safe minimum intervals are enforced.</p>
                 <h3>Mobile Companion</h3>
                 <p>Open <code>/mobile</code> from a phone browser on the LAN, VPN, or Tailscale. The mobile interface includes Messages, Map, Stations, Propagation, and About tabs. The Share GPS control can feed the phone location into PropView.</p>
+                <h3>Using Tailscale For Remote Mobile Access</h3>
+                <p>Tailscale is a private WireGuard-based VPN that lets your phone reach APRS PropView when you are away from the home LAN without exposing the dashboard to the public internet. Install Tailscale on the computer, Raspberry Pi, or VM running APRS PropView and on the phone or tablet that will use the mobile companion.</p>
+                <ol>
+                    <li>Sign in to the same Tailscale account on the APRS PropView host and the mobile device.</li>
+                    <li>In APRS PropView, open Settings &rarr; Web Interface and set <b>Host</b> to <code>0.0.0.0</code> so the web server listens beyond localhost.</li>
+                    <li>Keep the port at <code>14501</code> unless you intentionally changed it, save settings, and restart APRS PropView because host/port changes are startup settings.</li>
+                    <li>Find the host machine's Tailscale IPv4 address or MagicDNS name in the Tailscale app.</li>
+                    <li>From the phone, open <code>http://TAILSCALE-IP:14501/mobile</code> or <code>http://magicdns-name:14501/mobile</code>.</li>
+                    <li>If you want the phone to feed GPS, set GPS source to <b>This browser/device</b> or <b>Any source</b>, tap <b>Share GPS</b> in the mobile view, and allow browser location permission.</li>
+                </ol>
+                <div class="callout warning">
+                    <p><b>Security note:</b> Tailscale or a similar private VPN is preferred over public port forwarding. Do not expose APRS PropView directly to the internet unless you have added your own network-layer access controls.</p>
+                </div>
                 <p>The mobile map uses the same APRS station symbols as the desktop view and can draw compact propagation lines from your station to RF and APRS-IS stations. RF paths use distance-based colors, while APRS-IS paths are shown as lighter dashed lines. Use the mobile <b>Lines</b> control to hide or restore path lines, <b>Light/Dark</b> to switch the default mobile base-map theme, and <b>Fit</b> to frame your station plus visible stations.</p>
                 <p>Tap a station marker to open an information bubble with callsign, source, symbol type, distance, last-heard time, packet count, path/comment details, and a <b>Send Message</b> button that opens the selected station conversation.</p>
                 <p>Mobile messages are grouped by conversation/station. The conversation strip shows recent contacts and previews, while the selected thread below shows only that station's message history with sent/received bubbles, route labels, and ACK/reject state for outgoing messages.</p>
@@ -709,7 +725,7 @@ python main.py</code></pre>
                     <tr><td><code>[igate]</code></td><td>RF-to-APRS-IS and APRS-IS-to-RF gateway controls.</td></tr>
                     <tr><td><code>[aprs_is]</code></td><td>Server, port, passcode, filter mode, range, and extra filters.</td></tr>
                     <tr><td><code>[[rf_ports]]</code></td><td>Multi-port RF serial/TCP KISS and compatible monitor-style inputs.</td></tr>
-                    <tr><td><code>[web]</code></td><td>Bind host, port, UI font, map tile source, station ghosting, station expiry, and mobile PIN.</td></tr>
+                    <tr><td><code>[web]</code></td><td>Bind host, port, browser launch selection, UI font, map tile source, station ghosting, station expiry, and mobile PIN.</td></tr>
                     <tr><td><code>[tracking]</code></td><td>Station age windows and cleanup intervals.</td></tr>
                     <tr><td><code>[messaging]</code></td><td>APRS message history retention and optional sibling-SSID receive behavior.</td></tr>
                     <tr><td><code>[database]</code></td><td>SQLite database path.</td></tr>
@@ -734,7 +750,8 @@ python main.py</code></pre>
                 <h2>14. Operations And Maintenance</h2>
                 <h3>Routine Operation</h3>
                 <ul>
-                    <li>Watch RF, APRS-IS, and WebSocket status indicators after startup.</li>
+                    <li>Watch RF, APRS-IS, and WebSocket status pills after startup.</li>
+                    <li>Check the header notification bell for RF TCP errors/reconnects and received APRS messages.</li>
                     <li>Use preview buttons before transmitting beacons, status, WXnow, bulletins, or objects.</li>
                     <li>Keep beacon intervals conservative. Ten minutes or slower is the fixed-station norm for APRS-IS-safe operation.</li>
                     <li>Use Direct RF view when tuning propagation alerts or evaluating local reception.</li>
@@ -742,7 +759,9 @@ python main.py</code></pre>
                 </ul>
                 <h3>Updates</h3>
                 <p>The About tab checks GitHub releases for newer builds unless update checks are disabled. The app can also show an update banner in the dashboard.</p>
-                <p>On Windows installer-based releases, the update checker looks for a GitHub release asset named like <code>APRSPropViewSetup-1.5.7.0.exe</code>. When an installer asset is available, the About tab shows <b>Install Update</b>. Clicking it downloads the setup executable, asks APRS PropView to shut down cleanly, and launches setup after the server exits so newer application files can replace the existing install while keeping user settings and data intact. On Linux, Raspberry Pi, and macOS, release notices remain visible but the Windows-only installer action is hidden.</p>
+                <p>On Windows installer-based releases, the update checker looks for a GitHub release asset named like <code>APRSPropViewSetup-1.6.0.exe</code>. When an installer asset is available, the About tab shows <b>Install Update</b>. Clicking it downloads the setup executable, asks APRS PropView to shut down cleanly, and launches setup after the server exits so newer application files can replace the existing install while keeping user settings and data intact. On Linux, Raspberry Pi, and macOS, release notices remain visible but the Windows-only installer action is hidden.</p>
+                <h3>Browser Launch Control</h3>
+                <p>Settings &rarr; Web Interface includes an Opening Browser selector. Leave it blank/system default for normal behavior, choose a discovered browser when you want a specific browser, or keep it blank for headless Pi/VM service deployments where opening a browser is not desired.</p>
                 <h3>Data Files</h3>
                 <table>
                     <thead>

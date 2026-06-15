@@ -10,6 +10,8 @@ from server.config import Config
 from server.aprs_parser import calculate_bearing, calculate_distance
 
 logger = logging.getLogger("propview.gps")
+NMEA_READ_CHUNK = 512
+NMEA_MAX_BUFFER = 4096
 
 
 def _valid_lat_lon(latitude: float, longitude: float) -> bool:
@@ -75,6 +77,44 @@ def parse_nmea_position(sentence: str) -> Optional[Dict[str, Any]]:
     if course_deg is not None:
         result["course_deg"] = course_deg
     return result
+
+
+def split_nmea_stream(buffer: bytearray, data: bytes, max_buffer: int = NMEA_MAX_BUFFER) -> list[str]:
+    """Append bytes and return complete NMEA-ish lines split on CR or LF.
+
+    Some serial GPS devices emit CR-only NMEA sentences or burst data in ways
+    that make asyncio StreamReader.readline() hit its separator limit. This
+    splitter accepts either CR or LF and resynchronizes on the next '$' if the
+    stream contains noise or a partial oversized record.
+    """
+    if data:
+        buffer.extend(data)
+
+    lines: list[str] = []
+    while True:
+        positions = [pos for pos in (buffer.find(b"\n"), buffer.find(b"\r")) if pos >= 0]
+        if not positions:
+            break
+        pos = min(positions)
+        raw = bytes(buffer[:pos])
+        end = pos + 1
+        while end < len(buffer) and buffer[end] in (10, 13):
+            end += 1
+        del buffer[:end]
+        text = raw.decode("ascii", errors="ignore").strip()
+        if text:
+            lines.append(text)
+
+    if len(buffer) > max_buffer:
+        start = buffer.rfind(b"$")
+        if start > 0:
+            del buffer[:start]
+        elif start == -1:
+            buffer.clear()
+        elif len(buffer) > max_buffer:
+            del buffer[:-1]
+
+    return lines
 
 
 def parse_gpsd_tpv(message: str) -> Optional[Dict[str, Any]]:
@@ -284,11 +324,13 @@ class GPSManager:
                 logger.info("GPS NMEA TCP connected to %s:%s", self.config.gps.tcp_host, self.config.gps.tcp_port)
                 await self._set_source_status("nmea_tcp", "connected", "NMEA TCP connected; waiting for GPS sentences.")
                 try:
+                    buffer = bytearray()
                     while self.enabled and self.config.gps.source in {"nmea_tcp", "any"}:
-                        line = await reader.readline()
-                        if not line:
+                        data = await reader.read(NMEA_READ_CHUNK)
+                        if not data:
                             break
-                        await self.update_from_nmea(line.decode("ascii", errors="ignore"), "nmea_tcp")
+                        for line in split_nmea_stream(buffer, data):
+                            await self.update_from_nmea(line, "nmea_tcp")
                 finally:
                     writer.close()
                     await writer.wait_closed()
@@ -319,11 +361,13 @@ class GPSManager:
                 logger.info("GPS NMEA serial connected to %s", self.config.gps.serial_port)
                 await self._set_source_status("nmea_serial", "connected", "NMEA serial connected; waiting for GPS sentences.")
                 try:
+                    buffer = bytearray()
                     while self.enabled and self.config.gps.source in {"nmea_serial", "any"}:
-                        line = await reader.readline()
-                        if not line:
+                        data = await reader.read(NMEA_READ_CHUNK)
+                        if not data:
                             break
-                        await self.update_from_nmea(line.decode("ascii", errors="ignore"), "nmea_serial")
+                        for line in split_nmea_stream(buffer, data):
+                            await self.update_from_nmea(line, "nmea_serial")
                 finally:
                     writer.close()
             except asyncio.CancelledError:

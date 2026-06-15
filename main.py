@@ -4,12 +4,11 @@
 Launch this to start the application. The web interface opens automatically.
 """
 
-APP_VERSION = "1.5.7.0"
+APP_VERSION = "1.6.0"
 
 import asyncio
 import sys
 import logging
-import webbrowser
 import os
 import socket
 from pathlib import Path
@@ -32,6 +31,7 @@ else:
 sys.path.insert(0, str(BASE_DIR))
 
 from server.config import Config
+from server.browser_launch import open_url
 from server.app import create_app
 from server.database import Database
 from server.aprs_is import APRSISClient
@@ -89,7 +89,7 @@ def _web_port_available(host: str, port: int) -> bool:
 
 # ── System Tray ─────────────────────────────────────────────────────
 
-def _start_tray(url: str, shutdown_event: asyncio.Event, loop):
+def _start_tray(url: str, config: Config, shutdown_event: asyncio.Event, loop):
     """Start a pystray system-tray icon in a background thread."""
     try:
         import pystray
@@ -108,7 +108,7 @@ def _start_tray(url: str, shutdown_event: asyncio.Event, loop):
         image = Image.new("RGB", (64, 64), "#58a6ff")
 
     def on_open(icon, item):
-        webbrowser.open(url)
+        open_url(url, config.web.launch_browser)
 
     def on_quit(icon, item):
         icon.stop()
@@ -415,6 +415,8 @@ async def main():
     tasks = []
 
     for iface in handler.rf_interfaces:
+        if hasattr(iface, "set_status_callback"):
+            iface.set_status_callback(handler.broadcast_status)
         tasks.append(asyncio.create_task(iface.connect()))
 
     if aprs_is:
@@ -456,13 +458,13 @@ async def main():
     # Open browser after a short delay
     async def open_browser():
         await asyncio.sleep(1.5)
-        webbrowser.open(url)
+        open_url(url, config.web.launch_browser)
 
     tasks.append(asyncio.create_task(open_browser()))
 
     # ── System tray icon ────────────────────────────────────────────
 
-    tray_icon = _start_tray(url, shutdown_event, asyncio.get_event_loop())
+    tray_icon = _start_tray(url, config, shutdown_event, asyncio.get_event_loop())
 
     print(f"\n  APRS PropView running at {url}")
     if tray_icon:

@@ -618,6 +618,21 @@ class PacketHandler:
         self._recent_message_keys.clear()
         await self.tracker.db.clear_messages()
 
+    async def clear_message_conversation(self, callsign: str) -> int:
+        """Clear stored messages involving a specific station/addressee."""
+        call = (callsign or "").strip().upper()
+        if not call:
+            return 0
+        before = len(self._messages)
+        self._messages = [
+            msg for msg in self._messages
+            if (msg.get("from") or "").strip().upper() != call
+            and (msg.get("to") or "").strip().upper() != call
+        ]
+        self._recent_message_keys.clear()
+        deleted = await self.tracker.db.clear_message_conversation(call)
+        return max(deleted, before - len(self._messages))
+
     async def cleanup_messages(self):
         days = max(1, int(getattr(self.config.messaging, "message_retention_days", 30)))
         await self.tracker.db.delete_old_messages(days * 86400)
@@ -988,6 +1003,15 @@ class PacketHandler:
             except Exception as e:
                 logger.error(f"MQTT status publish error: {e}")
 
+    async def broadcast_status(self, _interface=None):
+        """Push current connection status to all connected web clients."""
+        await self.ws.broadcast({"type": "status", "data": self.get_status()})
+        if self._mqtt_publisher:
+            try:
+                await self._mqtt_publisher.publish_status_snapshot(self._mqtt_status_snapshot())
+            except Exception as e:
+                logger.error(f"MQTT status publish error: {e}")
+
     def _mqtt_status_snapshot(self) -> Dict[str, Any]:
         now = time.time()
         rf_connected = any(iface.connected for iface in self.rf_interfaces)
@@ -1041,6 +1065,16 @@ class PacketHandler:
                 {
                     "name": iface.name,
                     "connected": iface.connected,
+                    "connection_state": getattr(
+                        iface,
+                        "connection_state",
+                        "connected" if iface.connected else "disconnected",
+                    ),
+                    "last_error": getattr(iface, "last_error", ""),
+                    "last_connected_at": getattr(iface, "last_connected_at", 0.0),
+                    "last_disconnected_at": getattr(iface, "last_disconnected_at", 0.0),
+                    "next_retry_at": getattr(iface, "next_retry_at", 0.0),
+                    "reconnect_attempts": getattr(iface, "reconnect_attempts", 0),
                     "can_transmit": getattr(iface, "can_transmit", True),
                     "rx_only_rf": bool(getattr(iface, "rx_only_rf", False)),
                     "rx_only_is": bool(getattr(iface, "rx_only_is", False)),

@@ -30,7 +30,7 @@ cd APRS-PropView
 If you already have the source on the Pi, run the installer from the repository
 root.
 
-## Update To v1.5.7.0
+## Update To v1.6.0
 
 For an existing Linux or Raspberry Pi service install, update the repository,
 rerun the installer so `/opt/aprs-propview` receives the new application files,
@@ -42,11 +42,38 @@ sudo bash ./scripts/install_linux.sh
 sudo systemctl restart aprs-propview
 ```
 
-Version 1.5.7.0 adds expanded MQTT/Home Assistant status entities, optional
-watched callsign MQTT publishing, richer Sporadic-E diagnostics, station symbol
-sizing, weather analytics dashboard updates, and first-heard log deduplication.
-Existing `config.toml`, `propview.db`, cached map tiles, and user audio files
-are preserved by the installer.
+Version 1.6.0 adds TCP TNC disconnect detection and automatic reconnect status,
+header notifications for RF TCP errors and APRS messages, unified RF/APRS-IS/WS
+status pills, DXView links, mobile/Tailscale documentation, browser launch
+selection, GPS/NMEA hardening, and refreshed UI layout. Existing `config.toml`,
+`propview.db`, cached map tiles, and user audio files are preserved by the
+installer.
+
+If you run the app as a headless Pi service and do not want browser launch
+attempts, leave `[web].launch_browser` blank in `config.toml` or choose
+`System Default`/blank in Settings - Web Interface.
+
+## Remote Mobile Companion With Tailscale
+
+For phone access away from home, install Tailscale on the Pi and on the phone,
+join both to the same tailnet, then bind PropView to all local interfaces:
+
+```toml
+[web]
+host = "0.0.0.0"
+port = 14501
+```
+
+Restart the service and open the mobile view from the phone:
+
+```text
+http://<pi-tailscale-ip>:14501/mobile
+```
+
+Use Tailscale, WireGuard, or another private VPN rather than public port
+forwarding. If mobile GPS should feed PropView, set GPS source to
+`browser` or `any`, open the mobile page, tap Share GPS, and grant browser
+location permission.
 
 ## Install As A Service
 

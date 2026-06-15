@@ -59,6 +59,9 @@
     let lastNonSettingsTab = 'tab-rf';
     let aprsIsPasscodeConfigured = false;
     let pendingAlertRecommendations = null;
+    let headerNotifications = [];
+    let unreadNotifications = 0;
+    const MAX_HEADER_NOTIFICATIONS = 50;
 
     async function loadConfig(force) {
         if (force || !window.pvConfigPromise) {
@@ -80,6 +83,49 @@
         const cfg = await window.pvConfigPromise;
         serverConfig = cfg;
         return cfg;
+    }
+
+    async function loadBrowserOptions() {
+        const select = document.getElementById('cfg-web-launch-browser');
+        if (!select) return;
+        const saved = serverConfig?.web?.launch_browser || '';
+        try {
+            const resp = await fetch('/api/browsers');
+            if (!resp.ok) throw new Error(`Browser request failed: ${resp.status}`);
+            const data = await resp.json();
+            const browsers = Array.isArray(data.browsers) ? data.browsers : [];
+            select.innerHTML = '';
+            browsers.forEach((browser) => {
+                if (!browser || browser.id === undefined) return;
+                const option = document.createElement('option');
+                option.value = browser.id || '';
+                option.textContent = browser.name || browser.id || 'System Default';
+                select.appendChild(option);
+            });
+            if (!select.querySelector('option[value=""]')) {
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = 'System Default';
+                select.prepend(option);
+            }
+            if (saved && !select.querySelector(`option[value="${CSS.escape(saved)}"]`)) {
+                const option = document.createElement('option');
+                option.value = saved;
+                option.textContent = `${saved} (not found)`;
+                select.appendChild(option);
+            }
+            select.value = saved;
+        } catch (err) {
+            console.warn('Browser discovery failed:', err);
+            select.innerHTML = '<option value="">System Default</option>';
+            if (saved) {
+                const option = document.createElement('option');
+                option.value = saved;
+                option.textContent = `${saved} (saved)`;
+                select.appendChild(option);
+                select.value = saved;
+            }
+        }
     }
 
     window.pvConfigPromise = loadConfig(false);
@@ -242,6 +288,7 @@
         initSettingsImportExport();
         initBeaconPreviewControls();
         initSettingsDirtyTracking();
+        initHeaderNotifications();
         loadTransmitHistory();
 
         // Wire up WebSocket events
@@ -910,6 +957,11 @@
                 const toCall = (msg.data.to || '').toUpperCase();
                 if (msg.data.direction === 'rx' && toCall === myCall) {
                     playAlertAudio('message_received');
+                    addHeaderNotification({
+                        title: `Message from ${msg.data.from || 'unknown'}`,
+                        body: msg.data.text || '',
+                        type: 'info',
+                    });
                 }
                 window.pvMessages.addMessage(msg.data);
             }
@@ -938,17 +990,94 @@
             // Fetch propagation history for charts
             fetchPropagationHistory();
             window.pvMessages?.render();
+            updateWsIndicator(true);
+            updateRfIndicator(lastStatus);
             updateAprsIsIndicator(lastStatus);
         });
 
         ws.on('disconnected', () => {
             window.pvStations?.render();
             window.pvMessages?.render();
+            updateWsIndicator(false);
+            updateRfIndicator(lastStatus);
             updateAprsIsIndicator(lastStatus);
         });
     }
 
     // ── Status handling ────────────────────────────────────────
+
+    function initHeaderNotifications() {
+        const wrap = document.getElementById('header-notifications');
+        const btn = document.getElementById('btn-header-notifications');
+        const clearBtn = document.getElementById('btn-clear-notifications');
+        if (!wrap || !btn) return;
+
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const open = wrap.classList.toggle('open');
+            btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+            document.getElementById('notification-panel')?.toggleAttribute('hidden', !open);
+            if (open) {
+                unreadNotifications = 0;
+                renderHeaderNotifications();
+            }
+        });
+        clearBtn?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            headerNotifications = [];
+            unreadNotifications = 0;
+            renderHeaderNotifications();
+        });
+        document.addEventListener('click', (e) => {
+            if (wrap.contains(e.target)) return;
+            wrap.classList.remove('open');
+            btn.setAttribute('aria-expanded', 'false');
+            document.getElementById('notification-panel')?.setAttribute('hidden', '');
+        });
+        renderHeaderNotifications();
+    }
+
+    function addHeaderNotification({ title, body = '', type = 'info' }) {
+        headerNotifications.unshift({
+            title: title || 'Notification',
+            body,
+            type,
+            timestamp: Date.now(),
+        });
+        headerNotifications = headerNotifications.slice(0, MAX_HEADER_NOTIFICATIONS);
+        const panelOpen = document.getElementById('header-notifications')?.classList.contains('open');
+        if (!panelOpen) unreadNotifications += 1;
+        renderHeaderNotifications();
+    }
+
+    function renderHeaderNotifications() {
+        const list = document.getElementById('notification-list');
+        const count = document.getElementById('notification-count');
+        const btn = document.getElementById('btn-header-notifications');
+        if (count) {
+            const shown = Math.min(unreadNotifications, 99);
+            count.textContent = String(shown);
+            count.hidden = unreadNotifications <= 0;
+        }
+        btn?.classList.toggle('has-unread', unreadNotifications > 0);
+        if (!list) return;
+        if (!headerNotifications.length) {
+            list.innerHTML = '<div class="notification-empty">No notifications</div>';
+            return;
+        }
+        list.innerHTML = headerNotifications.map((item) => {
+            const date = new Date(item.timestamp || Date.now());
+            const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const icon = item.type === 'info' ? 'i' : '!';
+            return `
+                <div class="notification-item ${_escapeHTML(item.type || 'info')}">
+                    <div class="notification-title"><span>${icon}</span><span>${_escapeHTML(item.title)}</span></div>
+                    ${item.body ? `<div class="notification-body">${_escapeHTML(item.body)}</div>` : ''}
+                    <div class="notification-time">${time}</div>
+                </div>
+            `;
+        }).join('');
+    }
 
     function updateAprsIsIndicator(status) {
         const chip = document.getElementById('aprs-is-chip');
@@ -964,7 +1093,7 @@
 
         if (!wsConnected) {
             state = 'reconnecting';
-            label = 'UI reconnecting';
+            label = 'Retrying';
         } else if (isConnected && isVerified) {
             state = 'online';
             label = 'Connected';
@@ -979,6 +1108,80 @@
         chip.classList.remove('online', 'read-only', 'reconnecting', 'offline');
         chip.classList.add(state);
         chipText.textContent = label;
+    }
+
+    function updateWsIndicator(connected = !!window.pvWebSocket?.isConnected) {
+        const chip = document.getElementById('ws-chip');
+        const chipText = document.getElementById('ws-chip-text');
+        if (!chip || !chipText) return;
+        const state = connected ? 'online' : 'reconnecting';
+        chip.classList.remove('online', 'partial', 'read-only', 'reconnecting', 'offline');
+        chip.classList.add(state);
+        chipText.textContent = connected ? 'Connected' : 'Retrying';
+        chip.title = connected ? 'WebSocket: connected' : 'WebSocket: reconnecting';
+    }
+
+    function updateDxViewLink(source) {
+        const link = document.getElementById('dxview-map-link');
+        const coordsEl = document.getElementById('dxview-map-coords');
+        if (!link) return;
+        const station = source?.station || source || {};
+        const lat = parseFloat(station.latitude ?? source?.latitude);
+        const lon = parseFloat(station.longitude ?? source?.longitude);
+        const valid = Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0);
+        if (!valid) {
+            link.href = 'https://vhf.dxview.org/map?center=34.42,-88.10,7.7';
+            link.classList.add('disabled');
+            if (coordsEl) coordsEl.textContent = 'Set station location to center DXView';
+            return;
+        }
+        const latText = lat.toFixed(2);
+        const lonText = lon.toFixed(2);
+        link.href = `https://vhf.dxview.org/map?center=${latText},${lonText},7.7`;
+        link.classList.remove('disabled');
+        if (coordsEl) coordsEl.textContent = `${latText}, ${lonText}, zoom 7.7`;
+    }
+
+    function updateRfIndicator(status) {
+        const chip = document.getElementById('rf-chip');
+        const chipText = document.getElementById('rf-chip-text');
+        if (!chip || !chipText) return;
+
+        const ports = Array.isArray(status?.rf_interfaces) ? status.rf_interfaces : [];
+        const wsConnected = !!window.pvWebSocket?.isConnected;
+        const connected = ports.filter((port) => !!port.connected).length;
+        const activeRetry = ports.some((port) => {
+            const state = port.connection_state || '';
+            return ['connecting', 'reconnecting'].includes(state);
+        });
+
+        let state = 'offline';
+        let label = 'Offline';
+
+        if (!wsConnected) {
+            state = 'reconnecting';
+            label = 'Retrying';
+        } else if (!ports.length) {
+            state = 'offline';
+            label = 'No ports';
+        } else if (connected === ports.length) {
+            state = 'online';
+            label = connected === 1 ? 'Connected' : `${connected}/${ports.length} connected`;
+        } else if (connected > 0) {
+            state = 'partial';
+            label = `${connected}/${ports.length} connected`;
+        } else if (activeRetry) {
+            state = 'reconnecting';
+            label = 'Retrying';
+        } else {
+            state = 'offline';
+            label = 'Disconnected';
+        }
+
+        chip.classList.remove('online', 'partial', 'read-only', 'reconnecting', 'offline');
+        chip.classList.add(state);
+        chipText.textContent = label;
+        chip.title = formatRfInterfaceSummary(status);
     }
 
     function getManualBeaconLabel(beacon) {
@@ -1021,6 +1224,40 @@
         statusEl.title = beacon?.message || label;
         statusEl.classList.toggle('ready', canTransmit);
         statusEl.classList.toggle('blocked', !!beacon && !canTransmit);
+    }
+
+    function formatRfInterfaceSummary(status) {
+        const ports = Array.isArray(status?.rf_interfaces) ? status.rf_interfaces : [];
+        if (!ports.length) return 'RF TNC: no ports configured';
+        return ports.map((port) => {
+            const state = port.connection_state || (port.connected ? 'connected' : 'disconnected');
+            const retry = port.next_retry_at
+                ? `, retry ${Math.max(0, Math.round(port.next_retry_at - Date.now() / 1000))}s`
+                : '';
+            const error = port.last_error ? `, ${port.last_error}` : '';
+            return `${port.name || 'RF port'}: ${state}${retry}${error}`;
+        }).join('\n');
+    }
+
+    function notifyRfInterfaceChanges(previous, current) {
+        const before = new Map((previous?.rf_interfaces || []).map((port) => [port.name, port]));
+        (current?.rf_interfaces || []).forEach((port) => {
+            const prior = before.get(port.name);
+            const state = port.connection_state || 'disconnected';
+            const priorState = prior?.connection_state || (prior?.connected ? 'connected' : 'disconnected');
+            const tcpRetryOrError = state === 'reconnecting' || !!port.next_retry_at || !!port.last_error;
+            if (!prior || port.connected || !['reconnecting', 'disconnected'].includes(state)) return;
+            if (!tcpRetryOrError) return;
+            if (!prior.connected && priorState === state) return;
+            const detail = port.last_error ? `: ${port.last_error}` : '';
+            const message = `${port.name || 'RF port'} ${state}; reconnecting automatically${detail}`;
+            addHeaderNotification({
+                title: 'RF TCP connection',
+                body: message,
+                type: 'warning',
+            });
+            showSystemNotification(message, 'warning');
+        });
     }
 
     async function refreshSystemStatus() {
@@ -1078,6 +1315,7 @@
     function handleStatus(status) {
         if (!status) return;
 
+        const previousStatus = lastStatus;
         lastStatus = status;
         serverConfig = status;
         uptimeStart = Date.now() / 1000 - (status.uptime_seconds || 0);
@@ -1087,18 +1325,12 @@
         if (callEl) callEl.textContent = status.station || 'N0CALL';
 
         // Update connection indicators
-        const rfEl = document.getElementById('rf-status');
-        const isEl = document.getElementById('is-status');
-        if (rfEl) {
-            rfEl.classList.toggle('connected', status.rf_connected);
-            rfEl.classList.toggle('disconnected', !status.rf_connected);
-        }
-        if (isEl) {
-            isEl.classList.toggle('connected', status.aprs_is_connected);
-            isEl.classList.toggle('disconnected', !status.aprs_is_connected);
-        }
+        updateWsIndicator();
+        updateRfIndicator(status);
         updateAprsIsIndicator(status);
+        updateDxViewLink(status);
         updateManualBeaconControls(status);
+        notifyRfInterfaceChanges(previousStatus, status);
 
         // Update stats
         if (status.stats) {
@@ -2200,6 +2432,7 @@
             setVal('cfg-ssid', cfg.station?.ssid);
             setVal('cfg-latitude', cfg.station?.latitude);
             setVal('cfg-longitude', cfg.station?.longitude);
+            updateDxViewLink(cfg);
             setVal('cfg-symbol-table', cfg.station?.symbol_table);
             setVal('cfg-symbol-code', cfg.station?.symbol_code);
             setVal('cfg-phg', cfg.station?.phg || '');
@@ -2247,6 +2480,7 @@
             // Web
             setVal('cfg-web-host', cfg.web?.host);
             setVal('cfg-web-port', cfg.web?.port);
+            await loadBrowserOptions();
             setVal('cfg-web-font', cfg.web?.font_family || '');
             setVal('cfg-ui-theme', getUITheme());
             applyUITheme(getUITheme());
@@ -2528,6 +2762,7 @@
             web: {
                 host: getVal('cfg-web-host'),
                 port: getVal('cfg-web-port'),
+                launch_browser: getVal('cfg-web-launch-browser') || '',
                 font_family: getVal('cfg-web-font') || '',
                 unit_system: getVal('cfg-unit-system') || 'imperial',
                 map_tile_source: getVal('cfg-map-tile-source') || 'osm',

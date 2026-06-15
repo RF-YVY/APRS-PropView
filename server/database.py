@@ -460,6 +460,17 @@ class Database:
         await self.db.execute("DELETE FROM messages")
         await self.db.commit()
 
+    async def clear_message_conversation(self, callsign: str) -> int:
+        call = (callsign or "").strip().upper()
+        if not call:
+            return 0
+        cursor = await self.db.execute(
+            "DELETE FROM messages WHERE UPPER(from_call) = ? OR UPPER(to_call) = ?",
+            (call, call),
+        )
+        await self.db.commit()
+        return cursor.rowcount
+
     async def delete_old_messages(self, max_age: float):
         cutoff = time.time() - max_age
         await self.db.execute("DELETE FROM messages WHERE timestamp < ?", (cutoff,))

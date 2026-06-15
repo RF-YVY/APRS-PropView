@@ -23,7 +23,7 @@
     </script>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css" />
-    <link rel="stylesheet" href="/static/css/style.css?v=1.5.7.0-r3" />
+    <link rel="stylesheet" href="/static/css/style.css?v=1.6.0-r6" />
     <!-- Leaflet JS -->
     <script defer src="/static/vendor/leaflet/leaflet.js"></script>
 </head>
@@ -62,11 +62,6 @@
             </div>
         </div>
         <div class="header-right">
-            <div class="status-indicators">
-                <span id="rf-status" class="status-dot disconnected" title="RF TNC">RF</span>
-                <span id="is-status" class="status-dot disconnected" title="APRS-IS">IS</span>
-                <span id="ws-status" class="status-dot disconnected" title="WebSocket">WS</span>
-            </div>
             <div class="header-action">
                 <div class="header-action-controls">
                     <button id="btn-manual-beacon" class="btn-primary btn-header-action" type="button" title="Transmit a beacon immediately">Transmit Beacon</button>
@@ -78,13 +73,40 @@
                 </div>
                 <span id="manual-beacon-status" class="header-action-status" title=""></span>
             </div>
-            <div id="aprs-is-chip" class="aprs-is-chip offline" title="APRS-IS connection state">
-                <span class="chip-label">APRS-IS</span>
-                <span id="aprs-is-chip-text" class="chip-value">Offline</span>
+            <div class="connection-stack" title="RF TNC, APRS-IS, and WebSocket connection state">
+                <div id="rf-chip" class="connection-chip rf-chip offline" title="RF TNC connection state">
+                    <span class="chip-label">RF</span>
+                    <span id="rf-chip-text" class="chip-value">Offline</span>
+                </div>
+                <div id="aprs-is-chip" class="connection-chip aprs-is-chip offline" title="APRS-IS connection state">
+                    <span class="chip-label">APRS-IS</span>
+                    <span id="aprs-is-chip-text" class="chip-value">Offline</span>
+                </div>
+                <div id="ws-chip" class="connection-chip ws-chip reconnecting" title="WebSocket connection state">
+                    <span class="chip-label">WS</span>
+                    <span id="ws-chip-text" class="chip-value">Retrying</span>
+                </div>
+            </div>
+            <div class="header-utility-stack">
+            <div id="header-notifications" class="header-notifications">
+                <button id="btn-header-notifications" class="notification-button" type="button" title="Notifications" aria-label="Notifications" aria-expanded="false">
+                    <span class="notification-icon">🔔</span>
+                    <span id="notification-count" class="notification-count" hidden>0</span>
+                </button>
+                <div id="notification-panel" class="notification-panel" hidden>
+                    <div class="notification-panel-header">
+                        <span>Notifications</span>
+                        <button id="btn-clear-notifications" type="button">Clear</button>
+                    </div>
+                    <div id="notification-list" class="notification-list">
+                        <div class="notification-empty">No notifications</div>
+                    </div>
+                </div>
             </div>
             <div class="ui-theme-control" title="Toggle UI light/dark mode">
                 <span class="ui-theme-control-label">UI Theme</span>
                 <button id="btn-toggle-ui-theme" class="ui-theme-toggle" type="button" title="Switch to light UI" aria-label="Switch to light UI">🌙</button>
+            </div>
             </div>
             <div class="header-stats">
                 <span title="RF Stations (1h)">RF: <b id="rf-count-1h">0</b></span>
@@ -425,6 +447,12 @@
                     <canvas id="distance-chart" width="380" height="180"></canvas>
                     <h3>Propagation History (24h)</h3>
                     <canvas id="prop-history-chart" width="380" height="180"></canvas>
+
+                    <div class="prop-section-heading">
+                        <h3>External Map</h3>
+                        <a id="dxview-map-link" href="https://vhf.dxview.org/map?center=34.42,-88.10,7.7" target="_blank" rel="noopener" title="Open VHF DXView map centered on your station">Open VHF DXView Map</a>
+                    </div>
+                    <div id="dxview-map-coords" class="dxview-map-coords">Waiting for station location</div>
 
                     <h3>Solar-Terrestrial Data</h3>
                     <div class="solar-widget">
@@ -1072,6 +1100,12 @@
                             <input type="number" id="cfg-web-port" value="14501">
                         </div>
                         <p class="settings-note settings-warning">Host and Port control where this web server listens. Do not change them unless you are sure what you are doing; a wrong value can make the UI unreachable until config.toml is corrected.</p>
+                        <div class="settings-row">
+                            <label for="cfg-web-launch-browser">Opening Browser</label>
+                            <select id="cfg-web-launch-browser">
+                                <option value="">System Default</option>
+                            </select>
+                        </div>
                         <div class="settings-row">
                             <label for="cfg-web-font">Font</label>
                             <select id="cfg-web-font">
@@ -1741,10 +1775,11 @@
                 <div class="about-panel">
                     <div class="about-header">
                         <h2>APRS PropView</h2>
-                        <span id="about-version" class="about-version">v1.5.7.0</span>
+                        <span id="about-version" class="about-version">v1.6.0</span>
                     </div>
                     <div class="about-section">
                         <p>A real-time APRS digipeater and IGate focused on VHF propagation, live mapping, APRS messaging, analytics, and weather-aware situational awareness.</p>
+                        <p><a href="#about-documentation-actions" class="about-link">Jump to help and documentation buttons</a></p>
                     </div>
                     <div class="about-section">
                         <h3>Created By</h3>
@@ -1753,13 +1788,13 @@
                     </div>
                     <div class="about-section">
                         <h3>Contact</h3>
-                        <p><a href="mailto:madebywicker@gmail.com" class="about-link">madebywicker@gmail.com</a></p>
+                        <p><a href="mailto:k5yvy.radio@gmail.com" class="about-link">k5yvy.radio@gmail.com</a></p>
                     </div>
                     <div class="about-section">
                         <h3>Build Info</h3>
-                        <p>Version: <span id="about-version-detail">1.5.7.0</span></p>
-                        <p>Release Date: <span id="about-date">June 5, 2026</span></p>
-                        <p>Highlights: expanded Home Assistant MQTT Discovery/status entities, watched callsign MQTT publishing, richer Sporadic-E diagnostics, station symbol sizing, weather analytics dashboard, and first-heard tracking hardening.</p>
+                        <p>Version: <span id="about-version-detail">1.6.0</span></p>
+                        <p>Release Date: <span id="about-date">June 15, 2026</span></p>
+                        <p>Highlights: TCP TNC auto-reconnect/status notifications, unified RF/APRS-IS/WebSocket connection pills, notification drawer, DXView link, GPS/NMEA hardening, browser launch control, mobile/Tailscale documentation, and refreshed UI density.</p>
                     </div>
                     <div class="about-section">
                         <h3>Video Guide</h3>
@@ -1791,7 +1826,7 @@
                             </section>
                         </form>
                     </div>
-                    <div class="about-section about-doc-actions">
+                    <div id="about-documentation-actions" class="about-section about-doc-actions">
                         <a href="/static/documentation.html" target="_blank" rel="noreferrer" class="btn-primary about-doc-btn">Full HTML Documentation</a>
                         <button id="btn-open-help" class="btn-primary about-doc-btn">📖 Help &amp; User Guide</button>
                     </div>
@@ -1955,7 +1990,7 @@
 
                 <section class="help-section">
                     <h3>📊 Propagation Tab</h3>
-                    <p>Real-time propagation scoring with stat cards: RF stations (1h/6h/24h), max distance, average distance, and APRS-IS count. Includes a distance distribution histogram and a 24-hour propagation history chart showing station count and max distance over time.</p>
+                    <p>Real-time propagation scoring with stat cards: RF stations (1h/6h/24h), max distance, average distance, and APRS-IS count. Includes a distance distribution histogram, a 24-hour propagation history chart, a VHF DXView link centered on your configured station location, and the Solar-Terrestrial source image.</p>
                 </section>
 
                 <section class="help-section">
@@ -2009,6 +2044,7 @@
                     <p>WXnow can send APRS weather packets from a local <code>WXnow.txt</code>, with optional position included in the packet. When positionless weather is selected, PropView can seed a matching weather-symbol position packet and then transmit the positionless WX report. Use <b>Preview WXnow</b> before <b>Transmit Now</b>.</p>
                     <h4>Web Interface</h4>
                     <p><b>Host/Port</b> — Bind address and port for the web UI (default <code>127.0.0.1:14501</code>). Use <code>0.0.0.0</code> to allow network access.</p>
+                    <p><b>Opening Browser</b> &mdash; Choose which browser APRS PropView opens at startup, or leave blank/system default for headless Pi/VM/service deployments where browser auto-open is not desired.</p>
                     <p><b>Font</b> — Choose a display font for the entire UI.</p>
                     <p><b>UI Theme</b> — Switch the application interface between dark and light mode independently from the map tile theme.</p>
                     <p><b>Units</b> — Choose Imperial or Metric for distance, map weather temperature, APRS WX station temperature, wind, and precipitation displays.</p>
@@ -2040,6 +2076,9 @@
                 <section class="help-section">
                     <h3>📱 Mobile View</h3>
                     <p>Access <code>/mobile</code> from a phone browser (e.g. via Tailscale) for a touch-optimized interface with Messages, Map, Stations, Propagation, and About tabs. The mobile <b>Share GPS</b> button can feed the phone's browser location into GPS ingestion when the source is set to <b>This browser/device</b> or <b>Any source</b>.</p>
+                    <h4>Using Tailscale or another VPN</h4>
+                    <p>To use the mobile companion away from your home network, run APRS PropView on your shack PC, Raspberry Pi, or VM and join that machine plus your phone to the same private VPN such as Tailscale. Set Settings &rarr; Web Interface &rarr; Host to <code>0.0.0.0</code>, save, restart APRS PropView, then open <code>http://TAILSCALE-IP:14501/mobile</code> from the phone. Keep the port private to your VPN; avoid exposing the dashboard directly to the public internet.</p>
+                    <p>For mobile GPS, set GPS source to <b>This browser/device</b> or <b>Any source</b>, open the mobile page over the VPN, tap <b>Share GPS</b>, and allow browser location permission. Leave <b>LOCK</b> enabled unless you intentionally want the phone GPS to overwrite saved station latitude/longitude.</p>
                 </section>
 
                 <section class="help-section">
@@ -2062,13 +2101,13 @@
     </div>
 
     <!-- ── Scripts ────────────────────────────────────────────── -->
-    <script defer src="/static/js/websocket.js"></script>
-    <script defer src="/static/js/map.js?v=1.5.7.0-r3"></script>
-    <script defer src="/static/js/stations.js?v=1.5.7.0-r3"></script>
+    <script defer src="/static/js/websocket.js?v=1.6.0-r4"></script>
+    <script defer src="/static/js/map.js?v=1.6.0-r6"></script>
+    <script defer src="/static/js/stations.js?v=1.6.0-r3"></script>
     <script defer src="/static/js/icons.js"></script>
-    <script defer src="/static/js/analytics.js?v=1.5.7.0-r3"></script>
-    <script defer src="/static/js/messages.js?v=1.5.7.0-r3"></script>
-    <script defer src="/static/js/weather.js?v=1.5.7.0-r3"></script>
-    <script defer src="/static/js/app.js?v=1.5.7.0-r3"></script>
+    <script defer src="/static/js/analytics.js?v=1.6.0-r3"></script>
+    <script defer src="/static/js/messages.js?v=1.6.0-r3"></script>
+    <script defer src="/static/js/weather.js?v=1.6.0-r3"></script>
+    <script defer src="/static/js/app.js?v=1.6.0-r6"></script>
 </body>
 </html>
