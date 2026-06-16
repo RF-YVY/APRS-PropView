@@ -191,6 +191,7 @@ sudo systemctl enable --now mosquitto</code></pre>
     <section>
         <h2>Node-RED Setup</h2>
         <p>Node-RED also connects as an MQTT client. It subscribes to the same broker PropView publishes to, then routes the received messages into debug panels, dashboards, Home Assistant calls, or automations.</p>
+        <p>An importable dashboard and Alexa Smart Home starter flow is included in <code>deploy/node-red/aprs-propview-alexa-dashboard-flow.json</code>. See <code>deploy/node-red/README.md</code> for palette requirements, MQTT broker setup, and Alexa discovery notes.</p>
         <ol>
             <li>Install Node-RED and confirm it can reach your MQTT broker. In Home Assistant, the Node-RED add-on can usually reach the Mosquitto add-on by using the Home Assistant host/IP and port <code>1883</code>.</li>
             <li>Open the Node-RED editor, drag an <b>mqtt in</b> node onto the flow, and double-click it.</li>
