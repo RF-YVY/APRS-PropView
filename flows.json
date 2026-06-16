@@ -1,0 +1,1101 @@
+[
+  {
+    "id": "apv-flow",
+    "type": "tab",
+    "label": "APRS PropView",
+    "disabled": false,
+    "info": "APRS PropView MQTT dashboard and Alexa Smart Home integration. Edit the MQTT broker and PropView URL config nodes after import."
+  },
+  {
+    "id": "apv-mqtt-broker",
+    "type": "mqtt-broker",
+    "name": "APRS PropView MQTT broker",
+    "broker": "localhost",
+    "port": "1883",
+    "clientid": "aprs-propview-node-red",
+    "autoConnect": true,
+    "usetls": false,
+    "protocolVersion": "4",
+    "keepalive": "60",
+    "cleansession": true,
+    "birthTopic": "",
+    "birthQos": "0",
+    "birthPayload": "",
+    "birthMsg": {},
+    "closeTopic": "",
+    "closeQos": "0",
+    "closePayload": "",
+    "closeMsg": {},
+    "willTopic": "",
+    "willQos": "0",
+    "willPayload": "",
+    "willMsg": {},
+    "userProps": "",
+    "sessionExpiry": ""
+  },
+  {
+    "id": "apv-ui-tab",
+    "type": "ui_tab",
+    "name": "APRS PropView",
+    "icon": "dashboard",
+    "order": 1,
+    "disabled": false,
+    "hidden": false
+  },
+  {
+    "id": "apv-ui-prop-group",
+    "type": "ui_group",
+    "name": "Propagation",
+    "tab": "apv-ui-tab",
+    "order": 1,
+    "disp": true,
+    "width": "12",
+    "collapse": false,
+    "className": ""
+  },
+  {
+    "id": "apv-ui-status-group",
+    "type": "ui_group",
+    "name": "System Status",
+    "tab": "apv-ui-tab",
+    "order": 2,
+    "disp": true,
+    "width": "12",
+    "collapse": false,
+    "className": ""
+  },
+  {
+    "id": "apv-ui-events-group",
+    "type": "ui_group",
+    "name": "Events and Alerts",
+    "tab": "apv-ui-tab",
+    "order": 3,
+    "disp": true,
+    "width": "12",
+    "collapse": false,
+    "className": ""
+  },
+  {
+    "id": "apv-ui-controls-group",
+    "type": "ui_group",
+    "name": "Controls",
+    "tab": "apv-ui-tab",
+    "order": 4,
+    "disp": true,
+    "width": "12",
+    "collapse": false,
+    "className": ""
+  },
+  {
+    "id": "apv-ui-alexa-group",
+    "type": "ui_group",
+    "name": "Alexa",
+    "tab": "apv-ui-tab",
+    "order": 5,
+    "disp": true,
+    "width": "12",
+    "collapse": false,
+    "className": ""
+  },
+  {
+    "id": "apv-alexa-controller",
+    "type": "alexa-home-controller",
+    "name": "APRS PropView Alexa Bridge",
+    "port": "80",
+    "maxItems": "20"
+  },
+  {
+    "id": "apv-propview-url",
+    "type": "http request",
+    "z": "apv-flow",
+    "name": "POST PropView action",
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 770,
+    "y": 560,
+    "wires": [
+      [
+        "apv-action-result"
+      ]
+    ]
+  },
+  {
+    "id": "apv-mqtt-prop",
+    "type": "mqtt in",
+    "z": "apv-flow",
+    "name": "MQTT propagation",
+    "topic": "aprs/propview/propagation",
+    "qos": "0",
+    "datatype": "auto-detect",
+    "broker": "apv-mqtt-broker",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 130,
+    "y": 80,
+    "wires": [
+      [
+        "apv-json-prop"
+      ]
+    ]
+  },
+  {
+    "id": "apv-json-prop",
+    "type": "json",
+    "z": "apv-flow",
+    "name": "Parse propagation JSON",
+    "property": "payload",
+    "action": "",
+    "pretty": false,
+    "x": 350,
+    "y": 80,
+    "wires": [
+      [
+        "apv-normalize-prop"
+      ]
+    ]
+  },
+  {
+    "id": "apv-normalize-prop",
+    "type": "function",
+    "z": "apv-flow",
+    "name": "Format propagation widgets",
+    "func": "const p = msg.payload || {};\nconst n = (value, places = 1) => Number.isFinite(Number(value)) ? Number(value).toFixed(places) : '0.0';\nconst ts = p.timestamp ? new Date(Number(p.timestamp) * 1000).toLocaleString() : new Date().toLocaleString();\nconst myScore = Number(p.my_score || 0);\nconst regScore = Number(p.regional_score || 0);\nconst maxKm = Number(p.max_distance_km || 0);\nconst miles = maxKm * 0.621371;\nconst rf1h = Number(p.rf_stations_1h || 0);\nreturn [\n  { payload: `My ${n(myScore)}% (${p.my_level || 'none'}) | Regional ${n(regScore)}% (${p.regional_level || 'none'}) | RF ${rf1h}/hr | Max ${n(maxKm)} km / ${n(miles)} mi | ${ts}` },\n  { payload: myScore },\n  { payload: regScore },\n  { topic: 'Regional score', payload: regScore },\n  { topic: 'Max distance km', payload: maxKm },\n  { payload: `${p.my_level || 'none'}` },\n  { payload: `${p.regional_level || 'none'}` },\n  { payload: `${n(maxKm)} km / ${n(miles)} mi` },\n  { payload: rf1h }\n];",
+    "outputs": 9,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 610,
+    "y": 80,
+    "wires": [
+      [
+        "apv-prop-summary"
+      ],
+      [
+        "apv-my-gauge"
+      ],
+      [
+        "apv-reg-gauge"
+      ],
+      [
+        "apv-score-chart"
+      ],
+      [
+        "apv-distance-chart"
+      ],
+      [
+        "apv-my-level"
+      ],
+      [
+        "apv-reg-level"
+      ],
+      [
+        "apv-max-distance"
+      ],
+      [
+        "apv-rf-1h"
+      ]
+    ]
+  },
+  {
+    "id": "apv-prop-summary",
+    "type": "ui_text",
+    "z": "apv-flow",
+    "group": "apv-ui-prop-group",
+    "order": 1,
+    "width": "12",
+    "height": "1",
+    "name": "Propagation summary",
+    "label": "Current",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "className": "",
+    "x": 900,
+    "y": 40,
+    "wires": []
+  },
+  {
+    "id": "apv-my-gauge",
+    "type": "ui_gauge",
+    "z": "apv-flow",
+    "name": "My station score",
+    "group": "apv-ui-prop-group",
+    "order": 2,
+    "width": "3",
+    "height": "3",
+    "gtype": "gage",
+    "title": "My Station",
+    "label": "%",
+    "format": "{{value}}",
+    "min": 0,
+    "max": "100",
+    "colors": [
+      "#8b949e",
+      "#f2cc60",
+      "#3fb950"
+    ],
+    "seg1": "25",
+    "seg2": "50",
+    "diff": false,
+    "className": "",
+    "x": 900,
+    "y": 80,
+    "wires": []
+  },
+  {
+    "id": "apv-reg-gauge",
+    "type": "ui_gauge",
+    "z": "apv-flow",
+    "name": "Regional score",
+    "group": "apv-ui-prop-group",
+    "order": 3,
+    "width": "3",
+    "height": "3",
+    "gtype": "gage",
+    "title": "Regional",
+    "label": "%",
+    "format": "{{value}}",
+    "min": 0,
+    "max": "100",
+    "colors": [
+      "#8b949e",
+      "#f2cc60",
+      "#3fb950"
+    ],
+    "seg1": "25",
+    "seg2": "50",
+    "diff": false,
+    "className": "",
+    "x": 890,
+    "y": 120,
+    "wires": []
+  },
+  {
+    "id": "apv-my-level",
+    "type": "ui_text",
+    "z": "apv-flow",
+    "group": "apv-ui-prop-group",
+    "order": 4,
+    "width": "3",
+    "height": "1",
+    "name": "My level",
+    "label": "My level",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "className": "",
+    "x": 870,
+    "y": 160,
+    "wires": []
+  },
+  {
+    "id": "apv-reg-level",
+    "type": "ui_text",
+    "z": "apv-flow",
+    "group": "apv-ui-prop-group",
+    "order": 5,
+    "width": "3",
+    "height": "1",
+    "name": "Regional level",
+    "label": "Regional level",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "className": "",
+    "x": 890,
+    "y": 200,
+    "wires": []
+  },
+  {
+    "id": "apv-max-distance",
+    "type": "ui_text",
+    "z": "apv-flow",
+    "group": "apv-ui-prop-group",
+    "order": 6,
+    "width": "3",
+    "height": "1",
+    "name": "Max distance",
+    "label": "Max RF distance",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "className": "",
+    "x": 890,
+    "y": 240,
+    "wires": []
+  },
+  {
+    "id": "apv-rf-1h",
+    "type": "ui_text",
+    "z": "apv-flow",
+    "group": "apv-ui-prop-group",
+    "order": 7,
+    "width": "3",
+    "height": "1",
+    "name": "RF stations 1h",
+    "label": "RF stations 1h",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "className": "",
+    "x": 900,
+    "y": 280,
+    "wires": []
+  },
+  {
+    "id": "apv-score-chart",
+    "type": "ui_chart",
+    "z": "apv-flow",
+    "name": "Regional score history",
+    "group": "apv-ui-prop-group",
+    "order": 8,
+    "width": "6",
+    "height": "4",
+    "label": "Regional score",
+    "chartType": "line",
+    "legend": "false",
+    "xformat": "HH:mm",
+    "interpolate": "linear",
+    "nodata": "Waiting for MQTT",
+    "dot": false,
+    "ymin": "0",
+    "ymax": "100",
+    "removeOlder": "12",
+    "removeOlderPoints": "",
+    "removeOlderUnit": "3600",
+    "cutout": 0,
+    "useOneColor": false,
+    "useUTC": false,
+    "colors": [
+      "#58a6ff",
+      "#3fb950",
+      "#f2cc60",
+      "#ff7b72",
+      "#a371f7",
+      "#ffab70",
+      "#39c5cf",
+      "#d2a8ff",
+      "#8b949e"
+    ],
+    "outputs": 1,
+    "useDifferentColor": false,
+    "className": "",
+    "x": 920,
+    "y": 320,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "apv-distance-chart",
+    "type": "ui_chart",
+    "z": "apv-flow",
+    "name": "Max distance history",
+    "group": "apv-ui-prop-group",
+    "order": 9,
+    "width": "6",
+    "height": "4",
+    "label": "Max RF distance km",
+    "chartType": "line",
+    "legend": "false",
+    "xformat": "HH:mm",
+    "interpolate": "linear",
+    "nodata": "Waiting for MQTT",
+    "dot": false,
+    "ymin": "0",
+    "ymax": "",
+    "removeOlder": "12",
+    "removeOlderPoints": "",
+    "removeOlderUnit": "3600",
+    "cutout": 0,
+    "useOneColor": false,
+    "useUTC": false,
+    "colors": [
+      "#3fb950",
+      "#58a6ff",
+      "#f2cc60",
+      "#ff7b72",
+      "#a371f7",
+      "#ffab70",
+      "#39c5cf",
+      "#d2a8ff",
+      "#8b949e"
+    ],
+    "outputs": 1,
+    "useDifferentColor": false,
+    "className": "",
+    "x": 920,
+    "y": 360,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "apv-mqtt-status",
+    "type": "mqtt in",
+    "z": "apv-flow",
+    "name": "MQTT HA status",
+    "topic": "aprs/propview/ha/status",
+    "qos": "0",
+    "datatype": "auto-detect",
+    "broker": "apv-mqtt-broker",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 120,
+    "y": 440,
+    "wires": [
+      [
+        "apv-json-status"
+      ]
+    ]
+  },
+  {
+    "id": "apv-json-status",
+    "type": "json",
+    "z": "apv-flow",
+    "name": "Parse status JSON",
+    "property": "payload",
+    "action": "",
+    "pretty": false,
+    "x": 340,
+    "y": 440,
+    "wires": [
+      [
+        "apv-normalize-status"
+      ]
+    ]
+  },
+  {
+    "id": "apv-normalize-status",
+    "type": "function",
+    "z": "apv-flow",
+    "name": "Format status widgets",
+    "func": "const s = msg.payload || {};\nconst on = value => String(value || '').toUpperCase() === 'ON';\nconst age = s.last_rf_packet_age_seconds == null ? 'n/a' : `${s.last_rf_packet_age_seconds}s`;\nconst summary = `RF ${on(s.rf_interface_connected) ? 'online' : 'offline'} | APRS-IS ${on(s.aprs_is_connected) ? 'online' : 'offline'} | Last RF ${age} | Stations RF ${s.rf_station_count ?? 0} / IS ${s.aprs_is_station_count ?? 0}`;\nreturn [\n  { payload: summary },\n  { payload: on(s.rf_interface_connected) ? 'ON' : 'OFF' },\n  { payload: on(s.aprs_is_connected) ? 'ON' : 'OFF' },\n  { payload: age },\n  { payload: on(s.band_opening_active) ? 'ON' : 'OFF' },\n  { payload: on(s.aprs_message_waiting) ? 'ON' : 'OFF' },\n  { payload: on(s.weather_warning_active) ? 'ON' : 'OFF' },\n  { payload: { on: on(s.band_opening_active) } }\n];",
+    "outputs": 8,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 590,
+    "y": 440,
+    "wires": [
+      [
+        "apv-status-summary"
+      ],
+      [
+        "apv-rf-connected"
+      ],
+      [
+        "apv-is-connected"
+      ],
+      [
+        "apv-last-rf-age"
+      ],
+      [
+        "apv-band-opening"
+      ],
+      [
+        "apv-message-waiting"
+      ],
+      [
+        "apv-weather-warning"
+      ],
+      [
+        "apv-alexa-band"
+      ]
+    ]
+  },
+  {
+    "id": "apv-status-summary",
+    "type": "ui_text",
+    "z": "apv-flow",
+    "group": "apv-ui-status-group",
+    "order": 1,
+    "width": "12",
+    "height": "1",
+    "name": "Status summary",
+    "label": "Current",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "className": "",
+    "x": 890,
+    "y": 420,
+    "wires": []
+  },
+  {
+    "id": "apv-rf-connected",
+    "type": "ui_text",
+    "z": "apv-flow",
+    "group": "apv-ui-status-group",
+    "order": 2,
+    "width": "3",
+    "height": "1",
+    "name": "RF connected",
+    "label": "RF interface",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "className": "",
+    "x": 890,
+    "y": 460,
+    "wires": []
+  },
+  {
+    "id": "apv-is-connected",
+    "type": "ui_text",
+    "z": "apv-flow",
+    "group": "apv-ui-status-group",
+    "order": 3,
+    "width": "3",
+    "height": "1",
+    "name": "APRS-IS connected",
+    "label": "APRS-IS",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "className": "",
+    "x": 900,
+    "y": 500,
+    "wires": []
+  },
+  {
+    "id": "apv-last-rf-age",
+    "type": "ui_text",
+    "z": "apv-flow",
+    "group": "apv-ui-status-group",
+    "order": 4,
+    "width": "3",
+    "height": "1",
+    "name": "Last RF age",
+    "label": "Last RF packet",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "className": "",
+    "x": 890,
+    "y": 540,
+    "wires": []
+  },
+  {
+    "id": "apv-band-opening",
+    "type": "ui_text",
+    "z": "apv-flow",
+    "group": "apv-ui-status-group",
+    "order": 5,
+    "width": "3",
+    "height": "1",
+    "name": "Band opening",
+    "label": "Band opening",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "className": "",
+    "x": 890,
+    "y": 580,
+    "wires": []
+  },
+  {
+    "id": "apv-message-waiting",
+    "type": "ui_text",
+    "z": "apv-flow",
+    "group": "apv-ui-status-group",
+    "order": 6,
+    "width": "3",
+    "height": "1",
+    "name": "Message waiting",
+    "label": "Message waiting",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "className": "",
+    "x": 900,
+    "y": 620,
+    "wires": []
+  },
+  {
+    "id": "apv-weather-warning",
+    "type": "ui_text",
+    "z": "apv-flow",
+    "group": "apv-ui-status-group",
+    "order": 7,
+    "width": "3",
+    "height": "1",
+    "name": "Weather warning",
+    "label": "Weather warning",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "className": "",
+    "x": 900,
+    "y": 660,
+    "wires": []
+  },
+  {
+    "id": "apv-mqtt-event",
+    "type": "mqtt in",
+    "z": "apv-flow",
+    "name": "MQTT events",
+    "topic": "aprs/propview/event",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "apv-mqtt-broker",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 110,
+    "y": 760,
+    "wires": [
+      [
+        "apv-json-event"
+      ]
+    ]
+  },
+  {
+    "id": "apv-mqtt-alert",
+    "type": "mqtt in",
+    "z": "apv-flow",
+    "name": "MQTT alerts",
+    "topic": "aprs/propview/alert",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "apv-mqtt-broker",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 110,
+    "y": 820,
+    "wires": [
+      [
+        "apv-json-event"
+      ]
+    ]
+  },
+  {
+    "id": "apv-json-event",
+    "type": "json",
+    "z": "apv-flow",
+    "name": "Parse event JSON",
+    "property": "payload",
+    "action": "",
+    "pretty": false,
+    "x": 330,
+    "y": 790,
+    "wires": [
+      [
+        "apv-format-event"
+      ]
+    ]
+  },
+  {
+    "id": "apv-format-event",
+    "type": "function",
+    "z": "apv-flow",
+    "name": "Format event line",
+    "func": "const e = msg.payload || {};\nconst eventName = e.event || e.type || 'event';\nconst call = e.callsign || e.from || '';\nconst dist = e.distance_km == null ? '' : ` ${Number(e.distance_km).toFixed(1)} km`;\nconst text = `${new Date().toLocaleTimeString()} - ${eventName}${call ? ` - ${call}` : ''}${dist}`;\nreturn [\n  { payload: text },\n  { payload: text, topic: 'APRS PropView' }\n];",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 570,
+    "y": 790,
+    "wires": [
+      [
+        "apv-event-log"
+      ],
+      [
+        "apv-event-toast"
+      ]
+    ]
+  },
+  {
+    "id": "apv-event-log",
+    "type": "ui_text",
+    "z": "apv-flow",
+    "group": "apv-ui-events-group",
+    "order": 1,
+    "width": "12",
+    "height": "1",
+    "name": "Latest event",
+    "label": "Latest",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "className": "",
+    "x": 850,
+    "y": 770,
+    "wires": []
+  },
+  {
+    "id": "apv-event-toast",
+    "type": "ui_toast",
+    "z": "apv-flow",
+    "position": "top right",
+    "displayTime": "5",
+    "highlight": "",
+    "sendall": true,
+    "outputs": 0,
+    "ok": "OK",
+    "cancel": "",
+    "raw": false,
+    "className": "",
+    "topic": "",
+    "name": "Event toast",
+    "x": 850,
+    "y": 820,
+    "wires": []
+  },
+  {
+    "id": "apv-btn-beacon",
+    "type": "ui_button",
+    "z": "apv-flow",
+    "name": "Transmit beacon",
+    "group": "apv-ui-controls-group",
+    "order": 1,
+    "width": "3",
+    "height": "1",
+    "passthru": false,
+    "label": "Transmit Beacon",
+    "tooltip": "Transmit one APRS PropView beacon now",
+    "color": "",
+    "bgcolor": "",
+    "className": "",
+    "icon": "send",
+    "payload": "beacon",
+    "payloadType": "str",
+    "topic": "dashboard",
+    "topicType": "str",
+    "x": 130,
+    "y": 560,
+    "wires": [
+      [
+        "apv-action-router"
+      ]
+    ]
+  },
+  {
+    "id": "apv-btn-wxnow",
+    "type": "ui_button",
+    "z": "apv-flow",
+    "name": "Transmit WXnow",
+    "group": "apv-ui-controls-group",
+    "order": 2,
+    "width": "3",
+    "height": "1",
+    "passthru": false,
+    "label": "Transmit WXnow",
+    "tooltip": "Transmit one WXnow packet now",
+    "color": "",
+    "bgcolor": "",
+    "className": "",
+    "icon": "cloud_upload",
+    "payload": "wxnow",
+    "payloadType": "str",
+    "topic": "dashboard",
+    "topicType": "str",
+    "x": 130,
+    "y": 620,
+    "wires": [
+      [
+        "apv-action-router"
+      ]
+    ]
+  },
+  {
+    "id": "apv-btn-bulletins",
+    "type": "ui_button",
+    "z": "apv-flow",
+    "name": "Transmit bulletins",
+    "group": "apv-ui-controls-group",
+    "order": 3,
+    "width": "3",
+    "height": "1",
+    "passthru": false,
+    "label": "Transmit Bulletins",
+    "tooltip": "Transmit configured APRS bulletins now",
+    "color": "",
+    "bgcolor": "",
+    "className": "",
+    "icon": "announcement",
+    "payload": "bulletins",
+    "payloadType": "str",
+    "topic": "dashboard",
+    "topicType": "str",
+    "x": 130,
+    "y": 680,
+    "wires": [
+      [
+        "apv-action-router"
+      ]
+    ]
+  },
+  {
+    "id": "apv-btn-objects",
+    "type": "ui_button",
+    "z": "apv-flow",
+    "name": "Transmit objects",
+    "group": "apv-ui-controls-group",
+    "order": 4,
+    "width": "3",
+    "height": "1",
+    "passthru": false,
+    "label": "Transmit Objects",
+    "tooltip": "Transmit configured APRS objects now",
+    "color": "",
+    "bgcolor": "",
+    "className": "",
+    "icon": "place",
+    "payload": "objects",
+    "payloadType": "str",
+    "topic": "dashboard",
+    "topicType": "str",
+    "x": 130,
+    "y": 740,
+    "wires": [
+      [
+        "apv-action-router"
+      ]
+    ]
+  },
+  {
+    "id": "apv-action-router",
+    "type": "function",
+    "z": "apv-flow",
+    "name": "Build PropView HTTP action",
+    "func": "const baseUrl = flow.get('aprsPropViewBaseUrl') || 'http://127.0.0.1:14501';\nconst action = String(msg.payload || msg.topic || '').toLowerCase();\nconst routes = {\n  beacon: { url: '/api/beacon/transmit', payload: { mode: 'both' } },\n  wxnow: { url: '/api/wxnow/transmit', payload: {} },\n  bulletins: { url: '/api/bulletins/transmit', payload: {} },\n  objects: { url: '/api/objects/transmit', payload: {} }\n};\nif (!routes[action]) {\n  node.warn(`Unknown APRS PropView action: ${action}`);\n  return null;\n}\nmsg.method = 'POST';\nmsg.url = `${baseUrl}${routes[action].url}`;\nmsg.headers = { 'content-type': 'application/json' };\nmsg.payload = routes[action].payload;\nmsg.apvAction = action;\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 460,
+    "y": 620,
+    "wires": [
+      [
+        "apv-propview-url"
+      ]
+    ]
+  },
+  {
+    "id": "apv-action-result",
+    "type": "function",
+    "z": "apv-flow",
+    "name": "Format action result",
+    "func": "const body = msg.payload || {};\nconst ok = body.success !== false && (msg.statusCode == null || msg.statusCode < 400);\nconst label = (msg.apvAction || 'Action').replace(/^./, c => c.toUpperCase());\nconst detail = body.message || (ok ? 'sent' : 'failed');\nreturn [\n  { payload: `${label}: ${detail}`, topic: ok ? 'APRS PropView' : 'APRS PropView error' },\n  { payload: ok ? true : false }\n];",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1000,
+    "y": 560,
+    "wires": [
+      [
+        "apv-action-toast",
+        "apv-action-text"
+      ],
+      []
+    ]
+  },
+  {
+    "id": "apv-action-toast",
+    "type": "ui_toast",
+    "z": "apv-flow",
+    "position": "top right",
+    "displayTime": "5",
+    "highlight": "",
+    "sendall": true,
+    "outputs": 0,
+    "ok": "OK",
+    "cancel": "",
+    "raw": false,
+    "className": "",
+    "topic": "",
+    "name": "Action toast",
+    "x": 1220,
+    "y": 540,
+    "wires": []
+  },
+  {
+    "id": "apv-action-text",
+    "type": "ui_text",
+    "z": "apv-flow",
+    "group": "apv-ui-controls-group",
+    "order": 5,
+    "width": "12",
+    "height": "1",
+    "name": "Last action result",
+    "label": "Last action",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "className": "",
+    "x": 1230,
+    "y": 590,
+    "wires": []
+  },
+  {
+    "id": "apv-alexa-beacon",
+    "type": "alexa-home",
+    "z": "apv-flow",
+    "controller": "apv-alexa-controller",
+    "devicename": "APRS PropView Beacon",
+    "devicetype": "On/Off plug-in unit",
+    "inputtrigger": true,
+    "name": "Alexa Beacon",
+    "x": 130,
+    "y": 940,
+    "wires": [
+      [
+        "apv-alexa-command"
+      ]
+    ]
+  },
+  {
+    "id": "apv-alexa-wxnow",
+    "type": "alexa-home",
+    "z": "apv-flow",
+    "controller": "apv-alexa-controller",
+    "devicename": "APRS PropView WX Now",
+    "devicetype": "On/Off plug-in unit",
+    "inputtrigger": true,
+    "name": "Alexa WXnow",
+    "x": 130,
+    "y": 1000,
+    "wires": [
+      [
+        "apv-alexa-command"
+      ]
+    ]
+  },
+  {
+    "id": "apv-alexa-bulletins",
+    "type": "alexa-home",
+    "z": "apv-flow",
+    "controller": "apv-alexa-controller",
+    "devicename": "APRS PropView Bulletins",
+    "devicetype": "On/Off plug-in unit",
+    "inputtrigger": true,
+    "name": "Alexa Bulletins",
+    "x": 140,
+    "y": 1060,
+    "wires": [
+      [
+        "apv-alexa-command"
+      ]
+    ]
+  },
+  {
+    "id": "apv-alexa-objects",
+    "type": "alexa-home",
+    "z": "apv-flow",
+    "controller": "apv-alexa-controller",
+    "devicename": "APRS PropView Objects",
+    "devicetype": "On/Off plug-in unit",
+    "inputtrigger": true,
+    "name": "Alexa Objects",
+    "x": 130,
+    "y": 1120,
+    "wires": [
+      [
+        "apv-alexa-command"
+      ]
+    ]
+  },
+  {
+    "id": "apv-alexa-band",
+    "type": "alexa-home",
+    "z": "apv-flow",
+    "controller": "apv-alexa-controller",
+    "devicename": "APRS PropView Band Opening",
+    "devicetype": "On/Off plug-in unit",
+    "inputtrigger": true,
+    "name": "Alexa Band Opening State",
+    "x": 900,
+    "y": 700,
+    "wires": [
+      [
+        "apv-alexa-state-only"
+      ]
+    ]
+  },
+  {
+    "id": "apv-alexa-command",
+    "type": "function",
+    "z": "apv-flow",
+    "name": "Map Alexa command to action",
+    "func": "const device = String(msg.device_name || msg.devicename || msg.name || msg.topic || '').toLowerCase();\nconst p = msg.payload || {};\nconst isOn = p.on === true || p === true || String(p).toLowerCase() === 'on';\nif (!isOn) {\n  return [{ payload: `Alexa ${device}: off command ignored`, topic: 'APRS PropView' }, null];\n}\nlet action = '';\nif (device.includes('beacon')) action = 'beacon';\nif (device.includes('wx')) action = 'wxnow';\nif (device.includes('bulletin')) action = 'bulletins';\nif (device.includes('object')) action = 'objects';\nif (!action) return [{ payload: `Alexa ${device}: no mapped action`, topic: 'APRS PropView' }, null];\nreturn [\n  { payload: `Alexa requested ${action}`, topic: 'APRS PropView' },\n  { payload: action, topic: 'alexa' }\n];",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 420,
+    "y": 1020,
+    "wires": [
+      [
+        "apv-action-toast",
+        "apv-alexa-last"
+      ],
+      [
+        "apv-action-router"
+      ]
+    ]
+  },
+  {
+    "id": "apv-alexa-state-only",
+    "type": "function",
+    "z": "apv-flow",
+    "name": "Alexa state-only guard",
+    "func": "return { payload: 'Band Opening is a read-only state exposed to Alexa.', topic: 'APRS PropView' };",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1160,
+    "y": 700,
+    "wires": [
+      [
+        "apv-alexa-last"
+      ]
+    ]
+  },
+  {
+    "id": "apv-alexa-last",
+    "type": "ui_text",
+    "z": "apv-flow",
+    "group": "apv-ui-alexa-group",
+    "order": 1,
+    "width": "12",
+    "height": "1",
+    "name": "Alexa last command",
+    "label": "Alexa",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "className": "",
+    "x": 680,
+    "y": 960,
+    "wires": []
+  },
+  {
+    "id": "apv-setup-note",
+    "type": "comment",
+    "z": "apv-flow",
+    "name": "Setup",
+    "info": "Required palettes: node-red-dashboard and node-red-contrib-alexa-home. Edit the MQTT broker config and set flow context aprsPropViewBaseUrl if PropView is not http://127.0.0.1:14501. Example inject/change: flow.set('aprsPropViewBaseUrl','http://192.168.1.50:14501')",
+    "x": 110,
+    "y": 40,
+    "wires": []
+  }
+]

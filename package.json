@@ -10,7 +10,7 @@
   },
   "node-red": {
     "settings": {
-      "flowFile": "deploy/node-red/aprs-propview-alexa-dashboard-flow.json"
+      "flowFile": "flows.json"
     }
   }
 }

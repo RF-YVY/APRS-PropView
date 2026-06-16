@@ -4,6 +4,8 @@ This folder contains an importable Node-RED flow for APRS PropView:
 
 - `aprs-propview-alexa-dashboard-flow.json`
 
+For Node-RED Projects, the same prebuilt flow is also copied to the repository root as `flows.json`, and the root `package.json` points Node-RED at that file.
+
 It builds a live Node-RED dashboard from APRS PropView MQTT topics and exposes Alexa-discoverable virtual devices for common PropView actions.
 
 ## Required Node-RED Palettes
@@ -37,6 +39,18 @@ It also publishes live automation payloads on:
 - `aprs/propview/alert`
 
 ## Import and Configure
+
+### Clone as a Node-RED Project
+
+1. In Node-RED, choose **Projects > New > Clone repository**.
+2. Use `https://github.com/RF-YVY/APRS-PropView.git`.
+3. After the clone finishes, open the project. The workspace should load from the root `flows.json` file.
+4. Install missing dependencies if Node-RED prompts you to install project modules.
+5. Open the **APRS PropView MQTT broker** config node and set your broker host, port, username, and password.
+6. Deploy the flow.
+7. Open the dashboard at `http://<node-red-host>:1880/ui`.
+
+### Manual Import
 
 1. In Node-RED, choose **Menu > Import**.
 2. Import `deploy/node-red/aprs-propview-alexa-dashboard-flow.json`.
