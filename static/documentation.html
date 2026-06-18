@@ -384,8 +384,8 @@
         <h1>APRS PropView Documentation</h1>
         <p class="lede">A complete field guide for installing, configuring, operating, and understanding APRS PropView: a real-time APRS digipeater, IGate, propagation monitor, weather-aware map, analytics dashboard, and messaging console.</p>
         <div class="meta">
-            <span class="pill">Version covered: 1.6.0</span>
-            <span class="pill">Updated: June 15, 2026</span>
+            <span class="pill">Version covered: 1.6.1</span>
+            <span class="pill">Updated: June 18, 2026</span>
             <span class="pill">License: Apache 2.0</span>
         </div>
     </div>
@@ -537,7 +537,9 @@ python main.py</code></pre>
                 </ul>
 
                 <h3>Offline Map Tiles</h3>
-                <p>PropView uses Leaflet XYZ tiles. You can use the default online OpenStreetMap tiles or configure a custom tile URL with <code>{z}</code>, <code>{x}</code>, and <code>{y}</code> tokens. The map cache control stores visible tiles in <code>map_tile_cache/</code>.</p>
+                <p>PropView uses Leaflet XYZ tiles. You can use the default online OpenStreetMap tiles or configure a custom tile URL with <code>{z}</code>, <code>{x}</code>, and <code>{y}</code> tokens. The map always requests base tiles through PropView's local tile proxy at <code>/api/map-tiles/{z}/{x}/{y}</code>, which lets the app save and reuse tiles in <code>map_tile_cache/</code>.</p>
+                <p>The map <b>Cache</b> control downloads the currently visible base-map tiles at the current zoom. Use it while internet is available, wait for the button to report completion, then repeat for each area and zoom level you expect to need offline. If the same tile is already present, PropView counts it as cached instead of downloading it again.</p>
+                <p>Cached tiles are preserved during Windows installer upgrades and Linux/Pi service updates. If a needed tile has not been cached and the upstream tile source is unavailable, that individual tile will be blank until the app can download it later.</p>
                 <a class="backtop" href="#top">Back to top</a>
             </section>
 
@@ -759,7 +761,7 @@ python main.py</code></pre>
                 </ul>
                 <h3>Updates</h3>
                 <p>The About tab checks GitHub releases for newer builds unless update checks are disabled. The app can also show an update banner in the dashboard.</p>
-                <p>On Windows installer-based releases, the update checker looks for a GitHub release asset named like <code>APRSPropViewSetup-1.6.0.exe</code>. When an installer asset is available, the About tab shows <b>Install Update</b>. Clicking it downloads the setup executable, asks APRS PropView to shut down cleanly, and launches setup after the server exits so newer application files can replace the existing install while keeping user settings and data intact. On Linux, Raspberry Pi, and macOS, release notices remain visible but the Windows-only installer action is hidden.</p>
+                <p>On Windows installer-based releases, the update checker looks for a GitHub release asset named like <code>APRSPropViewSetup-1.6.1.exe</code>. When an installer asset is available, the About tab shows <b>Install Update</b>. Clicking it downloads the setup executable, asks APRS PropView to shut down cleanly, and launches setup after the server exits so newer application files can replace the existing install while keeping user settings and data intact. On Linux, Raspberry Pi, and macOS, release notices remain visible but the Windows-only installer action is hidden.</p>
                 <h3>Browser Launch Control</h3>
                 <p>Settings &rarr; Web Interface includes an Opening Browser selector. Leave it blank/system default for normal behavior, choose a discovered browser when you want a specific browser, or keep it blank for headless Pi/VM service deployments where opening a browser is not desired.</p>
                 <h3>Data Files</h3>

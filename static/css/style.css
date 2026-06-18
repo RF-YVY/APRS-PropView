@@ -2885,7 +2885,7 @@ canvas {
 
 .alert-audio-row {
     display: grid;
-    grid-template-columns: minmax(150px, 1fr) minmax(180px, 1.4fr) auto auto;
+    grid-template-columns: minmax(150px, 1fr) minmax(180px, 1.4fr) minmax(160px, auto) auto auto;
     gap: 8px;
     align-items: center;
     padding: 8px 0;
@@ -2908,9 +2908,29 @@ canvas {
     max-width: 230px;
 }
 
+.alert-audio-status {
+    grid-column: 2 / -1;
+    min-height: 16px;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.35;
+}
+
+.alert-audio-status.ok {
+    color: var(--accent-green);
+}
+
+.alert-audio-status.error {
+    color: var(--accent-red);
+}
+
 @media (max-width: 760px) {
     .alert-audio-row {
         grid-template-columns: 1fr;
+    }
+
+    .alert-audio-status {
+        grid-column: 1;
     }
 }
 
@@ -4393,6 +4413,9 @@ canvas {
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
     white-space: nowrap;
+    color: inherit;
+    font-family: inherit;
+    cursor: pointer;
 }
 
 .wx-ducting-label {
@@ -4406,6 +4429,138 @@ canvas {
 #wx-ducting-value {
     font-family: "Consolas", "Courier New", monospace;
     font-weight: 700;
+}
+
+.wx-ducting:hover,
+.wx-ducting:focus-visible {
+    border-color: var(--accent-blue);
+    background: rgba(88, 166, 255, 0.16);
+    outline: none;
+}
+
+.ducting-modal {
+    width: min(760px, calc(100vw - 32px));
+}
+
+.ducting-modal-body {
+    display: grid;
+    gap: 14px;
+}
+
+.ducting-summary {
+    display: grid;
+    grid-template-columns: minmax(120px, auto) 1fr;
+    gap: 16px;
+    align-items: center;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+}
+
+.ducting-score {
+    font-size: 32px;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.ducting-level {
+    margin-top: 6px;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+}
+
+.ducting-level-minimal,
+.ducting-level-low {
+    color: var(--text-muted);
+}
+
+.ducting-level-moderate {
+    color: var(--accent-orange);
+}
+
+.ducting-level-high,
+.ducting-level-extreme {
+    color: var(--accent-red);
+}
+
+.ducting-summary-text,
+.ducting-note {
+    color: var(--text-muted);
+    line-height: 1.45;
+}
+
+.ducting-measurements {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 8px;
+}
+
+.ducting-metric {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-primary);
+}
+
+.ducting-metric span {
+    color: var(--text-muted);
+}
+
+.ducting-factor-list {
+    display: grid;
+    gap: 8px;
+}
+
+.ducting-factor-row {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) auto minmax(110px, 0.35fr);
+    gap: 10px;
+    align-items: center;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-primary);
+}
+
+.ducting-factor-name {
+    font-weight: 700;
+}
+
+.ducting-factor-detail {
+    margin-top: 3px;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+.ducting-factor-points {
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.ducting-factor-bar {
+    height: 8px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+}
+
+.ducting-factor-bar span {
+    display: block;
+    height: 100%;
+    background: var(--accent-blue);
+}
+
+@media (max-width: 720px) {
+    .ducting-summary,
+    .ducting-factor-row {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* ── Alert notif banner ─────────────────────────────────────────── */

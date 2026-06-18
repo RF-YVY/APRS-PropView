@@ -1,11 +1,10 @@
 {
   "name": "aprs-propview-node-red",
-  "version": "1.0.0",
-  "description": "Node-RED project metadata for the APRS PropView dashboard and Alexa integration flow.",
+  "version": "1.6.1",
+  "description": "Node-RED project metadata for the APRS PropView dashboard flow.",
   "private": true,
   "license": "GPL-3.0-or-later",
   "dependencies": {
-    "node-red-contrib-alexa-home": "^3.0.3",
     "node-red-dashboard": "^3.6.6"
   },
   "node-red": {

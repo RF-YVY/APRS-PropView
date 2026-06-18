@@ -20,7 +20,7 @@ from typing import Optional, Dict, Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from server.config import (
@@ -731,7 +731,8 @@ def create_app(
 
     @app.get("/")
     async def index():
-        return FileResponse(str(STATIC_DIR / "index.html"))
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        return HTMLResponse(html.replace("__ASSET_VERSION__", app_version))
 
     @app.get("/mobile")
     async def mobile_page():
@@ -1048,6 +1049,50 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
     @app.get("/api/status")
     async def get_status():
         return handler.get_status()
+
+    @app.get("/api/diagnostics")
+    async def get_diagnostics():
+        mqtt_publisher = mqtt_state.get("publisher")
+        audio_files = {}
+        for alert_key, attr in ALERT_AUDIO_KEYS.items():
+            filename = getattr(config.alerts, attr, "") or ""
+            audio_files[alert_key] = {
+                "assigned": bool(filename),
+                "filename": filename,
+                "exists": bool(filename and (USER_AUDIO_DIR / filename).exists()),
+            }
+        weather_status = {
+            "current_loaded": bool(getattr(weather_manager, "_current", None)) if weather_manager else False,
+            "alert_count": len(getattr(weather_manager, "_alerts", []) or []) if weather_manager else 0,
+            "ducting_loaded": bool(getattr(weather_manager, "_ducting", None)) if weather_manager else False,
+        }
+        return {
+            "version": app_version,
+            "station": config.station.full_callsign,
+            "websocket_connections": len(getattr(ws_manager, "active_connections", []) or []),
+            "mqtt": {
+                "enabled": bool(config.mqtt.enabled),
+                "broker": config.mqtt.broker,
+                "port": config.mqtt.port,
+                "topic_prefix": config.mqtt.topic_prefix,
+                "connected": bool(getattr(mqtt_publisher, "_connected", False)),
+                "discovery_enabled": bool(config.mqtt.discovery_enabled),
+                "watched_callsigns": len(config.mqtt.watched_callsigns or []),
+            },
+            "weather": {
+                "enabled": bool(config.weather.enabled),
+                "configured": bool(config.weather.location_code),
+                "location_code": config.weather.location_code,
+                **weather_status,
+            },
+            "alerts": {
+                "enabled": bool(config.alerts.enabled),
+                "message_notifications_enabled": bool(config.alerts.msg_notify_enabled),
+                "audio_output_device_configured": bool(config.alerts.audio_output_device_id),
+                "audio_files": audio_files,
+            },
+            "connections": handler.get_status(),
+        }
 
     @app.post("/api/gps/location")
     async def update_gps_location(request: Request):

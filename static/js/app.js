@@ -13,26 +13,8 @@
     const UPDATE_BANNER_DISMISS_KEY = 'pvUpdateBannerDismissed';
     const MANUAL_BEACON_MODE_KEY = 'pvManualBeaconMode';
     const DEFAULT_UI_THEME = 'dark';
-    const ALERT_AUDIO_SLOTS = [
-        ['my_station_opening', 'My Station Band Opening'],
-        ['regional_watch', 'Regional Band Watch'],
-        ['first_heard', 'First-Heard Station'],
-        ['anomaly', 'Propagation Anomaly'],
-        ['sporadic_e', 'Sporadic-E'],
-        ['message_received', 'APRS Message Received'],
-        ['weather_warning', 'Weather Warning'],
-        ['weather_watch', 'Weather Watch'],
-    ];
-    const ALERT_AUDIO_FIELD_BY_KEY = {
-        my_station_opening: 'audio_my_station_opening_file',
-        regional_watch: 'audio_regional_watch_file',
-        first_heard: 'audio_first_heard_file',
-        anomaly: 'audio_anomaly_file',
-        sporadic_e: 'audio_sporadic_e_file',
-        message_received: 'audio_message_received_file',
-        weather_warning: 'audio_weather_warning_file',
-        weather_watch: 'audio_weather_watch_file',
-    };
+    const ALERT_AUDIO_SLOTS = window.pvAlertAudio?.slots || [];
+    const ALERT_AUDIO_FIELD_BY_KEY = window.pvAlertAudio?.fieldByKey || {};
     const RF_PORT_TYPES = {
         serial: 'Serial KISS/TNC2',
         tcp: 'TCP Server',
@@ -254,7 +236,13 @@
         document.querySelector('.tab-btn.active')?.dispatchEvent(new Event('click'));
 
         // Organize settings UI before control bindings are attached
-        initAlertAudioControls();
+        window.pvAlertAudio?.init({
+            getVal,
+            setVal,
+            markSettingsDirty,
+            showSystemNotification,
+            getServerConfig: () => serverConfig,
+        });
         initSettingsOrganizer();
         initSettingsDescriptions();
 
@@ -745,132 +733,6 @@
         return div.innerHTML;
     }
 
-    function getAlertAudioUrl(alertKey) {
-        const file = serverConfig?.alerts?.[ALERT_AUDIO_FIELD_BY_KEY[alertKey]];
-        return file ? `/api/alert-audio/file/${encodeURIComponent(file)}` : '';
-    }
-
-    async function playAlertAudio(alertKey) {
-        const url = getAlertAudioUrl(alertKey);
-        if (!url) return;
-        try {
-            const audio = new Audio(`${url}?t=${Date.now()}`);
-            const deviceId = serverConfig?.alerts?.audio_output_device_id || '';
-            if (deviceId && typeof audio.setSinkId === 'function') {
-                await audio.setSinkId(deviceId);
-            }
-            audio.volume = 1;
-            await audio.play();
-        } catch (e) {
-            console.warn(`Unable to play ${alertKey} alert audio:`, e);
-        }
-    }
-
-    window.pvAlertAudio = {
-        play: playAlertAudio,
-    };
-
-    function initAlertAudioControls() {
-        const container = document.getElementById('cfg-alerts-audio-slots');
-        if (!container) return;
-        container.innerHTML = ALERT_AUDIO_SLOTS.map(([key, label]) => `
-            <div class="alert-audio-row" data-alert-audio-key="${key}">
-                <div class="alert-audio-name">${_escapeHTML(label)}</div>
-                <div class="alert-audio-file" id="cfg-alerts-audio-file-${key}">Silent</div>
-                <input type="hidden" id="cfg-alerts-audio-value-${key}">
-                <input type="file" id="cfg-alerts-audio-pick-${key}" accept=".wav,.mp3,audio/wav,audio/mpeg">
-                <button type="button" class="settings-toolbar-btn" id="cfg-alerts-audio-clear-${key}">Clear</button>
-            </div>
-        `).join('');
-
-        ALERT_AUDIO_SLOTS.forEach(([key]) => {
-            document.getElementById(`cfg-alerts-audio-pick-${key}`)?.addEventListener('change', (e) => {
-                const file = e.target.files?.[0];
-                if (file) uploadAlertAudio(key, file);
-                e.target.value = '';
-            });
-            document.getElementById(`cfg-alerts-audio-clear-${key}`)?.addEventListener('click', () => {
-                setAlertAudioSlot(key, '');
-                markSettingsDirty('Unsaved audio setting. Save Configuration to keep this change.');
-            });
-        });
-    }
-
-    function setAlertAudioSlot(key, filename) {
-        setVal(`cfg-alerts-audio-value-${key}`, filename || '');
-        const label = document.getElementById(`cfg-alerts-audio-file-${key}`);
-        if (label) {
-            label.textContent = filename || 'Silent';
-            label.title = filename || 'No audio file selected';
-        }
-    }
-
-    async function uploadAlertAudio(key, file) {
-        const statusEl = document.getElementById('settings-status');
-        if (!/\.(wav|mp3)$/i.test(file.name || '')) {
-            showSystemNotification('Select a .wav or .mp3 alert sound.', 'error');
-            return;
-        }
-        try {
-            if (statusEl) {
-                statusEl.style.display = 'block';
-                statusEl.className = 'settings-status warning';
-                statusEl.textContent = `Uploading ${file.name}...`;
-            }
-            const data = await readFileAsDataUrl(file);
-            const resp = await fetch('/api/alert-audio/upload', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ alert_key: key, filename: file.name, data }),
-            });
-            const result = await resp.json();
-            if (!resp.ok || !result.success) {
-                throw new Error(result.message || 'Unable to upload alert audio.');
-            }
-            setAlertAudioSlot(key, result.filename || '');
-            markSettingsDirty('Unsaved audio setting. Save Configuration to keep this change.');
-            if (statusEl) {
-                statusEl.className = 'settings-status success';
-                statusEl.textContent = 'Audio uploaded. Save Configuration to keep this alert sound.';
-            }
-        } catch (e) {
-            console.error('Alert audio upload failed:', e);
-            if (statusEl) {
-                statusEl.style.display = 'block';
-                statusEl.className = 'settings-status error';
-                statusEl.textContent = e.message || 'Audio upload failed.';
-            }
-        }
-    }
-
-    function readFileAsDataUrl(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = () => reject(reader.error || new Error('Unable to read file.'));
-            reader.readAsDataURL(file);
-        });
-    }
-
-    async function refreshAudioOutputDevices(selectedId) {
-        const select = document.getElementById('cfg-alerts-audio-device');
-        if (!select || !navigator.mediaDevices?.enumerateDevices) return;
-        try {
-            const devices = await navigator.mediaDevices.enumerateDevices();
-            const outputs = devices.filter((device) => device.kind === 'audiooutput');
-            const current = selectedId || select.value || '';
-            select.innerHTML = '<option value="">System default</option>' + outputs.map((device, index) => {
-                const label = device.label || `Audio output ${index + 1}`;
-                return `<option value="${_escapeHTML(device.deviceId)}">${_escapeHTML(label)}</option>`;
-            }).join('');
-            if (current && outputs.some((device) => device.deviceId === current)) {
-                select.value = current;
-            }
-        } catch (e) {
-            console.warn('Unable to enumerate audio output devices:', e);
-        }
-    }
-
     // ── WebSocket event wiring ─────────────────────────────────
 
     function wireWebSocket() {
@@ -920,7 +782,7 @@
 
         ws.on('alert', (msg) => {
             if (msg.data) {
-                playAlertAudio(msg.data.type);
+                window.pvAlertAudio?.play(msg.data.type);
                 if (msg.data.type === 'my_station_opening' || msg.data.type === 'regional_watch') {
                     showBandAlertNotification(msg.data);
                 } else if (msg.data.message) {
@@ -932,7 +794,7 @@
 
         ws.on('first_heard', (msg) => {
             if (msg.data) {
-                playAlertAudio('first_heard');
+                window.pvAlertAudio?.play('first_heard');
                 showSystemNotification(`New station heard: ${msg.data.callsign}`, 'info');
             }
         });
@@ -953,10 +815,8 @@
 
         ws.on('message', (msg) => {
             if (msg.data) {
-                const myCall = (document.getElementById('station-call')?.textContent || '').toUpperCase();
-                const toCall = (msg.data.to || '').toUpperCase();
-                if (msg.data.direction === 'rx' && toCall === myCall) {
-                    playAlertAudio('message_received');
+                if (msg.data.direction === 'rx') {
+                    window.pvAlertAudio?.play('message_received');
                     addHeaderNotification({
                         title: `Message from ${msg.data.from || 'unknown'}`,
                         body: msg.data.text || '',
@@ -2580,9 +2440,9 @@
             setVal('cfg-alerts-quiet-start', cfg.alerts?.quiet_start || '');
             setVal('cfg-alerts-quiet-end', cfg.alerts?.quiet_end || '');
             setVal('cfg-alerts-audio-device', cfg.alerts?.audio_output_device_id || '');
-            refreshAudioOutputDevices(cfg.alerts?.audio_output_device_id || '');
+            window.pvAlertAudio?.refreshOutputDevices(cfg.alerts?.audio_output_device_id || '');
             ALERT_AUDIO_SLOTS.forEach(([key]) => {
-                setAlertAudioSlot(key, cfg.alerts?.[ALERT_AUDIO_FIELD_BY_KEY[key]] || '');
+                window.pvAlertAudio?.setSlot(key, cfg.alerts?.[ALERT_AUDIO_FIELD_BY_KEY[key]] || '');
             });
 
             // Propagation meters
@@ -3342,6 +3202,12 @@
             if (status) {
                 status.textContent = formatChannelResults(result, 'Test message notification sent.');
                 status.title = result.message || '';
+            }
+            const audioResult = await window.pvAlertAudio?.play('message_received');
+            if (audioResult?.ok && status) {
+                status.textContent = `${status.textContent} | Audio played.`;
+            } else if (audioResult && !audioResult.ok && getVal('cfg-alerts-audio-value-message_received') && status) {
+                status.textContent = `${status.textContent} | Audio failed: ${audioResult.message}`;
             }
             showSystemNotification(
                 result.message || (result.success ? 'Test message notification sent.' : 'Test message notification failed.'),

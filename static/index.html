@@ -23,7 +23,7 @@
     </script>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css" />
-    <link rel="stylesheet" href="/static/css/style.css?v=1.6.0-r6" />
+    <link rel="stylesheet" href="/static/css/style.css?v=__ASSET_VERSION__" />
     <!-- Leaflet JS -->
     <script defer src="/static/vendor/leaflet/leaflet.js"></script>
 </head>
@@ -146,10 +146,10 @@
                         <span title="Pressure">📊 <span id="wx-pressure">--</span> mb</span>
                     </span>
                     <span class="wx-location" id="wx-location">--</span>
-                    <span class="wx-ducting" id="wx-ducting" style="display:none;" title="Tropospheric Ducting Index">
+                    <button type="button" class="wx-ducting" id="wx-ducting" style="display:none;" title="Show tropospheric ducting details" aria-haspopup="dialog">
                         <span class="wx-ducting-label">Tropo Ducting</span>
                         <span id="wx-ducting-value">--</span>
-                    </span>
+                    </button>
                     <button id="wx-refresh-btn" class="wx-refresh-btn" title="Refresh weather">🔄</button>
                 </div>
             </div>
@@ -1629,7 +1629,7 @@
                                 <option value="">System default</option>
                             </select>
                         </div>
-                        <p class="settings-help">Choose a .wav or .mp3 for each alert type. Empty slots are silent.</p>
+                        <p class="settings-help">Choose a .wav or .mp3 for each alert type. Empty slots are silent. Audio plays in this browser/device, so keep the web UI open for local alert sounds.</p>
                         <div id="cfg-alerts-audio-slots" class="alert-audio-slots"></div>
 
                         <h4 style="color:var(--accent-purple);margin:10px 0 6px;">Band Opening Channels</h4>
@@ -1775,7 +1775,7 @@
                 <div class="about-panel">
                     <div class="about-header">
                         <h2>APRS PropView</h2>
-                        <span id="about-version" class="about-version">v1.6.0</span>
+                        <span id="about-version" class="about-version">v1.6.1</span>
                     </div>
                     <div class="about-section">
                         <p>A real-time APRS digipeater and IGate focused on VHF propagation, live mapping, APRS messaging, analytics, and weather-aware situational awareness.</p>
@@ -1792,9 +1792,9 @@
                     </div>
                     <div class="about-section">
                         <h3>Build Info</h3>
-                        <p>Version: <span id="about-version-detail">1.6.0</span></p>
-                        <p>Release Date: <span id="about-date">June 15, 2026</span></p>
-                        <p>Highlights: TCP TNC auto-reconnect/status notifications, unified RF/APRS-IS/WebSocket connection pills, notification drawer, DXView link, GPS/NMEA hardening, browser launch control, mobile/Tailscale documentation, and refreshed UI density.</p>
+                        <p>Version: <span id="about-version-detail">1.6.1</span></p>
+                        <p>Release Date: <span id="about-date">June 18, 2026</span></p>
+                        <p>Highlights: tropo ducting scoring details, local alert-audio test controls, dashboard-only Node-RED project flow, app diagnostics endpoint, centralized asset cache busting, and expanded map cache documentation.</p>
                     </div>
                     <div class="about-section">
                         <h3>Video Guide</h3>
@@ -1959,6 +1959,7 @@
                         <tr><td>🌙 / ☀️</td><td><b>Theme</b> — Toggle dark/light map tiles.</td></tr>
                         <tr><td>🏷️</td><td><b>Callsign Labels</b> — Show/hide callsign text above each station icon.</td></tr>
                         <tr><td>🔎</td><td><b>Auto-Fit</b> — Automatically zoom to fit all visible stations. Turns off when you manually pan or zoom; click again to re-enable.</td></tr>
+                        <tr><td>Cache</td><td><b>Cache Visible Tiles</b> - Downloads the currently visible base-map tiles at the current zoom into <code>map_tile_cache/</code>. Use it while online before field/offline operation, and repeat at each zoom level you need.</td></tr>
                         <tr><td>⏱️</td><td><b>Line Time Filter</b> — Only show path lines from stations heard within the selected window (1h, 6h, 12h, 24h, or all time).</td></tr>
                         <tr><td>Line</td><td><b>Line Style</b> - Choose distance or custom color, line weight, opacity, and solid/dashed/dotted patterns. Bidirectional arrows are offset so opposing paths remain readable.</td></tr>
                         <tr><td>Size</td><td><b>Station Symbol Size</b> - Scale map station symbols from compact to large for dense desktop views, touch screens, or presentation displays.</td></tr>
@@ -1966,7 +1967,7 @@
                         <tr><td>🏷️ Types ▾</td><td><b>Type Filter</b> — Check/uncheck station categories (Digipeater, Weather, House, Car, etc.) to control which types appear on the map.</td></tr>
                         <tr><td>Search</td><td><b>Callsign Search</b> — Expand the search box, enter a callsign, press Enter or Find to jump to that marker, and press Esc to collapse the search.</td></tr>
                     </table>
-                    <p>Weather radar and NWS polygons are managed from Settings - Weather. All map toggle states, zoom level, position, and filter selections are saved automatically and persist across restarts. Expanded weather alert banners rise above map controls and scroll when alert text is long; use the X on an alert banner to clear that alert from view.</p>
+                    <p>Weather radar and NWS polygons are managed from Settings - Weather. Base map tiles are served through PropView's tile proxy, so cached default OSM or custom XYZ tiles can be reused when the upstream tile source is unavailable. All map toggle states, zoom level, position, and filter selections are saved automatically and persist across restarts. Expanded weather alert banners rise above map controls and scroll when alert text is long; use the X on an alert banner to clear that alert from view.</p>
                     <p>Application update checks are managed from Settings - Web Interface. You can disable release checks entirely or choose how often the app rechecks GitHub while it stays running. Windows setup installs can download and launch newer setup installers from the About tab; Linux, Raspberry Pi, and macOS installs show release notices without the Windows-only installer button.</p>
                 </section>
 
@@ -2101,13 +2102,26 @@
     </div>
 
     <!-- ── Scripts ────────────────────────────────────────────── -->
-    <script defer src="/static/js/websocket.js?v=1.6.0-r4"></script>
-    <script defer src="/static/js/map.js?v=1.6.0-r6"></script>
-    <script defer src="/static/js/stations.js?v=1.6.0-r3"></script>
+    <div id="ducting-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-content ducting-modal">
+            <div class="modal-header">
+                <h3>Tropospheric Ducting Details</h3>
+                <button id="ducting-modal-close" class="modal-close" type="button" aria-label="Close ducting details">&times;</button>
+            </div>
+            <div id="ducting-modal-body" class="ducting-modal-body">
+                Ducting data has not been loaded yet.
+            </div>
+        </div>
+    </div>
+
+    <script defer src="/static/js/websocket.js?v=__ASSET_VERSION__"></script>
+    <script defer src="/static/js/map.js?v=__ASSET_VERSION__"></script>
+    <script defer src="/static/js/stations.js?v=__ASSET_VERSION__"></script>
     <script defer src="/static/js/icons.js"></script>
-    <script defer src="/static/js/analytics.js?v=1.6.0-r3"></script>
-    <script defer src="/static/js/messages.js?v=1.6.0-r3"></script>
-    <script defer src="/static/js/weather.js?v=1.6.0-r3"></script>
-    <script defer src="/static/js/app.js?v=1.6.0-r6"></script>
+    <script defer src="/static/js/analytics.js?v=__ASSET_VERSION__"></script>
+    <script defer src="/static/js/messages.js?v=__ASSET_VERSION__"></script>
+    <script defer src="/static/js/weather.js?v=__ASSET_VERSION__"></script>
+    <script defer src="/static/js/alert-audio.js?v=__ASSET_VERSION__"></script>
+    <script defer src="/static/js/app.js?v=__ASSET_VERSION__"></script>
 </body>
 </html>

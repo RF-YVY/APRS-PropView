@@ -1,18 +1,22 @@
-# APRS PropView Node-RED Dashboard and Alexa Flow
+# APRS PropView Node-RED Dashboard Flow
 
-This folder contains an importable Node-RED flow for APRS PropView:
+This folder contains importable Node-RED flows for APRS PropView:
 
+- `aprs-propview-dashboard-flow.json`
 - `aprs-propview-alexa-dashboard-flow.json`
 
-For Node-RED Projects, the same prebuilt flow is also copied to the repository root as `flows.json`, and the root `package.json` points Node-RED at that file.
+For Node-RED Projects, the dashboard-only flow is also copied to the repository root as `flows.json`, and the root `package.json` points Node-RED at that file.
 
-It builds a live Node-RED dashboard from APRS PropView MQTT topics and exposes Alexa-discoverable virtual devices for common PropView actions.
+The default project flow builds a live Node-RED dashboard from APRS PropView MQTT topics without requiring any Alexa palette. The optional Alexa flow adds Alexa-discoverable virtual devices for common PropView actions.
 
 ## Required Node-RED Palettes
 
 Install these from **Menu > Manage palette > Install**:
 
 - `node-red-dashboard`
+
+For the optional Alexa flow, also install:
+
 - `node-red-contrib-alexa-home`
 
 The Alexa palette emulates a local Philips Hue bridge. Alexa discovery requires the Alexa device and Node-RED host to be on the same IPv4 LAN with multicast/SSDP allowed.
@@ -53,10 +57,12 @@ It also publishes live automation payloads on:
 ### Manual Import
 
 1. In Node-RED, choose **Menu > Import**.
-2. Import `deploy/node-red/aprs-propview-alexa-dashboard-flow.json`.
+2. Import `deploy/node-red/aprs-propview-dashboard-flow.json`.
 3. Open the **APRS PropView MQTT broker** config node and set your broker host, port, username, and password.
 4. Deploy the flow.
 5. Open the dashboard at `http://<node-red-host>:1880/ui`.
+
+To use the Alexa version, import `deploy/node-red/aprs-propview-alexa-dashboard-flow.json` after installing `node-red-contrib-alexa-home`.
 
 The flow assumes APRS PropView is reachable from Node-RED at:
 

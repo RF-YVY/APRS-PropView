@@ -20,6 +20,11 @@ window.pvWeather = (function () {
         document.getElementById('wx-refresh-btn')?.addEventListener('click', () => {
             fetchWeather(true);
         });
+        document.getElementById('wx-ducting')?.addEventListener('click', showDuctingDetails);
+        document.getElementById('ducting-modal-close')?.addEventListener('click', closeDuctingDetails);
+        document.getElementById('ducting-modal')?.addEventListener('click', (e) => {
+            if (e.target?.id === 'ducting-modal') closeDuctingDetails();
+        });
 
         // Location lookup button in settings
         document.getElementById('btn-wx-resolve')?.addEventListener('click', lookupLocation);
@@ -107,7 +112,7 @@ window.pvWeather = (function () {
             // Color code
             const colors = { low: '#4d5b6b', moderate: '#9a6700', high: '#cf222e', extreme: '#a40e26' };
             ductingVal.style.color = colors[level] || '#8b949e';
-            ductingEl.title = `Tropospheric Ducting Index: ${Math.round(idx)}/100 — ${level}`;
+            ductingEl.title = `Tropospheric Ducting Index: ${Math.round(idx)}/100 - ${level}. Click for details.`;
         } else if (ductingEl) {
             ductingEl.style.display = 'none';
         }
@@ -153,6 +158,116 @@ window.pvWeather = (function () {
 
     function rerender() {
         if (lastWeatherData) renderWeather(lastWeatherData);
+    }
+
+    function showDuctingDetails() {
+        const modal = document.getElementById('ducting-modal');
+        const body = document.getElementById('ducting-modal-body');
+        if (!modal || !body) return;
+        body.innerHTML = renderDuctingDetails(lastWeatherData?.ducting);
+        modal.style.display = 'flex';
+    }
+
+    function closeDuctingDetails() {
+        const modal = document.getElementById('ducting-modal');
+        if (modal) modal.style.display = 'none';
+    }
+
+    function renderDuctingDetails(ducting) {
+        if (!ducting || ducting.ducting_index == null) {
+            return '<p>Ducting data is not available. Enable weather and refresh current conditions.</p>';
+        }
+
+        const level = ducting.level || 'unknown';
+        const score = Number(ducting.ducting_index || 0);
+        const scoring = Array.isArray(ducting.scoring) ? ducting.scoring : [];
+        const factors = ducting.factors || {};
+        const rows = scoring.length
+            ? scoring.map((item) => renderDuctingScoreRow(item)).join('')
+            : Object.entries(factors).map(([key, detail]) => `
+                <div class="ducting-factor-row">
+                    <div>
+                        <div class="ducting-factor-name">${escHtml(labelize(key))}</div>
+                        <div class="ducting-factor-detail">${escHtml(detail)}</div>
+                    </div>
+                </div>
+            `).join('');
+
+        return `
+            <div class="ducting-summary">
+                <div>
+                    <div class="ducting-score">${Math.round(score)}/100</div>
+                    <div class="ducting-level ducting-level-${escHtml(level)}">${escHtml(level.toUpperCase())}</div>
+                </div>
+                <div class="ducting-summary-text">
+                    APRS PropView estimates VHF tropo ducting from temperature inversion or reduced lapse rate,
+                    surface pressure, pressure trend, humidity, and wind speed.
+                </div>
+            </div>
+            <div class="ducting-measurements">
+                ${renderDuctingMetric('Surface temp', formatNullable(ducting.surface_temp_f, 'F', 1))}
+                ${renderDuctingMetric('850 hPa temp', formatNullable(ducting.temp_850hPa_f, 'F', 1))}
+                ${renderDuctingMetric('Pressure', formatNullable(ducting.pressure_mb, 'mb', 0))}
+                ${renderDuctingMetric('6h trend', formatSignedNullable(ducting.pressure_trend, 'mb', 1))}
+                ${renderDuctingMetric('Humidity', formatNullable(ducting.humidity, '%', 0))}
+                ${renderDuctingMetric('Wind', formatNullable(ducting.wind_speed_mph, 'mph', 0))}
+            </div>
+            <div class="ducting-factor-list">
+                ${rows || '<p>No scoring factors were returned for this sample.</p>'}
+            </div>
+            <p class="ducting-note">Last updated ${escHtml(formatDuctingTime(ducting.timestamp))}. This index is a local weather-based estimate, not a guarantee of RF propagation.</p>
+        `;
+    }
+
+    function renderDuctingScoreRow(item) {
+        const points = Number(item.points || 0);
+        const max = Number(item.max_points || 0);
+        const pct = max > 0 ? Math.max(0, Math.min(100, (points / max) * 100)) : 0;
+        return `
+            <div class="ducting-factor-row">
+                <div>
+                    <div class="ducting-factor-name">${escHtml(item.label || labelize(item.key))}</div>
+                    <div class="ducting-factor-detail">${escHtml(item.detail || '')}</div>
+                </div>
+                <div class="ducting-factor-points">${points.toFixed(points % 1 ? 1 : 0)} / ${max.toFixed(max % 1 ? 1 : 0)}</div>
+                <div class="ducting-factor-bar" aria-hidden="true"><span style="width:${pct.toFixed(0)}%"></span></div>
+            </div>
+        `;
+    }
+
+    function renderDuctingMetric(label, value) {
+        return `
+            <div class="ducting-metric">
+                <span>${escHtml(label)}</span>
+                <b>${escHtml(value)}</b>
+            </div>
+        `;
+    }
+
+    function formatNullable(value, unit, decimals) {
+        if (value == null || Number.isNaN(Number(value))) return '--';
+        return `${Number(value).toFixed(decimals)} ${unit}`;
+    }
+
+    function formatSignedNullable(value, unit, decimals) {
+        if (value == null || Number.isNaN(Number(value))) return '--';
+        const numeric = Number(value);
+        return `${numeric >= 0 ? '+' : ''}${numeric.toFixed(decimals)} ${unit}`;
+    }
+
+    function formatDuctingTime(timestamp) {
+        if (!timestamp) return 'unknown';
+        try {
+            return new Date(Number(timestamp) * 1000).toLocaleString();
+        } catch {
+            return 'unknown';
+        }
+    }
+
+    function labelize(value) {
+        return String(value || '')
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, (ch) => ch.toUpperCase());
     }
 
     function renderAlerts(alerts) {
@@ -435,5 +550,6 @@ window.pvWeather = (function () {
         rerender,
         toggleAlertDetail,
         dismissAlert,
+        showDuctingDetails,
     };
 })();

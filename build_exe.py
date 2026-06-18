@@ -12,12 +12,30 @@ import os
 import subprocess
 import sys
 import shutil
+import re
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent
 MAIN_SCRIPT = PROJECT_ROOT / "main.py"
 STATIC_DIR = PROJECT_ROOT / "static"
 ICON_FILE = PROJECT_ROOT / "ico" / "favicon.ico"
+
+
+def read_app_version():
+    """Read the application version from main.py."""
+    main_text = MAIN_SCRIPT.read_text(encoding="utf-8")
+    match = re.search(r'^APP_VERSION\s*=\s*"([^"]+)"', main_text, re.MULTILINE)
+    if not match:
+        raise RuntimeError("Could not read APP_VERSION from main.py")
+    return match.group(1)
+
+
+def windows_version_tuple(version):
+    """Return a four-part Windows version tuple from a dotted app version."""
+    parts = [int(part) for part in re.findall(r"\d+", version)[:4]]
+    while len(parts) < 4:
+        parts.append(0)
+    return tuple(parts)
 
 def check_pyinstaller():
     """Ensure PyInstaller is installed."""
@@ -85,18 +103,19 @@ def _rebuild_ico_png(ico_path):
         print(f"  Warning: Could not rebuild ICO: {e}")
 
 
-def _write_manifest(path):
+def _write_manifest(path, version):
     """Write a custom application manifest with unique assemblyIdentity.
 
     This prevents Windows from matching the exe against the PyInstaller
     bootloader's AppCompat signature and substituting a Python icon.
     """
+    manifest_version = ".".join(str(part) for part in windows_version_tuple(version))
     content = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <assemblyIdentity
     type="win32"
     name="WickerMade.APRSPropView"
-    version="1.6.0.0"
+    version="__MANIFEST_VERSION__"
     processorArchitecture="amd64"
   />
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
@@ -131,18 +150,20 @@ def _write_manifest(path):
   </dependency>
 </assembly>
 """
+    content = content.replace("__MANIFEST_VERSION__", manifest_version)
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
     print(f"  Generated custom application manifest")
 
 
-def _write_version_info(path):
+def _write_version_info(path, version):
     """Write a Windows VERSIONINFO resource file for PyInstaller."""
-    content = """# UTF-8
+    file_version = windows_version_tuple(version)
+    content = f"""# UTF-8
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 6, 0, 0),
-    prodvers=(1, 6, 0, 0),
+    filevers={file_version},
+    prodvers={file_version},
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -158,11 +179,11 @@ VSVersionInfo(
           [
             StringStruct(u'CompanyName', u'Wicker Made, LLC'),
             StringStruct(u'FileDescription', u'APRS PropView - VHF Propagation Monitor'),
-            StringStruct(u'FileVersion', u'1.6.0'),
+            StringStruct(u'FileVersion', u'{version}'),
             StringStruct(u'InternalName', u'APRSPropView'),
             StringStruct(u'OriginalFilename', u'APRSPropView.exe'),
             StringStruct(u'ProductName', u'APRS PropView'),
-            StringStruct(u'ProductVersion', u'1.6.0'),
+            StringStruct(u'ProductVersion', u'{version}'),
           ]
         )
       ]
@@ -177,6 +198,7 @@ VSVersionInfo(
 
 def build():
     print("\n=== APRS PropView — Build Executable ===\n")
+    version = read_app_version()
     check_pyinstaller()
     check_runtime_dependencies()
 
@@ -243,13 +265,13 @@ def build():
 
     # Generate version info resource so Windows associates the icon properly
     version_file = PROJECT_ROOT / "version_info.txt"
-    _write_version_info(version_file)
+    _write_version_info(version_file, version)
     args.extend(["--version-file", str(version_file)])
 
     # Custom manifest with unique assemblyIdentity — prevents Windows from
     # matching the bootloader against Python's AppCompat cache entry
     manifest_file = PROJECT_ROOT / "APRSPropView.manifest"
-    _write_manifest(manifest_file)
+    _write_manifest(manifest_file, version)
     args.extend(["--manifest", str(manifest_file)])
 
     # One-file mode: single portable executable

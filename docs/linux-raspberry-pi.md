@@ -30,7 +30,7 @@ cd APRS-PropView
 If you already have the source on the Pi, run the installer from the repository
 root.
 
-## Update To v1.6.0
+## Update To v1.6.1
 
 For an existing Linux or Raspberry Pi service install, update the repository,
 rerun the installer so `/opt/aprs-propview` receives the new application files,
@@ -42,12 +42,11 @@ sudo bash ./scripts/install_linux.sh
 sudo systemctl restart aprs-propview
 ```
 
-Version 1.6.0 adds TCP TNC disconnect detection and automatic reconnect status,
-header notifications for RF TCP errors and APRS messages, unified RF/APRS-IS/WS
-status pills, DXView links, mobile/Tailscale documentation, browser launch
-selection, GPS/NMEA hardening, and refreshed UI layout. Existing `config.toml`,
-`propview.db`, cached map tiles, and user audio files are preserved by the
-installer.
+Version 1.6.1 adds tropo ducting scoring details, local alert-audio test
+controls, a dashboard-only Node-RED project flow, app diagnostics, centralized
+asset cache busting, and expanded map cache documentation. Existing
+`config.toml`, `propview.db`, cached map tiles, and user audio files are
+preserved by the installer.
 
 If you run the app as a headless Pi service and do not want browser launch
 attempts, leave `[web].launch_browser` blank in `config.toml` or choose
@@ -250,6 +249,11 @@ mobile use.
 
 The map **Cache** button stores the current view and zoom in `map_tile_cache/`.
 Use it while internet is available for the areas you expect to need offline.
+PropView serves map tiles through its local `/api/map-tiles/{z}/{x}/{y}` proxy,
+so cached tiles continue to display when the upstream OSM or custom XYZ tile
+server is offline. Cache each zoom level you care about separately; already
+cached tiles are reused, while uncached missing tiles remain blank until the
+upstream source is reachable again.
 
 ## Smart Beaconing
 

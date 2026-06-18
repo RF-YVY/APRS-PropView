@@ -1,6 +1,6 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.6.0** | June 15, 2026
+**Version 1.6.1** | June 18, 2026
 
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/RF-YVY/APRS-PropView/total)
@@ -21,7 +21,7 @@
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
 
-Version 1.6.0 focuses on long-running station reliability and operator UX: TCP TNC disconnect detection with automatic reconnect/status notifications, a unified RF/APRS-IS/WebSocket connection header, a notification drawer for RF TCP issues and incoming APRS messages, expanded GPS/NMEA handling, map-coordinate fixes, Guam/worldwide callsign acceptance, DXView integration, optional browser auto-open selection, and refreshed desktop/mobile documentation.
+Version 1.6.1 adds clearer tropo ducting scoring details, local alert-audio test controls, a dashboard-only Node-RED project flow, app diagnostics, centralized asset cache busting, and refreshed help/documentation for map tile caching and offline field use.
 
 Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs/linux-raspberry-pi.md).
 
@@ -34,7 +34,7 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **RF Station Tracking** — Separate list of stations heard directly on RF
 - **APRS-IS Station Tracking** — Separate list of stations received from APRS-IS
 - **Propagation Map** — Interactive Leaflet map with APRS sprite icons, adjustable marker size, directional arrowed path lines, map-created APRS objects, and light/dark theme toggle
-- **Custom/Offline Map Tiles** — Point the map at a local XYZ tile server or cache the visible map area for offline/field use
+- **Custom/Offline Map Tiles** — Point the map at a local XYZ tile server or use the map **Cache** control to store the visible map area in `map_tile_cache/` for offline/field use
 - **Dual Propagation Meters** — Header gauges: "VHF Propagation My Station" (direct-heard RF only) and "Regional VHF Propagation" (all RF including via digipeater), each with configurable scoring thresholds
 - **Configurable Path Lines** — Directional station-to-station lines support distance or custom coloring, weight, opacity, solid/dashed/dotted patterns, and offset arrows for bidirectional paths
 - **Digipeater-Routed Lines** — RF stations heard through known digipeaters draw TX-to-digi-to-RX paths instead of misleading direct-heard lines
@@ -129,7 +129,7 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **Persistent Weather Banner** — Weather conditions stay visible on the map unless disabled in settings
 - **Font Selector** — Choose from multiple fonts in Settings for crisp, readable text
 - **Opening Browser Selector** - Choose the browser APRS PropView opens on startup, or leave it blank/system default to avoid unwanted browser launch behavior on headless/service deployments
-- **About Tab** — Application version, build info, and attribution
+- **About Tab** — Application version, build info, diagnostics, update checks, and attribution
 - **Help & User Guide** — In-app help modal covering every feature, control, and setting
 - **Installer-Based Updates** - Windows setup installs can detect GitHub setup assets, download the newer installer from the About tab, close APRS PropView cleanly, and launch setup while keeping user settings and data intact
 - **Update Checker** - Automatically checks the latest GitHub release, supports disabling checks entirely, hides Windows-only installer actions on Linux/macOS, and lets you control the periodic recheck interval for long-running installs
@@ -233,7 +233,7 @@ the current `APRSPropView.exe`.
 Installer upgrades replace the application executable and bundled files only.
 User data such as `config.toml`, `propview.db`, `map_tile_cache/`, and
 `user_audio/` is left in place. Publish both `APRSPropView.exe` and the setup
-asset on GitHub releases; assets named like `APRSPropViewSetup-1.6.0.exe` are
+asset on GitHub releases; assets named like `APRSPropViewSetup-1.6.1.exe` are
 detected by the in-app update checker so users can click **Install Update** in
 the About tab. On Linux, Raspberry Pi, and macOS, users still see release
 notices but installer-based update buttons are hidden because those platforms
@@ -327,8 +327,19 @@ above 14 grow quickly.
 
 The map's **Cache** control downloads the currently visible base-map tiles at
 the current zoom into `map_tile_cache/`. Cached tiles are served by APRS
-PropView itself, so already-cached areas remain visible later without internet
-access.
+PropView itself through `/api/map-tiles/{z}/{x}/{y}`, so already-cached areas
+remain visible later without internet access.
+
+Use the control while you still have internet connectivity:
+
+1. Pan and zoom to the area you expect to operate in.
+2. Click **Cache** and wait for the button to report `Done`.
+3. Repeat at any zoom levels you need offline; each zoom level is cached separately.
+
+If a tile is already cached, PropView reuses it. If a tile is missing while the
+upstream tile server is unreachable, the map will show a blank/missing tile for
+that spot until it can be downloaded later. The cache is preserved by Windows
+installer upgrades and Linux/Pi service updates.
 
 ### Receiver Feed Roadmap
 

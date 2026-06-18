@@ -131,6 +131,45 @@ class WeatherAlertGeometryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual([alert["id"] for alert in alerts], ["nearby"])
 
+    async def test_fetch_ducting_data_explains_scoring_factors(self):
+        async def fake_http_get(url, timeout=10, retries=1, log_fail=True):
+            self.assertIn("temperature_850hPa", url)
+            return {
+                "current": {
+                    "temperature_2m": 70.0,
+                    "relative_humidity_2m": 85,
+                    "pressure_msl": 1026.0,
+                    "surface_pressure": 1018.0,
+                    "wind_speed_10m": 4.0,
+                },
+                "hourly": {
+                    "temperature_850hPa": [72.0],
+                    "pressure_msl": [1024.0, 1025.0, 1026.0],
+                },
+            }
+
+        weather_module._async_http_get = fake_http_get
+
+        ducting = await weather_module.fetch_ducting_data(34.45, -89.55)
+
+        self.assertIsNotNone(ducting)
+        self.assertEqual(ducting["ducting_index"], 90.0)
+        self.assertEqual(ducting["level"], "high")
+        self.assertTrue(ducting["inversion_detected"])
+        self.assertIn("Strong inversion", ducting["factors"]["inversion"])
+        self.assertIn("lapse=-2.0", ducting["factors"]["inversion"])
+        self.assertEqual(
+            [(item["key"], item["points"], item["max_points"]) for item in ducting["scoring"]],
+            [
+                ("inversion", 35, 35),
+                ("pressure", 20, 25),
+                ("trend", 10, 15),
+                ("humidity", 15, 15),
+                ("wind", 10, 10),
+            ],
+        )
+        self.assertIn("High (1026 mb)", ducting["scoring"][1]["detail"])
+
 
 if __name__ == "__main__":
     unittest.main()

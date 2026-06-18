@@ -470,6 +470,19 @@ async def fetch_ducting_data(lat: float, lon: float) -> Optional[Dict[str, Any]]
     # ── Ducting index calculation ──────────────────────────────
     score = 0.0
     factors = {}
+    scoring = []
+
+    def add_score(key: str, label: str, points: float, max_points: float, detail: str):
+        nonlocal score
+        score += points
+        factors[key] = detail
+        scoring.append({
+            "key": key,
+            "label": label,
+            "points": round(points, 1),
+            "max_points": max_points,
+            "detail": detail,
+        })
 
     # 1. Temperature inversion check (0-35 points)
     # Normal lapse rate: surface should be warmer than 850 hPa
@@ -482,80 +495,64 @@ async def fetch_ducting_data(lat: float, lon: float) -> Optional[Dict[str, Any]]
         # Inversion: surface cooler than or close to 850 hPa
         if lapse < 0:
             # True inversion
-            score += 35
             inversion_detected = True
-            factors["inversion"] = f"Strong inversion (lapse={lapse:.1f}°F)"
+            add_score("inversion", "Temperature inversion", 35, 35, f"Strong inversion (lapse={lapse:.1f}°F)")
         elif lapse < 10:
-            score += 25
             inversion_detected = True
-            factors["inversion"] = f"Weak inversion (lapse={lapse:.1f}°F)"
+            add_score("inversion", "Temperature inversion", 25, 35, f"Weak inversion (lapse={lapse:.1f}°F)")
         elif lapse < 20:
-            score += 10
-            factors["inversion"] = f"Reduced lapse rate ({lapse:.1f}°F)"
+            add_score("inversion", "Temperature inversion", 10, 35, f"Reduced lapse rate ({lapse:.1f}°F)")
         else:
-            factors["inversion"] = f"Normal lapse rate ({lapse:.1f}°F)"
+            add_score("inversion", "Temperature inversion", 0, 35, f"Normal lapse rate ({lapse:.1f}°F)")
 
     # 2. Surface pressure (0-25 points)
     # High pressure systems favor ducting
     if pressure_msl is not None:
         if pressure_msl >= 1030:
-            score += 25
-            factors["pressure"] = f"Very high ({pressure_msl:.0f} mb)"
+            add_score("pressure", "Surface pressure", 25, 25, f"Very high ({pressure_msl:.0f} mb)")
         elif pressure_msl >= 1025:
-            score += 20
-            factors["pressure"] = f"High ({pressure_msl:.0f} mb)"
+            add_score("pressure", "Surface pressure", 20, 25, f"High ({pressure_msl:.0f} mb)")
         elif pressure_msl >= 1020:
-            score += 12
-            factors["pressure"] = f"Above average ({pressure_msl:.0f} mb)"
+            add_score("pressure", "Surface pressure", 12, 25, f"Above average ({pressure_msl:.0f} mb)")
         elif pressure_msl >= 1013:
-            score += 5
-            factors["pressure"] = f"Normal ({pressure_msl:.0f} mb)"
+            add_score("pressure", "Surface pressure", 5, 25, f"Normal ({pressure_msl:.0f} mb)")
         else:
-            factors["pressure"] = f"Low ({pressure_msl:.0f} mb)"
+            add_score("pressure", "Surface pressure", 0, 25, f"Low ({pressure_msl:.0f} mb)")
 
     # 3. Pressure trend — rising is favorable (0-15 points)
     if pressure_trend is not None:
         if pressure_trend > 3:
-            score += 15
-            factors["trend"] = f"Rising fast (+{pressure_trend:.1f} mb/6h)"
+            add_score("trend", "Pressure trend", 15, 15, f"Rising fast (+{pressure_trend:.1f} mb/6h)")
         elif pressure_trend > 1:
-            score += 10
-            factors["trend"] = f"Rising (+{pressure_trend:.1f} mb/6h)"
+            add_score("trend", "Pressure trend", 10, 15, f"Rising (+{pressure_trend:.1f} mb/6h)")
         elif pressure_trend > 0:
-            score += 5
-            factors["trend"] = f"Slight rise (+{pressure_trend:.1f} mb/6h)"
+            add_score("trend", "Pressure trend", 5, 15, f"Slight rise (+{pressure_trend:.1f} mb/6h)")
         elif pressure_trend > -1:
-            factors["trend"] = f"Steady ({pressure_trend:+.1f} mb/6h)"
+            add_score("trend", "Pressure trend", 0, 15, f"Steady ({pressure_trend:+.1f} mb/6h)")
         else:
-            factors["trend"] = f"Falling ({pressure_trend:+.1f} mb/6h)"
+            add_score("trend", "Pressure trend", 0, 15, f"Falling ({pressure_trend:+.1f} mb/6h)")
 
     # 4. Humidity — moderate to high favors ducting (0-15 points)
     if humidity is not None:
         if humidity >= 80:
-            score += 15
-            factors["humidity"] = f"High ({humidity}%)"
+            add_score("humidity", "Relative humidity", 15, 15, f"High ({humidity}%)")
         elif humidity >= 60:
-            score += 10
-            factors["humidity"] = f"Moderate ({humidity}%)"
+            add_score("humidity", "Relative humidity", 10, 15, f"Moderate ({humidity}%)")
         elif humidity >= 40:
-            score += 5
-            factors["humidity"] = f"Low-moderate ({humidity}%)"
+            add_score("humidity", "Relative humidity", 5, 15, f"Low-moderate ({humidity}%)")
         else:
-            factors["humidity"] = f"Low ({humidity}%)"
+            add_score("humidity", "Relative humidity", 0, 15, f"Low ({humidity}%)")
 
     # 5. Wind speed — calm conditions favor stable layers (0-10 points)
     if wind_speed is not None:
         if wind_speed < 5:
-            score += 10
-            factors["wind"] = f"Calm ({wind_speed:.0f} mph)"
+            add_score("wind", "Wind speed", 10, 10, f"Calm ({wind_speed:.0f} mph)")
         elif wind_speed < 10:
-            score += 7
-            factors["wind"] = f"Light ({wind_speed:.0f} mph)"
+            add_score("wind", "Wind speed", 7, 10, f"Light ({wind_speed:.0f} mph)")
         elif wind_speed < 15:
-            score += 3
-            factors["wind"] = f"Moderate ({wind_speed:.0f} mph)"
+            add_score("wind", "Wind speed", 3, 10, f"Moderate ({wind_speed:.0f} mph)")
         else:
-            factors["wind"] = f"Strong ({wind_speed:.0f} mph)"
+            add_score("wind", "Wind speed", 0, 10, f"Strong ({wind_speed:.0f} mph)")
 
     score = min(score, 100)
 
@@ -574,6 +571,7 @@ async def fetch_ducting_data(lat: float, lon: float) -> Optional[Dict[str, Any]]
         "level": level,
         "inversion_detected": inversion_detected,
         "factors": factors,
+        "scoring": scoring,
         "surface_temp_f": surface_temp_f,
         "temp_850hPa_f": temp_850,
         "pressure_mb": pressure_msl,
