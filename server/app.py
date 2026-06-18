@@ -965,7 +965,7 @@ $installer = '{installer_arg}'
 $workingDir = '{working_dir_arg}'
 $parentPid = {os.getpid()}
 Wait-Process -Id $parentPid -Timeout 60 -ErrorAction SilentlyContinue
-Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS', '/FORCECLOSEAPPLICATIONS', '/RESTARTAPPLICATIONS') -WorkingDirectory $workingDir
+Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS', '/FORCECLOSEAPPLICATIONS', '/NORESTARTAPPLICATIONS') -WorkingDirectory $workingDir
 """
         encoded_script = base64.b64encode(helper_script.encode("utf-16le")).decode("ascii")
         subprocess.Popen(
@@ -984,7 +984,7 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
         )
 
     async def _shutdown_after_update_helper_launch() -> None:
-        await asyncio.sleep(1.5)
+        await asyncio.sleep(4.0)
         if shutdown_event:
             logger.info("Update installer helper launched; requesting application shutdown.")
             shutdown_event.set()

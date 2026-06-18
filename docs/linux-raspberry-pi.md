@@ -30,7 +30,7 @@ cd APRS-PropView
 If you already have the source on the Pi, run the installer from the repository
 root.
 
-## Update To v1.6.1
+## Update To v1.6.2
 
 For an existing Linux or Raspberry Pi service install, update the repository,
 rerun the installer so `/opt/aprs-propview` receives the new application files,
@@ -42,7 +42,7 @@ sudo bash ./scripts/install_linux.sh
 sudo systemctl restart aprs-propview
 ```
 
-Version 1.6.1 adds tropo ducting scoring details, local alert-audio test
+Version 1.6.2 adds tropo ducting scoring details, local alert-audio test
 controls, a dashboard-only Node-RED project flow, app diagnostics, centralized
 asset cache busting, and expanded map cache documentation. Existing
 `config.toml`, `propview.db`, cached map tiles, and user audio files are

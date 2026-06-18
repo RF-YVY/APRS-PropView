@@ -1,6 +1,6 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.6.1** | June 18, 2026
+**Version 1.6.2** | June 18, 2026
 
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/RF-YVY/APRS-PropView/total)
@@ -21,7 +21,7 @@
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
 
-Version 1.6.1 adds clearer tropo ducting scoring details, local alert-audio test controls, a dashboard-only Node-RED project flow, app diagnostics, centralized asset cache busting, and refreshed help/documentation for map tile caching and offline field use.
+Version 1.6.2 is a Windows updater reliability patch: it reduces false in-app download errors during the intentional shutdown handoff, avoids restart-manager relaunch conflicts, and makes the installer launch APRS PropView from the installed application folder.
 
 Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs/linux-raspberry-pi.md).
 
@@ -233,7 +233,7 @@ the current `APRSPropView.exe`.
 Installer upgrades replace the application executable and bundled files only.
 User data such as `config.toml`, `propview.db`, `map_tile_cache/`, and
 `user_audio/` is left in place. Publish both `APRSPropView.exe` and the setup
-asset on GitHub releases; assets named like `APRSPropViewSetup-1.6.1.exe` are
+asset on GitHub releases; assets named like `APRSPropViewSetup-1.6.2.exe` are
 detected by the in-app update checker so users can click **Install Update** in
 the About tab. On Linux, Raspberry Pi, and macOS, users still see release
 notices but installer-based update buttons are hidden because those platforms

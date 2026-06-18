@@ -1580,18 +1580,28 @@
         const detailEl = document.getElementById('about-update-detail');
         if (btn) btn.disabled = true;
         if (detailEl) detailEl.textContent = 'Downloading update installer...';
+        let updateHandoffStarted = false;
         try {
             const resp = await fetch('/api/update-install', { method: 'POST' });
             const data = await resp.json().catch(() => ({}));
             if (!resp.ok || !data.success) {
                 throw new Error(data.message || `Update installer failed with HTTP ${resp.status}`);
             }
+            updateHandoffStarted = true;
             if (detailEl) detailEl.textContent = data.message || 'Update installer launched.';
         } catch (e) {
             console.error('Failed to launch update installer:', e);
-            if (detailEl) detailEl.textContent = e.message || 'Could not launch update installer.';
+            const message = String(e?.message || '');
+            if (message.includes('Failed to fetch') || message.includes('NetworkError')) {
+                updateHandoffStarted = true;
+                if (detailEl) {
+                    detailEl.textContent = 'APRS PropView is closing for the update. If setup does not appear, open the downloaded installer from your temp APRSPropViewUpdates folder or GitHub releases.';
+                }
+            } else if (detailEl) {
+                detailEl.textContent = e.message || 'Could not launch update installer.';
+            }
         } finally {
-            if (btn) btn.disabled = false;
+            if (btn) btn.disabled = updateHandoffStarted;
         }
     }
 
