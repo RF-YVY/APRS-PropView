@@ -248,6 +248,11 @@ class PacketHandler:
         packet = parse_packet(raw_str, source="rf")
         packet.port_name = getattr(interface, "name", "") if interface else ""
 
+        if self.tracker.is_blocked_callsign(packet.from_call):
+            logger.info("RF RX ignored by station blocklist: %s", packet.from_call)
+            await self._broadcast_stats()
+            return
+
         # Track the station
         await self.tracker.track_packet(packet)
 
@@ -301,6 +306,10 @@ class PacketHandler:
         logger.debug(f"RF RX text: {raw_str}")
         packet = parse_packet(raw_str, source="rf")
         packet.port_name = getattr(interface, "name", "") if interface else ""
+        if self.tracker.is_blocked_callsign(packet.from_call):
+            logger.info("RF text RX ignored by station blocklist: %s", packet.from_call)
+            await self._broadcast_stats()
+            return
         await self.tracker.track_packet(packet)
 
         if self.igate and not self.tracker._has_internet_path(packet.path):
@@ -348,6 +357,11 @@ class PacketHandler:
 
         # Parse APRS content
         packet = parse_packet(raw_str, source="aprs_is")
+
+        if self.tracker.is_blocked_callsign(packet.from_call):
+            logger.info("APRS-IS RX ignored by station blocklist: %s", packet.from_call)
+            await self._broadcast_stats()
+            return
 
         # Track the station
         await self.tracker.track_packet(packet)

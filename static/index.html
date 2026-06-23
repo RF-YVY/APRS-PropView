@@ -223,6 +223,10 @@
                             <span>Opacity</span>
                             <input id="line-opacity" type="range" min="0.2" max="1" step="0.05" value="0.7">
                         </label>
+                        <label class="line-style-check">
+                            <span>VHF Paths</span>
+                            <input id="line-show-watched-paths" type="checkbox" checked>
+                        </label>
                     </div>
                 </div>
                 <div id="map-type-filter-wrap">
@@ -249,7 +253,7 @@
                 <button class="tab-btn" data-tab="tab-prop">Propagation</button>
                 <button class="tab-btn" data-tab="tab-analytics">📊 Analytics</button>
                 <button class="tab-btn" data-tab="tab-settings">⚙ Settings</button>
-                <button class="tab-btn" data-tab="tab-about">ℹ About</button>
+                <button class="tab-btn" data-tab="tab-about">ℹ About/Help</button>
             </div>
 
             <!-- ── RF Stations Tab ───────────────────────────── -->
@@ -442,6 +446,10 @@
                             <div class="prop-card-value" id="prop-is-1h">0</div>
                             <div class="prop-card-label">APRS-IS (1h)</div>
                         </div>
+                    </div>
+                    <h3>Watched VHF Paths</h3>
+                    <div id="watched-paths-panel" class="watched-paths-panel">
+                        <div class="analytics-empty">No watched paths configured.</div>
                     </div>
                     <h3>Distance Distribution</h3>
                     <canvas id="distance-chart" width="380" height="180"></canvas>
@@ -707,7 +715,6 @@
                         </div>
                         <div class="settings-pane-header-actions">
                             <button id="btn-settings-help" class="btn-small" type="button" title="Open User Guide & Help">User Guide &amp; Help</button>
-                            <button id="btn-save-settings-top" class="btn-primary btn-save-settings">Save Configuration</button>
                             <button id="btn-close-settings" class="settings-pane-close" type="button" title="Close settings">&times;</button>
                         </div>
                     </div>
@@ -737,7 +744,7 @@
                         <h3>Station</h3>
                         <div class="settings-row">
                             <label for="cfg-callsign">Callsign</label>
-                            <input type="text" id="cfg-callsign" placeholder="N0CALL" maxlength="9" style="text-transform:uppercase;">
+                            <input type="text" id="cfg-callsign" placeholder="W1AW" maxlength="9" style="text-transform:uppercase;">
                         </div>
                         <div class="settings-row">
                             <label for="cfg-ssid">SSID</label>
@@ -763,7 +770,7 @@
                         <div class="settings-row">
                             <label for="cfg-latitude">Latitude</label>
                             <div class="coord-lock-row">
-                                <input type="number" id="cfg-latitude" step="0.0001" placeholder="0.0">
+                                <input type="number" id="cfg-latitude" step="any" placeholder="0.0">
                                 <label class="inline-check lock-check" title="Prevent active GPS from changing station latitude/longitude">
                                     <input type="checkbox" id="cfg-gps-position-locked">
                                     LOCK
@@ -772,10 +779,9 @@
                         </div>
                         <div class="settings-row">
                             <label for="cfg-longitude">Longitude</label>
-                            <input type="number" id="cfg-longitude" step="0.0001" placeholder="0.0">
+                            <input type="number" id="cfg-longitude" step="any" placeholder="0.0">
                         </div>
-                        <div class="settings-row">
-                            <label></label>
+                        <div class="settings-row settings-action-row">
                             <button id="btn-pick-location-settings" class="btn-small btn-pick" title="Click to pick location on the map">📌 Pick on Map</button>
                         </div>
                         <div class="settings-row">
@@ -811,8 +817,7 @@
                                 Move my map marker from GPS
                             </label>
                         </div>
-                        <div class="settings-row">
-                            <label></label>
+                        <div class="settings-row settings-action-row">
                             <button id="btn-gps-browser" class="btn-small" title="Start or stop this browser/device location sharing">Start GPS</button>
                         </div>
                         <div class="settings-row">
@@ -893,8 +898,7 @@
                             <label>Station Beacon Preview (RF + APRS-IS)</label>
                             <div id="cfg-beacon-preview" class="status-preview">Preview has not been run.</div>
                         </div>
-                        <div class="settings-row">
-                            <label></label>
+                        <div class="settings-row settings-action-row">
                             <button type="button" class="btn-small" id="btn-beacon-preview">Preview RF + APRS-IS Beacon</button>
                             <button type="button" class="btn-small" id="btn-beacon-transmit">Transmit Station Now</button>
                         </div>
@@ -1067,7 +1071,7 @@
                         </div>
                         <div class="settings-row">
                             <label for="cfg-is-extra-filters">Other filters</label>
-                            <input type="text" id="cfg-is-extra-filters" placeholder="e.g. b/CALL1/CALL2 t/poimqstunw">
+                            <input type="text" id="cfg-is-extra-filters" placeholder="e.g. b/W1AW/W1AW-1 t/poimqstunw">
                         </div>
                         <div class="settings-row">
                             <label>Combined filter</label>
@@ -1188,6 +1192,126 @@
                             <label for="cfg-track-cleanup">Cleanup Interval (min)</label>
                             <input type="number" id="cfg-track-cleanup" min="1" step="1" value="60">
                         </div>
+                        <div class="settings-row settings-row-stacked">
+                            <label for="cfg-track-blocked-callsigns">Station Blocklist</label>
+                            <textarea id="cfg-track-blocked-callsigns" rows="4" placeholder="W1AW-1&#10;W1AW"></textarea>
+                        </div>
+                        <p class="settings-note">Use CALL-SSID to block one station ID, or CALL to block every SSID for that callsign. Blocked packets are ignored before station, packet, message, and propagation history updates.</p>
+                    </div>
+
+                    <div class="settings-section" data-settings-key="watched-paths" data-summary="Target stations for VHF path opportunity alerts.">
+                        <h3>Watched Paths</h3>
+                        <div class="settings-row">
+                            <label for="cfg-callbook-provider">Lookup Source</label>
+                            <select id="cfg-callbook-provider">
+                                <option value="auto">Auto: Callook, HamDB, then configured sources</option>
+                                <option value="callook">Callook (U.S. FCC)</option>
+                                <option value="hamdb">HamDB</option>
+                                <option value="qrz">QRZ XML</option>
+                                <option value="hamqth">HamQTH</option>
+                            </select>
+                        </div>
+                        <div class="watched-builder">
+                            <div class="watched-builder-grid">
+                                <div class="settings-row">
+                                    <label for="cfg-callbook-hamqth-user">HamQTH User</label>
+                                    <input type="text" id="cfg-callbook-hamqth-user" autocomplete="username">
+                                </div>
+                                <div class="settings-row">
+                                    <label for="cfg-callbook-hamqth-pass">HamQTH Password</label>
+                                    <input type="password" id="cfg-callbook-hamqth-pass" autocomplete="current-password">
+                                </div>
+                                <div class="settings-row">
+                                    <label for="cfg-callbook-qrz-user">QRZ User</label>
+                                    <input type="text" id="cfg-callbook-qrz-user" autocomplete="username">
+                                </div>
+                                <div class="settings-row">
+                                    <label for="cfg-callbook-qrz-pass">QRZ Password</label>
+                                    <input type="password" id="cfg-callbook-qrz-pass" autocomplete="current-password">
+                                </div>
+                            </div>
+                            <div class="settings-row watched-builder-search">
+                                <label for="watched-builder-callsign">Station</label>
+                                <div class="watched-builder-search-controls">
+                                    <input type="text" id="watched-builder-callsign" placeholder="W1AW">
+                                    <button type="button" class="btn-small" id="btn-watched-lookup">Lookup</button>
+                                </div>
+                            </div>
+                            <div id="watched-builder-result" class="watched-builder-result">Enter a callsign and lookup its station location.</div>
+                            <div class="watched-builder-grid">
+                                <div class="settings-row">
+                                    <label for="watched-builder-grid">Grid</label>
+                                    <input type="text" id="watched-builder-grid" placeholder="EM85">
+                                </div>
+                                <div class="settings-row">
+                                    <label for="watched-builder-lat">Latitude</label>
+                                    <input type="number" id="watched-builder-lat" step="any" placeholder="35.0000">
+                                </div>
+                                <div class="settings-row">
+                                    <label for="watched-builder-lon">Longitude</label>
+                                    <input type="number" id="watched-builder-lon" step="any" placeholder="-80.0000">
+                                </div>
+                                <div class="settings-row">
+                                    <label for="watched-builder-band">Band</label>
+                                    <select id="watched-builder-band">
+                                        <option value="6m">6m</option>
+                                        <option value="2m" selected>2m</option>
+                                        <option value="1.25m">1.25m</option>
+                                        <option value="70cm">70cm</option>
+                                        <option value="33cm">33cm</option>
+                                    </select>
+                                </div>
+                                <div class="settings-row">
+                                    <label for="watched-builder-mode">Mode</label>
+                                    <select id="watched-builder-mode">
+                                        <option value="">Any</option>
+                                        <option value="SSB" selected>SSB</option>
+                                        <option value="FM">FM</option>
+                                        <option value="CW">CW</option>
+                                        <option value="FT8">FT8</option>
+                                        <option value="MSK144">MSK144</option>
+                                        <option value="AM">AM</option>
+                                        <option value="Digital">Digital</option>
+                                    </select>
+                                </div>
+                                <div class="settings-row">
+                                    <label for="watched-builder-confidence">Confidence</label>
+                                    <select id="watched-builder-confidence">
+                                        <option value="low">Low</option>
+                                        <option value="medium" selected>Medium</option>
+                                        <option value="high">High</option>
+                                    </select>
+                                </div>
+                                <div class="settings-row">
+                                    <label for="watched-builder-frequency">Frequency MHz</label>
+                                    <input type="number" id="watched-builder-frequency" min="0" step="0.001" value="144.200">
+                                </div>
+                                <div class="settings-row">
+                                    <label for="watched-builder-my-height-ft">My Antenna Height ft</label>
+                                    <input type="number" id="watched-builder-my-height-ft" min="0" max="2000" step="1" value="33">
+                                </div>
+                                <div class="settings-row">
+                                    <label for="watched-builder-target-height-ft">Target Height ft</label>
+                                    <input type="number" id="watched-builder-target-height-ft" min="0" max="2000" step="1" value="33">
+                                </div>
+                                <div class="settings-row">
+                                    <label for="watched-builder-power-w">Power W</label>
+                                    <input type="number" id="watched-builder-power-w" min="0.1" max="2000" step="any" value="50">
+                                </div>
+                                <div class="settings-row">
+                                    <label for="watched-builder-gain-dbi">Antenna Gain dBi</label>
+                                    <input type="number" id="watched-builder-gain-dbi" min="-20" max="30" step="0.1" value="0">
+                                </div>
+                            </div>
+                            <div class="settings-row settings-action-row">
+                                <button type="button" class="btn-primary" id="btn-watched-add">Add Watched Path</button>
+                            </div>
+                        </div>
+                        <div class="settings-row settings-row-stacked">
+                            <label for="cfg-watched-paths">Advanced Target List</label>
+                            <textarea id="cfg-watched-paths" rows="5" placeholder="W1AW|35.0000|-80.0000|2m|medium|SSB|144.200|10|10|50|0&#10;W1AW-7|EM85|6m|low|FT8|50.313|10|10|50|0"></textarea>
+                        </div>
+                        <p class="settings-note">Use the builder for normal entries. Auto lookup uses Callook and HamDB before optional QRZ/HamQTH credentials. Returned locations are license or callbook address locations; override grid or coordinates when you know the actual station site. Advanced height values are meters.</p>
                     </div>
 
                     <div class="settings-section" data-settings-key="messaging" data-summary="Message history retention and contact directory behavior.">
@@ -1261,8 +1385,7 @@
                             <label>Status Preview</label>
                             <div id="cfg-status-preview" class="status-preview">Not checked</div>
                         </div>
-                        <div class="settings-row">
-                            <label></label>
+                        <div class="settings-row settings-action-row">
                             <button type="button" class="btn-small" id="btn-status-preview">Preview Next Beacon</button>
                             <button type="button" class="btn-small" id="btn-status-test">Transmit Now</button>
                         </div>
@@ -1326,8 +1449,7 @@
                             <label>WXnow Preview</label>
                             <div id="cfg-wxnow-preview" class="status-preview">Preview has not been run.</div>
                         </div>
-                        <div class="settings-row">
-                            <label></label>
+                        <div class="settings-row settings-action-row">
                             <button type="button" class="btn-small" id="btn-wxnow-preview">Preview WXnow</button>
                             <button type="button" class="btn-small" id="btn-wxnow-test">Transmit Now</button>
                         </div>
@@ -1608,8 +1730,7 @@
                             <label>Alert Tuning Helper</label>
                             <div id="cfg-alerts-recommendations" class="status-preview alert-recommendations">Run the helper after collecting RF data for 24 hours.</div>
                         </div>
-                        <div class="settings-row">
-                            <label></label>
+                        <div class="settings-row settings-action-row">
                             <button type="button" class="btn-small" id="btn-alerts-recommend">Analyze Last 24h</button>
                             <button type="button" class="btn-small" id="btn-alerts-apply-recommendations" disabled>Apply Suggestions</button>
                         </div>
@@ -1645,8 +1766,7 @@
                             <label for="cfg-alerts-sms">SMS</label>
                             <input type="checkbox" id="cfg-alerts-sms">
                         </div>
-                        <div class="settings-row">
-                            <label></label>
+                        <div class="settings-row settings-action-row">
                             <button type="button" class="btn-small" id="btn-alerts-test">Send Test Alert</button>
                         </div>
                         <div class="settings-row settings-row-stacked">
@@ -1667,8 +1787,7 @@
                             <label for="cfg-alerts-msg-sms">SMS</label>
                             <input type="checkbox" id="cfg-alerts-msg-sms">
                         </div>
-                        <div class="settings-row">
-                            <label></label>
+                        <div class="settings-row settings-action-row">
                             <button type="button" class="btn-small" id="btn-alerts-msg-test">Send Test Message Notification</button>
                         </div>
                         <div class="settings-row settings-row-stacked">
@@ -1754,18 +1873,20 @@
                         </div>
                         <div class="settings-row full-width">
                             <label for="cfg-mqtt-watched-callsigns">Watched Callsigns</label>
-                            <textarea id="cfg-mqtt-watched-callsigns" rows="3" placeholder="K5YVY-1, WB5TZN-1"></textarea>
+                            <textarea id="cfg-mqtt-watched-callsigns" rows="3" placeholder="W1AW, W1AW-7"></textarea>
                         </div>
-                        <div class="settings-row">
-                            <label></label>
+                        <div class="settings-row settings-action-row">
                             <button type="button" class="btn-small" id="btn-mqtt-guide">Open MQTT Setup Guide</button>
                         </div>
                         <p class="settings-note">PropView publishes to an MQTT broker. MQTT reconnects after saving connection or discovery changes and republishes Home Assistant Discovery config topics.</p>
                     </div>
 
                     <div class="settings-actions">
-                        <button id="btn-save-settings" class="btn-primary btn-save-settings">💾 Save Configuration</button>
-                        <p class="settings-note">Most settings apply immediately. KISS and web host/port changes require a restart.</p>
+                        <button id="btn-save-settings" class="btn-primary btn-save-settings">
+                            <span>Save Configuration</span>
+                            <span id="settings-unsaved-count" class="settings-unsaved-count" hidden></span>
+                        </button>
+                        <p class="settings-note">After saving, PropView will state whether changes applied now, need a browser refresh, or require a full application restart.</p>
                     </div>
                 </div>
             </div>
@@ -1775,7 +1896,7 @@
                 <div class="about-panel">
                     <div class="about-header">
                         <h2>APRS PropView</h2>
-                        <span id="about-version" class="about-version">v1.6.2</span>
+                        <span id="about-version" class="about-version">v1.7.0</span>
                     </div>
                     <div class="about-section">
                         <p>A real-time APRS digipeater and IGate focused on VHF propagation, live mapping, APRS messaging, analytics, and weather-aware situational awareness.</p>
@@ -1792,9 +1913,9 @@
                     </div>
                     <div class="about-section">
                         <h3>Build Info</h3>
-                        <p>Version: <span id="about-version-detail">1.6.2</span></p>
-                        <p>Release Date: <span id="about-date">June 18, 2026</span></p>
-                        <p>Highlights: Windows updater handoff reliability, fewer false download errors during shutdown, installer launch checkbox working directory fix, and restart-manager conflict avoidance.</p>
+                        <p>Version: <span id="about-version-detail">1.7.0</span></p>
+                        <p>Release Date: <span id="about-date">June 23, 2026</span></p>
+                        <p>Highlights: watched VHF path opportunity alerts, callsign location lookup, station blocklists, malformed APRS position protection, antenna-aware scoring, and a redesigned Settings workspace.</p>
                     </div>
                     <div class="about-section">
                         <h3>Video Guide</h3>
@@ -1825,6 +1946,10 @@
                                 <img src="https://www.paypalobjects.com/paypal-ui/logos/svg/paypal-wordmark-color.svg" alt="PayPal" class="about-donate-paypal">
                             </section>
                         </form>
+                        <div class="about-donate-divider" role="separator">or</div>
+                        <div class="about-coffee">
+                            <script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="K5YVY" data-color="#5F7FFF" data-emoji="" data-font="Cookie" data-text="Buy me a PropView Coffee" data-outline-color="#000000" data-font-color="#ffffff" data-coffee-color="#FFDD00"></script>
+                        </div>
                     </div>
                     <div id="about-documentation-actions" class="about-section about-doc-actions">
                         <a href="/static/documentation.html" target="_blank" rel="noreferrer" class="btn-primary about-doc-btn">Full HTML Documentation</a>
@@ -1961,7 +2086,7 @@
                         <tr><td>🔎</td><td><b>Auto-Fit</b> — Automatically zoom to fit all visible stations. Turns off when you manually pan or zoom; click again to re-enable.</td></tr>
                         <tr><td>Cache</td><td><b>Cache Visible Tiles</b> - Downloads the currently visible base-map tiles at the current zoom into <code>map_tile_cache/</code>. Use it while online before field/offline operation, and repeat at each zoom level you need.</td></tr>
                         <tr><td>⏱️</td><td><b>Line Time Filter</b> — Only show path lines from stations heard within the selected window (1h, 6h, 12h, 24h, or all time).</td></tr>
-                        <tr><td>Line</td><td><b>Line Style</b> - Choose distance or custom color, line weight, opacity, and solid/dashed/dotted patterns. Bidirectional arrows are offset so opposing paths remain readable.</td></tr>
+                        <tr><td>Line</td><td><b>Line Style</b> - Choose distance or custom color, line weight, opacity, solid/dashed/dotted patterns, and show/hide watched VHF path lines. Bidirectional arrows are offset so opposing paths remain readable.</td></tr>
                         <tr><td>Size</td><td><b>Station Symbol Size</b> - Scale map station symbols from compact to large for dense desktop views, touch screens, or presentation displays.</td></tr>
                         <tr><td>Obj</td><td><b>Create APRS Object</b> - Click a map location, enter object details, choose the transmit route/path, and save it to the scheduled APRS object list.</td></tr>
                         <tr><td>🏷️ Types ▾</td><td><b>Type Filter</b> — Check/uncheck station categories (Digipeater, Weather, House, Car, etc.) to control which types appear on the map.</td></tr>
@@ -1984,7 +2109,7 @@
                 <section class="help-section">
                     <h3>💬 Messages Tab</h3>
                     <p>Send and receive APRS messages. Type a destination callsign and message text (max 67 characters), then click Send. Incoming messages appear with ack/rej status indicators. Click any received message's callsign to auto-fill the To field for a quick reply.</p>
-                    <p>Messages addressed to sibling SSIDs can optionally appear in the inbox. For example, a station running as <code>K5YVY-1</code> can show messages sent to <code>K5YVY-7</code> or <code>K5YVY-9</code>; only exact station-ID messages are auto-ACKed.</p>
+                    <p>Messages addressed to sibling SSIDs can optionally appear in the inbox. For example, a station running as <code>W1AW-1</code> can show messages sent to <code>W1AW-7</code> or <code>W1AW-9</code>; only exact station-ID messages are auto-ACKed.</p>
                     <p>Use the sort selector to view newest-to-oldest or oldest-to-newest. The mobile UI includes the same ordering behavior and a manual refresh button.</p>
                     <p>Message notification channels (Discord, Email, SMS) are configured separately from band-opening alert channels in Settings → Alerts.</p>
                 </section>
@@ -2010,8 +2135,9 @@
 
                 <section class="help-section">
                     <h3>⚙️ Settings</h3>
-                    <p>All settings are saved to <code>config.toml</code> next to the executable. Most UI, weather, alert, and analytics changes apply live; transport-layer changes such as TNC connection settings may still require a restart.</p>
-                    <p>The top of Settings includes a first-run checklist, settings import/export buttons for safe experimentation, and a last-transmitted history panel for station, WXnow, status, MHeard, and weather-alert beacons.</p>
+                    <p>All settings are saved to <code>config.toml</code> next to the executable. The category rail and search box replace the older single scrolling list. Modified sections pulse yellow, the sticky save action shows the number of changed sections, and each section can be restored to its last saved values.</p>
+                    <p>After saving, PropView clearly reports whether settings applied immediately, require a browser refresh, or require a full application restart. Restart warnings name only settings whose values actually changed.</p>
+                    <p>The Overview category includes a first-run checklist, settings import/export buttons for safe experimentation, and a last-transmitted history panel for station, WXnow, status, MHeard, and weather-alert beacons.</p>
                     <h4>Station</h4>
                     <p>Your callsign, SSID, latitude/longitude (or use the 📌 map picker), APRS symbol, status comment, beacon interval (minutes), and beacon path (e.g. <code>WIDE1-1</code>). Use <b>Preview Station Beacon</b> to inspect the exact packet text before using <b>Transmit Station Now</b>.</p>
                     <h4>Smart Beaconing</h4>
@@ -2037,6 +2163,11 @@
                     <p>Server/port (default: <code>rotate.aprs2.net:14580</code>), your APRS-IS passcode, fixed or moving range filter mode, range in miles, and any extra filter expressions. Fixed stations generate filters like <code>r/35/-79/80</code>; moving/mobile clients can use <code>m/80</code>. Extra javAPRS filters such as <code>b/CALL</code>, <code>t/poimqstunw</code>, or <code>-p/CW</code> are appended as entered. Private/local APRS-IS-style servers that do not send a banner or <code>logresp</code> can still populate receive traffic; without login verification PropView keeps that connection read-only.</p>
                     <h4>RF Ports</h4>
                     <p>Add one or more named serial or TCP ports. Serial ports can use binary KISS frames or receive-only TNC2 monitor text for older radios. Kenwood TH-D7/TH-D7E users commonly need PACKET mode, 9600 bps PC speed, and Xon/Xoff flow control. Legacy single serial/TCP controls have been replaced by this multi-port list, but old saved config is imported automatically.</p>
+                    <h4>Tracking Blocklist</h4>
+                    <p>Use <code>CALL-SSID</code> to reject one station identifier or a base <code>CALL</code> to reject every SSID. Blocked packets are ignored before station, packet, message, propagation, and history updates.</p>
+                    <h4>Watched VHF Paths</h4>
+                    <p>Watched Paths alerts when observed RF enhancement in a target direction reaches or exceeds the distance to a selected station. Enter a callsign and use Callook, HamDB, optional QRZ XML, or HamQTH lookup to populate a starting location, then correct the grid or coordinates if the operating site differs from the license address.</p>
+                    <p>Select band, mode, frequency, and confidence, then enter local/target antenna height, transmit power, and antenna gain. PropView shows radio-horizon, EIRP, and capability context while still requiring matching live propagation evidence. Watched path lines can be shown or hidden from the map Line options.</p>
                     <h4>Status, Dynamic, MHeard, and Weather Alert Beacons</h4>
                     <p>Status/DX can transmit a compact propagation summary, rotate preset dynamic messages in sequence or randomly, send a direct-heard RF MHeard list, or beacon severe weather alert text when active. Use <b>Preview Next Beacon</b> and the weather-alert preview before one-shot transmit or enabling periodic beaconing.</p>
                     <h4>Bulletins and APRS Objects</h4>

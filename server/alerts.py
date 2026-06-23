@@ -423,6 +423,8 @@ class AlertManager:
             return "\U0001f4c8 Propagation Anomaly Detected"
         if alert_type == "sporadic_e":
             return "\u26a1 Possible Sporadic-E Event"
+        if alert_type == "watched_path":
+            return "Watched VHF Path Opportunity"
         return "\U0001f50d Regional VHF Band Watch"
 
     def _alert_embed_color(self, alert: Dict[str, Any]) -> int:
@@ -435,6 +437,8 @@ class AlertManager:
             return 0xE63946
         if alert_type == "sporadic_e":
             return 0xF4A261
+        if alert_type == "watched_path":
+            return 0x3BA55D
         return 0xFFA500
 
     def _alert_embed_fields(self, alert: Dict[str, Any]) -> list[Dict[str, Any]]:
@@ -489,6 +493,25 @@ class AlertManager:
                 {"name": "Candidates", "value": str(alert.get("candidate_count", 0)), "inline": True},
                 {"name": "Max Distance", "value": f"{alert.get('max_distance_km', 0)} km", "inline": True},
             ]
+        if alert_type == "watched_path":
+            probes = alert.get("probes") or []
+            fields = [
+                {"name": "Target", "value": str(alert.get("callsign", "?")), "inline": True},
+                {"name": "Band", "value": str(alert.get("band", "?")), "inline": True},
+                {"name": "Confidence", "value": f"{str(alert.get('confidence', 'none')).upper()} ({alert.get('score', 0)})", "inline": True},
+                {"name": "Path", "value": f"{alert.get('target_distance_km', 0)} km bearing {alert.get('target_heading', '?')} deg", "inline": True},
+                {"name": "RF Probes", "value": str(alert.get("probe_count", 0)), "inline": True},
+            ]
+            if probes:
+                fields.append({
+                    "name": "Top Evidence",
+                    "value": "\n".join(
+                        f"{p.get('callsign', '?')}: {p.get('distance_km', 0)} km, {p.get('heading_diff', 0)} deg off, score {p.get('score', 0)}"
+                        for p in probes[:5]
+                    ),
+                    "inline": False,
+                })
+            return fields
         return []
 
     async def _send_discord(self, alert: Dict[str, Any]):
@@ -537,6 +560,7 @@ class AlertManager:
 
             subject = (
                 "APRS PropView \u2014 MY STATION Band Opening!" if alert.get("type") == "my_station_opening"
+                else "APRS PropView \u2014 Watched VHF Path Opportunity" if alert.get("type") == "watched_path"
                 else "APRS PropView \u2014 Test Alert" if alert.get("type") == "test"
                 else "APRS PropView \u2014 Regional VHF Band Watch"
             )
@@ -580,14 +604,15 @@ class AlertManager:
 
             sms_label = (
                 "MY STATION BAND OPENING!" if alert.get("type") == "my_station_opening"
+                else "WATCHED VHF PATH!" if alert.get("type") == "watched_path"
                 else "REGIONAL VHF WATCH"
             )
-            if alert.get("type") in {"my_station_opening", "regional_watch"}:
+            if alert.get("type") in {"my_station_opening", "regional_watch", "watched_path"}:
                 sms_text = (
                     f"{sms_label} "
-                    f"RF:{alert.get('rf_stations', 0)} "
-                    f"Max:{alert.get('max_distance_km', 0)}km "
-                    f"Prop:{str(alert.get('level', 'none')).upper()}"
+                    f"{alert.get('callsign', '')} "
+                    f"Score:{alert.get('score', 0)} "
+                    f"Conf:{str(alert.get('confidence', alert.get('level', 'none'))).upper()}"
                 )
             else:
                 sms_text = alert["message"]
@@ -809,6 +834,12 @@ class AlertManager:
     def get_alert_history(self) -> List[Dict[str, Any]]:
         """Return recent alert history."""
         return list(reversed(self._alert_history))
+
+    def record_alert(self, alert: Dict[str, Any]):
+        """Record an externally-generated alert in the common history list."""
+        self._alert_history.append(alert)
+        if len(self._alert_history) > 100:
+            self._alert_history = self._alert_history[-100:]
 
     def get_status(self) -> Dict[str, Any]:
         """Return current alert system status."""

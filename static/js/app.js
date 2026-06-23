@@ -269,6 +269,7 @@
         initStatusDxControls();
         initScheduledPacketControls();
         initAlertTestControls();
+        initWatchedPathBuilder();
         initRfPortsControls();
         initUpdateCheckerUi();
         initGpsControls();
@@ -402,10 +403,20 @@
             });
         });
 
+        const settingsHash = location.hash.match(/^#settings\/([a-z-]+)$/);
         const savedTab = _loadUIState().activeTab;
-        if (savedTab && document.getElementById(savedTab)) {
+        if (settingsHash) {
+            _activateDesktopTab('tab-settings', false);
+        } else if (savedTab && document.getElementById(savedTab)) {
             _activateDesktopTab(savedTab, false);
         }
+
+        window.addEventListener('hashchange', () => {
+            const match = location.hash.match(/^#settings\/([a-z-]+)$/);
+            if (!match) return;
+            _activateDesktopTab('tab-settings', false);
+            window.pvActivateSettingsCategory?.(match[1], false);
+        });
     }
 
     // ── Sidebar toggle ─────────────────────────────────────────
@@ -443,55 +454,65 @@
         const collapsed = new Set(_loadCollapsedSettings());
         const sections = Array.from(panel.querySelectorAll('.settings-section'));
         if (!sections.length) return;
+        const utilityGrid = panel.querySelector('.settings-utility-grid');
+        const bottomActions = Array.from(panel.children).find((el) => el.classList?.contains('settings-actions'));
+        const categories = [
+            { key: 'overview', title: 'Overview', summary: 'Checklist, backups, transmit history', sections: [] },
+            { key: 'station', title: 'Station & Location', summary: 'Identity, GPS, beaconing', sections: ['station', 'smart-beaconing'] },
+            { key: 'radio', title: 'Radio & TNC', summary: 'RF ports, digi, IGate, APRS-IS', sections: ['rf-ports', 'digipeater', 'igate', 'aprsis'] },
+            { key: 'aprs', title: 'APRS', summary: 'Bulletins, objects, status, WXnow', sections: ['bulletins', 'aprs-objects', 'status-dx', 'wxnow'] },
+            { key: 'tracking', title: 'Tracking & Callsigns', summary: 'Retention, blocklist, callbook, messages', sections: ['tracking', 'messaging'] },
+            { key: 'propagation', title: 'Propagation', summary: 'Scoring and watched VHF paths', sections: ['propagation', 'watched-paths'] },
+            { key: 'alerts', title: 'Alerts & Weather', summary: 'Notifications, radar, severe weather', sections: ['alerts', 'weather'] },
+            { key: 'display', title: 'Map & Display', summary: 'Map tiles, theme, units, web UI', sections: ['web'] },
+            { key: 'integrations', title: 'Integrations', summary: 'MQTT and Home Assistant', sections: ['mqtt'] },
+        ];
+        const categoryBySection = new Map();
+        categories.forEach((category) => {
+            category.sections.forEach((key) => categoryBySection.set(key, category.key));
+        });
+        sections.forEach((section) => {
+            section.dataset.settingsCategory = categoryBySection.get(section.dataset.settingsKey) || 'integrations';
+        });
 
         const toolbar = document.createElement('div');
         toolbar.className = 'settings-toolbar';
         toolbar.innerHTML = `
             <div class="settings-toolbar-search">
-                <input type="search" class="settings-search-input" placeholder="Find a setting or section">
+                <input type="search" class="settings-search-input" placeholder="Search settings" aria-label="Search settings">
             </div>
+            <select class="settings-category-select" aria-label="Settings category"></select>
             <div class="settings-toolbar-actions">
-                <button type="button" class="settings-toolbar-btn" data-settings-action="expand">Expand all</button>
-                <button type="button" class="settings-toolbar-btn" data-settings-action="collapse">Collapse all</button>
-                <button type="button" class="settings-toolbar-btn" data-settings-action="reset">Show all</button>
+                <button type="button" class="settings-toolbar-btn" data-settings-action="expand">Expand</button>
+                <button type="button" class="settings-toolbar-btn" data-settings-action="collapse">Collapse</button>
+                <button type="button" class="settings-toolbar-btn" data-settings-action="clear-search">Clear Search</button>
             </div>
         `;
 
         const searchInput = toolbar.querySelector('.settings-search-input');
+        const categorySelect = toolbar.querySelector('.settings-category-select');
         const quickNav = document.createElement('div');
         quickNav.className = 'settings-quicknav';
+        quickNav.setAttribute('aria-label', 'Settings categories');
+        const workspace = document.createElement('div');
+        workspace.className = 'settings-workspace';
+        const content = document.createElement('div');
+        content.className = 'settings-category-content';
+        const categoryHeader = document.createElement('div');
+        categoryHeader.className = 'settings-category-header';
+        categoryHeader.innerHTML = `
+            <div>
+                <h2 class="settings-category-heading"></h2>
+                <p class="settings-category-summary"></p>
+            </div>
+        `;
+        const contextPanel = document.createElement('aside');
+        contextPanel.className = 'settings-context-panel';
+        contextPanel.setAttribute('aria-label', 'Settings category help');
         const sectionRefs = [];
         const noResults = document.createElement('div');
         noResults.className = 'settings-no-results';
         noResults.textContent = 'No settings matched that search.';
-
-        function updateStickyOffsets() {
-            const headerHeight = panel.querySelector('.settings-pane-header')?.offsetHeight || 0;
-            const toolbarHeight = toolbar.offsetHeight || 0;
-            toolbar.style.top = `${headerHeight}px`;
-            quickNav.style.top = `${headerHeight + toolbarHeight}px`;
-            panel.style.setProperty('--settings-sticky-offset', `${headerHeight + toolbarHeight + (quickNav.offsetHeight || 0) + 10}px`);
-        }
-
-        function scrollSectionIntoView(section) {
-            const toolbarHeight = toolbar.offsetHeight || 0;
-            const quickNavHeight = quickNav.offsetHeight || 0;
-            const headerHeight = panel.querySelector('.settings-pane-header')?.offsetHeight || 0;
-            const extraGap = 8;
-            const targetTop =
-                panel.scrollTop +
-                section.getBoundingClientRect().top -
-                panel.getBoundingClientRect().top -
-                headerHeight -
-                toolbarHeight -
-                quickNavHeight -
-                extraGap;
-
-            panel.scrollTo({
-                top: Math.max(0, targetTop),
-                behavior: 'smooth',
-            });
-        }
 
         sections.forEach((section, index) => {
             const heading = section.querySelector('h3');
@@ -511,6 +532,15 @@
             titleEl.textContent = title;
             titleWrap.appendChild(titleEl);
 
+            const headerActions = document.createElement('div');
+            headerActions.className = 'settings-section-header-actions';
+            const reset = document.createElement('button');
+            reset.type = 'button';
+            reset.className = 'settings-section-reset';
+            reset.textContent = 'Reset Section';
+            reset.title = 'Restore this section to its last saved values';
+            reset.addEventListener('click', () => resetSettingsSection(section));
+
             const toggle = document.createElement('button');
             toggle.type = 'button';
             toggle.className = 'settings-section-toggle';
@@ -521,7 +551,9 @@
             });
 
             header.appendChild(titleWrap);
-            header.appendChild(toggle);
+            headerActions.appendChild(reset);
+            headerActions.appendChild(toggle);
+            header.appendChild(headerActions);
 
             const body = document.createElement('div');
             body.className = 'settings-section-body';
@@ -535,29 +567,141 @@
 
             if (collapsed.has(key)) section.classList.add('collapsed');
             _syncSettingsSectionState(section, toggle, collapsed, false);
+            content.appendChild(section);
+            sectionRefs.push({ section, toggle, key, title, summary });
+        });
 
+        categories.forEach((category) => {
             const navBtn = document.createElement('button');
             navBtn.type = 'button';
             navBtn.className = 'settings-quicknav-btn';
-            navBtn.innerHTML = `<span class="settings-quicknav-title">${_escapeHTML(title)}</span>`;
-            navBtn.addEventListener('click', () => {
-                if (section.classList.contains('collapsed')) {
-                    section.classList.remove('collapsed');
-                    _syncSettingsSectionState(section, toggle, collapsed);
-                    _saveCollapsedSettings(collapsed);
-                }
-                updateStickyOffsets();
-                scrollSectionIntoView(section);
-            });
+            navBtn.dataset.settingsCategory = category.key;
+            navBtn.innerHTML = `
+                <span class="settings-quicknav-copy">
+                    <span class="settings-quicknav-title">${_escapeHTML(category.title)}</span>
+                    <span class="settings-quicknav-desc">${_escapeHTML(category.summary)}</span>
+                </span>
+                <span class="settings-category-dirty-dot" aria-hidden="true"></span>
+            `;
+            navBtn.addEventListener('click', () => activateSettingsCategory(category.key));
             quickNav.appendChild(navBtn);
-            sectionRefs.push({ section, navBtn, toggle });
+
+            const option = document.createElement('option');
+            option.value = category.key;
+            option.textContent = `${category.title} - ${category.summary}`;
+            categorySelect.appendChild(option);
         });
+        categorySelect.addEventListener('change', () => activateSettingsCategory(categorySelect.value));
+
+        if (utilityGrid) {
+            utilityGrid.dataset.settingsCategory = 'overview';
+            content.prepend(utilityGrid);
+        }
+        content.prepend(noResults);
+        content.prepend(categoryHeader);
+        workspace.appendChild(quickNav);
+        workspace.appendChild(content);
+        workspace.appendChild(contextPanel);
+
+        function updateSettingsContext(categoryKey) {
+            const category = categories.find((item) => item.key === categoryKey) || categories[0];
+            const categorySections = sectionRefs.filter(({ section }) =>
+                section.dataset.settingsCategory === category.key
+            );
+            const dirtySections = sectionRefs.filter(({ section }) =>
+                section.classList.contains('settings-section-dirty')
+            );
+            const heading = categoryHeader.querySelector('.settings-category-heading');
+            const summary = categoryHeader.querySelector('.settings-category-summary');
+            if (heading) heading.textContent = category.title;
+            if (summary) summary.textContent = category.summary;
+
+            const includedItems = category.key === 'overview'
+                ? '<li>First-run checklist</li><li>Settings backup and restore</li><li>Recent transmit history</li>'
+                : categorySections.map(({ key, title, summary: sectionSummary }) => `
+                    <li>
+                        <button type="button" data-settings-section-link="${_escapeHTML(key)}">
+                            <strong>${_escapeHTML(title)}</strong>
+                            <span>${_escapeHTML(sectionSummary)}</span>
+                        </button>
+                    </li>
+                `).join('');
+            const changedItems = dirtySections.length
+                ? dirtySections.map(({ title, section }) => `
+                    <li>
+                        <button type="button" data-settings-dirty-link="${_escapeHTML(section.dataset.settingsKey)}">
+                            ${_escapeHTML(title)}
+                        </button>
+                    </li>
+                `).join('')
+                : '<li class="settings-context-empty">No unsaved changes</li>';
+
+            contextPanel.innerHTML = `
+                <section>
+                    <h3>In This Category</h3>
+                    <ul class="settings-context-list">${includedItems}</ul>
+                </section>
+                <section>
+                    <h3>Modified Sections</h3>
+                    <ul class="settings-context-list settings-context-modified">${changedItems}</ul>
+                </section>
+                <section class="settings-context-tip">
+                    <h3>Working With Settings</h3>
+                    <p>Changes pulse yellow until saved. Reset Section restores the last saved values for that section.</p>
+                </section>
+            `;
+        }
+
+        contextPanel.addEventListener('click', (e) => {
+            const button = e.target.closest('[data-settings-section-link], [data-settings-dirty-link]');
+            if (!button) return;
+            const key = button.dataset.settingsSectionLink || button.dataset.settingsDirtyLink;
+            const ref = sectionRefs.find((item) => item.key === key);
+            if (!ref) return;
+            const category = ref.section.dataset.settingsCategory;
+            activateSettingsCategory(category);
+            ref.section.classList.remove('collapsed');
+            _syncSettingsSectionState(ref.section, ref.toggle, collapsed);
+            ref.section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+
+        function activateSettingsCategory(categoryKey, updateUrl = true) {
+            const validKey = categories.some((category) => category.key === categoryKey) ? categoryKey : 'overview';
+            const searching = !!searchInput.value.trim();
+            searchInput.value = '';
+            noResults.classList.remove('visible');
+            sections.forEach((section) => {
+                section.classList.remove('settings-hidden');
+                section.classList.toggle('settings-category-inactive', section.dataset.settingsCategory !== validKey);
+            });
+            if (utilityGrid) utilityGrid.classList.toggle('settings-category-inactive', validKey !== 'overview');
+            quickNav.querySelectorAll('.settings-quicknav-btn').forEach((btn) => {
+                btn.classList.toggle('active', btn.dataset.settingsCategory === validKey);
+            });
+            categorySelect.value = validKey;
+            const uiState = _loadUIState();
+            uiState.settingsCategory = validKey;
+            _saveUIState(uiState);
+            panel.dataset.activeSettingsCategory = validKey;
+            content.scrollTop = 0;
+            updateSettingsContext(validKey);
+            if (updateUrl && !searching) {
+                history.replaceState(null, '', `${location.pathname}${location.search}#settings/${validKey}`);
+            }
+        }
+        window.pvActivateSettingsCategory = activateSettingsCategory;
+        window.pvRefreshSettingsContext = () => {
+            updateSettingsContext(panel.dataset.activeSettingsCategory || 'overview');
+        };
 
         toolbar.addEventListener('click', (e) => {
             const btn = e.target.closest('[data-settings-action]');
             if (!btn) return;
 
-            const visibleRefs = sectionRefs.filter(({ section }) => !section.classList.contains('settings-hidden'));
+            const visibleRefs = sectionRefs.filter(({ section }) =>
+                !section.classList.contains('settings-hidden') &&
+                !section.classList.contains('settings-category-inactive')
+            );
             if (btn.dataset.settingsAction === 'expand') {
                 visibleRefs.forEach(({ section, toggle }) => {
                     section.classList.remove('collapsed');
@@ -577,33 +721,66 @@
             }
 
             if (searchInput) searchInput.value = '';
-            sectionRefs.forEach(({ section, navBtn }) => {
+            sectionRefs.forEach(({ section }) => {
                 section.classList.remove('settings-hidden');
-                navBtn.classList.remove('settings-hidden');
             });
             noResults.classList.remove('visible');
+            activateSettingsCategory(panel.dataset.activeSettingsCategory || 'overview');
         });
 
         searchInput?.addEventListener('input', () => {
             const query = searchInput.value.trim().toLowerCase();
+            if (!query) {
+                activateSettingsCategory(panel.dataset.activeSettingsCategory || 'overview', false);
+                return;
+            }
             let visibleCount = 0;
 
-            sectionRefs.forEach(({ section, navBtn }) => {
+            if (utilityGrid) utilityGrid.classList.add('settings-category-inactive');
+            const heading = categoryHeader.querySelector('.settings-category-heading');
+            const summary = categoryHeader.querySelector('.settings-category-summary');
+            if (heading) heading.textContent = 'Search Results';
+            if (summary) summary.textContent = `Settings matching "${searchInput.value.trim()}"`;
+            sectionRefs.forEach(({ section }) => {
                 const matches = !query || (section.dataset.searchText || '').includes(query);
                 section.classList.toggle('settings-hidden', !matches);
-                navBtn.classList.toggle('settings-hidden', !matches);
+                section.classList.remove('settings-category-inactive');
                 if (matches) visibleCount += 1;
             });
 
             noResults.classList.toggle('visible', visibleCount === 0);
         });
 
-        const anchor = panel.querySelector('.settings-section');
-        panel.insertBefore(toolbar, anchor);
-        panel.insertBefore(quickNav, anchor);
-        panel.insertBefore(noResults, anchor);
-        updateStickyOffsets();
-        window.addEventListener('resize', updateStickyOffsets);
+        panel.insertBefore(toolbar, bottomActions || null);
+        panel.insertBefore(workspace, bottomActions || null);
+        if (bottomActions) panel.appendChild(bottomActions);
+
+        const hashCategory = location.hash.match(/^#settings\/([a-z-]+)$/)?.[1];
+        activateSettingsCategory(hashCategory || _loadUIState().settingsCategory || 'overview', false);
+    }
+
+    function captureSettingsSnapshots() {
+        document.querySelectorAll('.settings-section').forEach((section) => {
+            section._savedSettingsValues = Array.from(section.querySelectorAll('input, select, textarea'))
+                .filter((control) => control.id !== 'cfg-is-filter')
+                .map((control) => ({
+                    control,
+                    value: control.value,
+                    checked: control.checked,
+                }));
+        });
+    }
+
+    function resetSettingsSection(section) {
+        const snapshot = section?._savedSettingsValues;
+        if (!snapshot?.length) return;
+        snapshot.forEach(({ control, value, checked }) => {
+            if (!control.isConnected) return;
+            if (control.type === 'checkbox' || control.type === 'radio') control.checked = checked;
+            else control.value = value;
+            control.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        markSettingsDirty('Section restored to its last saved values. Save Configuration to apply the reset.', section.querySelector('[id^="cfg-"]'));
     }
 
     function reorderSettingsSections(panel) {
@@ -782,8 +959,8 @@
 
         ws.on('alert', (msg) => {
             if (msg.data) {
-                window.pvAlertAudio?.play(msg.data.type);
-                if (msg.data.type === 'my_station_opening' || msg.data.type === 'regional_watch') {
+                window.pvAlertAudio?.play(msg.data.type === 'watched_path' ? 'regional_watch' : msg.data.type);
+                if (msg.data.type === 'my_station_opening' || msg.data.type === 'regional_watch' || msg.data.type === 'watched_path') {
                     showBandAlertNotification(msg.data);
                 } else if (msg.data.message) {
                     showSystemNotification(msg.data.message, 'info');
@@ -1286,6 +1463,41 @@
         if (data.distances && data.distances.length > 0) {
             drawDistanceChart(data.distances);
         }
+        renderWatchedPaths(data.watched_paths);
+        window.pvMap?.updateWatchedPaths?.(data.watched_paths);
+    }
+
+    function renderWatchedPaths(watched) {
+        const panel = document.getElementById('watched-paths-panel');
+        if (!panel) return;
+        const opportunities = watched?.opportunities || [];
+        if (!opportunities.length) {
+            panel.innerHTML = '<div class="analytics-empty">No watched paths configured.</div>';
+            return;
+        }
+        panel.innerHTML = opportunities.map((item) => {
+            const conf = item.confidence || 'none';
+            const probeLine = item.probes?.length
+                ? item.probes.slice(0, 3).map((p) => `${_escapeHTML(p.callsign || '?')} ${window.formatDist(p.distance_km || 0, 0)} ${Math.round(p.heading_diff || 0)} deg off`).join('<br>')
+                : 'No matching RF probes';
+            const freq = item.frequency_mhz ? `${Number(item.frequency_mhz).toFixed(3)} MHz` : '';
+            const mode = [item.band, item.mode, freq].filter(Boolean).join(' / ');
+            const geometry = (item.path_geometry || '').replace(/_/g, ' ');
+            const profile = `${Math.round((item.my_tx_power_w || 0))} W, ${Number(item.my_antenna_gain_dbi || 0).toFixed(1)} dBi, EIRP ${Math.round(item.my_eirp_w || 0)} W`;
+            const bonus = item.capability_bonus ? `, score adj ${item.capability_bonus > 0 ? '+' : ''}${item.capability_bonus}` : '';
+            return `
+                <div class="watched-path-card watched-path-${_escapeHTML(conf)}">
+                    <div class="watched-path-top">
+                        <strong>${_escapeHTML(item.callsign || 'Target')}</strong>
+                        <span>${_escapeHTML(conf.toUpperCase())} ${Math.round(item.score || 0)}</span>
+                    </div>
+                    <div class="watched-path-meta">${_escapeHTML(mode || 'any band')} - ${window.formatDist(item.target_distance_km || 0, 0)} - bearing ${Math.round(item.target_heading || 0)} deg</div>
+                    <div class="watched-path-meta">${_escapeHTML(geometry || 'geometry unknown')} - horizon ${window.formatDist(item.radio_horizon_km || 0, 0)}</div>
+                    <div class="watched-path-meta">${_escapeHTML(profile + bonus)}</div>
+                    <div class="watched-path-probes">${probeLine}</div>
+                </div>
+            `;
+        }).join('');
     }
 
     // ── Charts ─────────────────────────────────────────────────
@@ -1515,6 +1727,15 @@
         // Create a floating notification banner
         const div = document.createElement('div');
         div.className = 'alert-notification';
+        if (alert.type === 'watched_path') {
+            div.innerHTML = `<span class="alert-notif-icon">!</span> <b>Watched VHF Path</b> ` +
+                `${_escapeHTML(alert.callsign || '')} - ${window.formatDist(alert.target_distance_km || 0, 0)} ` +
+                `bearing ${Math.round(alert.target_heading || 0)} deg - ${_escapeHTML((alert.confidence || 'unknown').toUpperCase())}`;
+            document.body.appendChild(div);
+            setTimeout(() => { div.classList.add('fade-out'); }, 12000);
+            setTimeout(() => { div.remove(); }, 15000);
+            return;
+        }
         const title = alert.type === 'my_station_opening' ? 'My Station Band Opening!' : 'Regional Band Watch';
         div.innerHTML = `<span class="alert-notif-icon">🚨</span> <b>${_escapeHTML(title)}</b> ` +
             `RF: ${alert.rf_stations ?? 0} stations · Max: ${window.formatDist(alert.max_distance_km || 0, 0)} · ` +
@@ -1832,10 +2053,10 @@
         if (!panel) return;
 
         panel.addEventListener('input', (e) => {
-            if (isSettingsControl(e.target)) markSettingsDirty();
+            if (isSettingsControl(e.target)) markSettingsDirty(null, e.target);
         });
         panel.addEventListener('change', (e) => {
-            if (isSettingsControl(e.target)) markSettingsDirty();
+            if (isSettingsControl(e.target)) markSettingsDirty(null, e.target);
         });
     }
 
@@ -1922,9 +2143,77 @@
         );
     }
 
-    function markSettingsDirty(message) {
+    function getSettingsSectionForControl(el) {
+        return el?.closest?.('.settings-section') || null;
+    }
+
+    function markSettingsSectionDirty(el) {
+        const section = getSettingsSectionForControl(el);
+        if (!section) return;
+        section.classList.add('settings-section-dirty');
+        const category = section.dataset.settingsCategory;
+        if (category) {
+            const safeCategory = window.CSS?.escape ? CSS.escape(category) : category.replace(/"/g, '\\"');
+            document
+                .querySelector(`.settings-quicknav-btn[data-settings-category="${safeCategory}"]`)
+                ?.classList.add('settings-section-dirty');
+        }
+        updateSettingsDirtySummary();
+    }
+
+    function updateSettingsDirtySummary() {
+        const dirtySections = Array.from(document.querySelectorAll('.settings-section.settings-section-dirty'));
+        const count = dirtySections.length;
+        const badge = document.getElementById('settings-unsaved-count');
+        if (badge) {
+            badge.hidden = count === 0;
+            badge.textContent = count ? String(count) : '';
+            badge.title = `${count} modified ${count === 1 ? 'section' : 'sections'}`;
+        }
+        window.pvRefreshSettingsContext?.();
+    }
+
+    function setUnsavedSettingsReminder(visible, message) {
+        let reminder = document.getElementById('settings-unsaved-reminder');
+        if (!reminder && visible) {
+            reminder = document.createElement('div');
+            reminder.id = 'settings-unsaved-reminder';
+            reminder.className = 'settings-unsaved-reminder';
+            reminder.innerHTML = `
+                <span id="settings-unsaved-reminder-text">Unsaved settings</span>
+                <button type="button" id="settings-unsaved-save">Save</button>
+            `;
+            document.body.appendChild(reminder);
+            document.getElementById('settings-unsaved-save')?.addEventListener('click', saveSettings);
+        }
+        if (!reminder) return;
+        const text = document.getElementById('settings-unsaved-reminder-text');
+        if (text) text.textContent = message || 'Unsaved settings. Save Configuration to keep these changes.';
+        reminder.classList.toggle('visible', !!visible);
+    }
+
+    function showSettingsSavedPopup(message = 'Settings Saved') {
+        let popup = document.getElementById('settings-saved-popup');
+        if (!popup) {
+            popup = document.createElement('div');
+            popup.id = 'settings-saved-popup';
+            popup.className = 'settings-saved-popup';
+            document.body.appendChild(popup);
+        }
+        popup.textContent = message;
+        popup.classList.remove('visible');
+        void popup.offsetWidth;
+        popup.classList.add('visible');
+        clearTimeout(showSettingsSavedPopup._timer);
+        showSettingsSavedPopup._timer = setTimeout(() => {
+            popup.classList.remove('visible');
+        }, 3000);
+    }
+
+    function markSettingsDirty(message, sourceEl) {
         if (settingsLoading) return;
         settingsDirty = true;
+        markSettingsSectionDirty(sourceEl || document.activeElement);
         const statusEl = document.getElementById('settings-status');
         document.querySelectorAll('.btn-save-settings').forEach((btn) => btn.classList.add('dirty'));
         if (statusEl) {
@@ -1932,6 +2221,7 @@
             statusEl.className = 'settings-status warning dirty';
             statusEl.textContent = message || 'Unsaved settings. Save Configuration to apply these changes and keep them after restart.';
         }
+        setUnsavedSettingsReminder(true, message);
         updateFirstRunChecklist();
     }
     window.pvMarkSettingsDirty = markSettingsDirty;
@@ -2221,6 +2511,11 @@
     function clearSettingsDirty() {
         settingsDirty = false;
         document.querySelectorAll('.btn-save-settings').forEach((btn) => btn.classList.remove('dirty'));
+        document
+            .querySelectorAll('.settings-section-dirty')
+            .forEach((el) => el.classList.remove('settings-section-dirty'));
+        updateSettingsDirtySummary();
+        setUnsavedSettingsReminder(false);
     }
 
     function toggleBrowserGps() {
@@ -2374,6 +2669,14 @@
             // Tracking
             setVal('cfg-track-age', Math.round((cfg.tracking?.max_station_age || 0) / 60));
             setVal('cfg-track-cleanup', Math.round((cfg.tracking?.cleanup_interval || 0) / 60));
+            setVal('cfg-track-blocked-callsigns', (cfg.tracking?.blocked_callsigns || []).join('\n'));
+            setVal('cfg-callbook-provider', cfg.callbook?.provider || 'auto');
+            setVal('cfg-callbook-hamqth-user', cfg.callbook?.hamqth_username || '');
+            setVal('cfg-callbook-hamqth-pass', cfg.callbook?.hamqth_password || '');
+            setVal('cfg-callbook-qrz-user', cfg.callbook?.qrz_username || '');
+            setVal('cfg-callbook-qrz-pass', cfg.callbook?.qrz_password || '');
+            setVal('cfg-watched-paths', watchedPathsToText(cfg.watched_paths || []));
+            applyWatchedBuilderProfileDefaults(cfg.watched_paths || []);
             setVal('cfg-msg-retention', cfg.messaging?.message_retention_days ?? 30);
             setChk('cfg-msg-sibling-ssids', cfg.messaging?.receive_sibling_ssids ?? true);
 
@@ -2527,6 +2830,7 @@
         } finally {
             settingsLoading = false;
             clearSettingsDirty();
+            captureSettingsSnapshots();
             updateFirstRunChecklist();
             loadTransmitHistory();
             const statusEl = document.getElementById('settings-status');
@@ -2577,9 +2881,233 @@
         };
     }
 
+    function watchedPathsToText(paths) {
+        return (paths || []).map((item) => {
+            if (item.grid) {
+                return [
+                    item.callsign || '',
+                    item.grid || '',
+                    item.band || '2m',
+                    item.min_confidence || 'medium',
+                    item.mode || '',
+                    item.frequency_mhz || '',
+                    item.my_antenna_height_m ?? 10,
+                    item.target_antenna_height_m ?? 10,
+                    item.my_tx_power_w ?? 50,
+                    item.my_antenna_gain_dbi ?? 0,
+                ].join('|');
+            }
+            return [
+                item.callsign || '',
+                item.latitude ?? '',
+                item.longitude ?? '',
+                item.band || '2m',
+                item.min_confidence || 'medium',
+                item.mode || '',
+                item.frequency_mhz || '',
+                item.my_antenna_height_m ?? 10,
+                item.target_antenna_height_m ?? 10,
+                item.my_tx_power_w ?? 50,
+                item.my_antenna_gain_dbi ?? 0,
+            ].join('|');
+        }).join('\n');
+    }
+
+    function metersToFeet(meters) {
+        return Math.round((parseFloat(meters) || 0) * 3.28084);
+    }
+
+    function feetToMeters(feet) {
+        return Math.round((parseFloat(feet) || 0) / 3.28084 * 10) / 10;
+    }
+
+    function applyWatchedBuilderProfileDefaults(paths) {
+        const first = (paths || []).find((item) => item && item.callsign);
+        setVal('watched-builder-my-height-ft', metersToFeet(first?.my_antenna_height_m ?? 10));
+        setVal('watched-builder-target-height-ft', metersToFeet(first?.target_antenna_height_m ?? 10));
+        setVal('watched-builder-power-w', first?.my_tx_power_w ?? 50);
+        setVal('watched-builder-gain-dbi', first?.my_antenna_gain_dbi ?? 0);
+    }
+
+    function collectWatchedPaths() {
+        return (getVal('cfg-watched-paths') || '')
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .map((line) => {
+                const parts = line.split('|').map((part) => part.trim());
+                const second = parts[1] || '';
+                const secondIsLat = /^-?\d+(\.\d+)?$/.test(second);
+                if (!secondIsLat) {
+                    return {
+                        enabled: true,
+                        callsign: (parts[0] || '').toUpperCase(),
+                        grid: second.toUpperCase(),
+                        latitude: 0,
+                        longitude: 0,
+                        band: parts[2] || '2m',
+                        min_confidence: (parts[3] || 'medium').toLowerCase(),
+                        mode: parts[4] || '',
+                        frequency_mhz: parts[5] || '0',
+                        my_antenna_height_m: parts[6] || '10',
+                        target_antenna_height_m: parts[7] || '10',
+                        my_tx_power_w: parts[8] || '50',
+                        my_antenna_gain_dbi: parts[9] || '0',
+                    };
+                }
+                return {
+                    enabled: true,
+                    callsign: (parts[0] || '').toUpperCase(),
+                    latitude: parts[1] || '0',
+                    longitude: parts[2] || '0',
+                    band: parts[3] || '2m',
+                    min_confidence: (parts[4] || 'medium').toLowerCase(),
+                    mode: parts[5] || '',
+                    frequency_mhz: parts[6] || '0',
+                    my_antenna_height_m: parts[7] || '10',
+                    target_antenna_height_m: parts[8] || '10',
+                    my_tx_power_w: parts[9] || '50',
+                    my_antenna_gain_dbi: parts[10] || '0',
+                };
+            });
+    }
+
+    function watchedPathLineFromBuilder() {
+        const callsign = (getVal('watched-builder-callsign') || '').trim().toUpperCase();
+        const grid = (getVal('watched-builder-grid') || '').trim().toUpperCase();
+        const lat = (getVal('watched-builder-lat') || '').trim();
+        const lon = (getVal('watched-builder-lon') || '').trim();
+        const band = getVal('watched-builder-band') || '2m';
+        const confidence = getVal('watched-builder-confidence') || 'medium';
+        const mode = getVal('watched-builder-mode') || '';
+        const frequency = getVal('watched-builder-frequency') || '';
+        const myHeightM = feetToMeters(getVal('watched-builder-my-height-ft') || '33');
+        const targetHeightM = feetToMeters(getVal('watched-builder-target-height-ft') || '33');
+        const powerW = Math.max(0.1, parseFloat(getVal('watched-builder-power-w')) || 50);
+        const gainDbi = Math.max(-20, Math.min(30, parseFloat(getVal('watched-builder-gain-dbi')) || 0));
+        if (!/^[A-Z0-9]{1,9}(-([0-9]|1[0-5]))?$/.test(callsign)) {
+            throw new Error('Enter a valid target callsign.');
+        }
+        if (grid) {
+            return [callsign, grid, band, confidence, mode, frequency, myHeightM, targetHeightM, powerW, gainDbi].join('|');
+        }
+        if (!lat || !lon || Number.isNaN(parseFloat(lat)) || Number.isNaN(parseFloat(lon))) {
+            throw new Error('Lookup a station or enter a grid/latitude/longitude.');
+        }
+        return [callsign, lat, lon, band, confidence, mode, frequency, myHeightM, targetHeightM, powerW, gainDbi].join('|');
+    }
+
+    function setWatchedBuilderResult(message, type = '') {
+        const el = document.getElementById('watched-builder-result');
+        if (!el) return;
+        el.className = `watched-builder-result ${type}`.trim();
+        el.textContent = message;
+    }
+
+    function applyWatchedBandDefaults() {
+        const band = getVal('watched-builder-band') || '2m';
+        const mode = getVal('watched-builder-mode') || '';
+        const frequencyByBand = {
+            '6m': mode === 'FT8' ? '50.313' : '50.125',
+            '2m': mode === 'FT8' ? '144.174' : mode === 'MSK144' ? '144.150' : '144.200',
+            '1.25m': '222.100',
+            '70cm': '432.100',
+            '33cm': '902.100',
+        };
+        setVal('watched-builder-frequency', frequencyByBand[band] || '');
+    }
+
+    async function lookupWatchedPathCallsign() {
+        const button = document.getElementById('btn-watched-lookup');
+        const callsign = (getVal('watched-builder-callsign') || '').trim().toUpperCase();
+        if (!callsign) {
+            setWatchedBuilderResult('Enter a callsign to look up.', 'error');
+            return;
+        }
+        if (button) button.disabled = true;
+        setWatchedBuilderResult(`Looking up ${callsign}...`);
+        try {
+            const resp = await fetch('/api/callbook/lookup', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ callsign }),
+            });
+            const data = await resp.json();
+            if (!resp.ok || !data.success) {
+                throw new Error(data.message || 'Lookup did not return a usable station location.');
+            }
+            setVal('watched-builder-callsign', data.callsign || callsign);
+            setVal('watched-builder-grid', data.grid || '');
+            setVal('watched-builder-lat', data.latitude ?? '');
+            setVal('watched-builder-lon', data.longitude ?? '');
+            const where = [data.qth, data.state, data.country].filter(Boolean).join(', ');
+            const location = data.grid
+                ? `${data.grid}${data.latitude != null && data.longitude != null ? `, ${data.latitude.toFixed(4)}, ${data.longitude.toFixed(4)}` : ''}`
+                : `${data.latitude?.toFixed?.(4) || ''}, ${data.longitude?.toFixed?.(4) || ''}`;
+            setWatchedBuilderResult(
+                `${data.callsign || callsign} from ${(data.source || 'callbook').toUpperCase()}: ${location}${where ? ` (${where})` : ''}${data.source_note ? ` - ${data.source_note}` : ''}`,
+                'success',
+            );
+        } catch (e) {
+            setWatchedBuilderResult(e.message || 'Lookup failed.', 'error');
+        } finally {
+            if (button) button.disabled = false;
+        }
+    }
+
+    function addWatchedPathFromBuilder() {
+        try {
+            const line = watchedPathLineFromBuilder();
+            const textarea = document.getElementById('cfg-watched-paths');
+            if (!textarea) return;
+            const existing = (textarea.value || '')
+                .split(/\r?\n/)
+                .map((item) => item.trim())
+                .filter(Boolean);
+            const base = line.split('|')[0];
+            const withoutSameCall = existing.filter((item) => item.split('|')[0].toUpperCase() !== base);
+            textarea.value = [...withoutSameCall, line].join('\n');
+            markSettingsDirty();
+            setWatchedBuilderResult(`${base} added to watched paths. Save settings to apply it.`, 'success');
+        } catch (e) {
+            setWatchedBuilderResult(e.message || 'Could not add watched path.', 'error');
+        }
+    }
+
+    function initWatchedPathBuilder() {
+        document.getElementById('btn-watched-lookup')?.addEventListener('click', lookupWatchedPathCallsign);
+        document.getElementById('btn-watched-add')?.addEventListener('click', addWatchedPathFromBuilder);
+        document.getElementById('watched-builder-band')?.addEventListener('change', applyWatchedBandDefaults);
+        document.getElementById('watched-builder-mode')?.addEventListener('change', applyWatchedBandDefaults);
+        document.getElementById('watched-builder-callsign')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                lookupWatchedPathCallsign();
+            }
+        });
+    }
+
     async function saveSettings() {
         const buttons = Array.from(document.querySelectorAll('.btn-save-settings'));
         const statusEl = document.getElementById('settings-status');
+        const invalidControl = Array.from(document.querySelectorAll('.settings-section input, .settings-section select, .settings-section textarea'))
+            .find((control) => !control.disabled && !control.checkValidity());
+        if (invalidControl) {
+            const section = invalidControl.closest('.settings-section');
+            window.pvActivateSettingsCategory?.(section?.dataset.settingsCategory || 'overview');
+            section?.classList.remove('collapsed');
+            section?.classList.add('settings-section-invalid');
+            setTimeout(() => invalidControl.reportValidity(), 0);
+            if (statusEl) {
+                statusEl.style.display = 'block';
+                statusEl.className = 'settings-status error';
+                statusEl.textContent = 'Please correct the highlighted setting before saving.';
+            }
+            return;
+        }
+        document.querySelectorAll('.settings-section-invalid').forEach((section) => {
+            section.classList.remove('settings-section-invalid');
+        });
         buttons.forEach((btn) => { btn.disabled = true; });
 
         const body = {
@@ -2648,7 +3176,19 @@
             tracking: {
                 max_station_age: (parseInt(getVal('cfg-track-age')) || 0) * 60,
                 cleanup_interval: (parseInt(getVal('cfg-track-cleanup')) || 0) * 60,
+                blocked_callsigns: (getVal('cfg-track-blocked-callsigns') || '')
+                    .split(/[\s,]+/)
+                    .map((call) => call.trim().toUpperCase())
+                    .filter(Boolean),
             },
+            callbook: {
+                provider: getVal('cfg-callbook-provider') || 'auto',
+                hamqth_username: getVal('cfg-callbook-hamqth-user') || '',
+                hamqth_password: getVal('cfg-callbook-hamqth-pass') || '',
+                qrz_username: getVal('cfg-callbook-qrz-user') || '',
+                qrz_password: getVal('cfg-callbook-qrz-pass') || '',
+            },
+            watched_paths: collectWatchedPaths(),
             messaging: {
                 message_retention_days: parseInt(getVal('cfg-msg-retention')) || 30,
                 receive_sibling_ssids: getChk('cfg-msg-sibling-ssids'),
@@ -2759,26 +3299,39 @@
                 body: JSON.stringify(body),
             });
             const result = await resp.json();
+            const applicationRestartRequired = !!(
+                result.applicationRestartRequired ?? result.needRestart
+            );
+            const browserRefreshRequired = !!result.browserRefreshRequired;
+            const saveImpact = applicationRestartRequired
+                ? 'application-restart'
+                : (browserRefreshRequired ? 'browser-refresh' : 'live');
 
             if (statusEl) {
                 statusEl.style.display = 'block';
                 const cls = result.success
-                    ? (result.needRestart ? 'warning' : 'success')
+                    ? (saveImpact === 'live' ? 'success' : 'warning')
                     : 'error';
                 statusEl.className = 'settings-status ' + cls;
                 statusEl.textContent = result.message || (result.success ? 'Saved!' : 'Error saving.');
-                const delay = result.needRestart ? 10000 : 5000;
             }
             if (result.success) {
+                const popupMessage = saveImpact === 'application-restart'
+                    ? 'Saved - Application Restart Required'
+                    : (saveImpact === 'browser-refresh'
+                        ? 'Saved - Browser Refresh Required'
+                        : 'Settings Saved - Applied Now');
+                showSettingsSavedPopup(popupMessage);
                 const savedPass = (body.aprs_is.passcode || '').trim();
                 if (savedPass && savedPass !== '-1' && !savedPass.includes('*')) {
                     aprsIsPasscodeConfigured = true;
                 }
                 clearSettingsDirty();
+                captureSettingsSnapshots();
                 updateFirstRunChecklist();
                 window.pvConfigPromise = null;
                 serverConfig = { ...(serverConfig || {}), alerts: { ...body.alerts } };
-                const delay = result.needRestart ? 10000 : 5000;
+                const delay = saveImpact === 'live' ? 5000 : 12000;
                 setTimeout(() => {
                     if (!settingsDirty) statusEl.style.display = 'none';
                 }, delay);

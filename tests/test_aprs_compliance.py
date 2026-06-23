@@ -11,6 +11,7 @@ from server.app import (
     _is_valid_message_addressee,
     _is_valid_station_callsign,
     _merge_secret_value,
+    _rf_ports_signature,
     _tile_cache_key,
     _tile_cache_path,
     _tile_coords_for_bounds,
@@ -19,7 +20,14 @@ from server.app import (
 from server.analytics import AnalyticsEngine
 from server.alerts import AlertConfig, AlertManager
 from server.ax25 import AX25Address, AX25Frame
-from server.config import Config, RFPortConfig
+from server.callbook import (
+    CallbookCredentials,
+    lookup_callook_sync,
+    lookup_hamdb_sync,
+    lookup_hamqth_sync,
+    lookup_qrz_sync,
+)
+from server.config import Config, RFPortConfig, WatchedPathConfig
 from server.database import Database
 from server.digipeater import Digipeater
 from server.export import MQTTPublisher
@@ -29,6 +37,24 @@ from server.websocket_manager import WebSocketManager
 from server.gps import GPSManager, parse_gpsd_tpv, parse_nmea_position, split_nmea_stream
 from server.status_report import build_dx_status_text, build_mheard_status_text, build_weather_alert_status_text, trim_status_text
 from server.wxnow import build_wxnow_info, build_wxnow_position_info, parse_weather_body_values, parse_wxnow_text
+
+
+class SettingsImpactTests(unittest.TestCase):
+    def test_rf_port_signature_only_changes_when_port_settings_change(self):
+        original = RFPortConfig(
+            name="KISS TCP",
+            enabled=True,
+            type="tcp",
+            host="127.0.0.1",
+            tcp_port=8001,
+            protocol="kiss",
+            rx_only_rf=True,
+        )
+        unchanged = RFPortConfig(**vars(original))
+        changed = RFPortConfig(**{**vars(original), "tcp_port": 8100})
+
+        self.assertEqual(_rf_ports_signature([original]), _rf_ports_signature([unchanged]))
+        self.assertNotEqual(_rf_ports_signature([original]), _rf_ports_signature([changed]))
 
 
 class APRSParserComplianceTests(unittest.TestCase):
@@ -152,6 +178,26 @@ class APRSParserComplianceTests(unittest.TestCase):
         self.assertEqual(packet.weather["temperature_f"], 98)
         self.assertEqual(packet.weather["humidity"], 36)
         self.assertEqual(packet.weather["pressure_mb"], 1013.9)
+
+    def test_malformed_uncompressed_latitude_is_not_decoded_as_compressed(self):
+        packet = parse_packet(
+            r"VE3STP-10>APZ0,VE2REH-3*,WIDE2*:!44518.91N\07653.58W-STP2 Telemetry",
+            source="rf",
+        )
+
+        self.assertEqual(packet.packet_type, "other")
+        self.assertIsNone(packet.latitude)
+        self.assertIsNone(packet.longitude)
+
+    def test_valid_uncompressed_packet_after_malformed_regression(self):
+        packet = parse_packet(
+            r"VE3STP-10>APZ0,VE2REH-3*,WIDE2*:!4451.89N\07653.58W-STP2 Telemetry",
+            source="rf",
+        )
+
+        self.assertEqual(packet.packet_type, "position")
+        self.assertAlmostEqual(packet.latitude, 44.86483333333334)
+        self.assertAlmostEqual(packet.longitude, -76.893)
 
     def test_double_bang_telemetry_is_not_compressed_position(self):
         packet = parse_packet(
@@ -350,6 +396,83 @@ watched_callsigns = ["WB5TZN-1", "KJ4AJP-5"]
             self.assertEqual(reloaded.mqtt.device_id, "k5abc_propview")
             self.assertEqual(reloaded.mqtt.watched_callsigns, ["WB5TZN-1", "KJ4AJP-5"])
 
+    def test_loads_and_saves_watched_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text(
+                """
+[[watched_paths]]
+enabled = true
+callsign = "WT1W"
+latitude = 35.0
+longitude = -80.0
+grid = "EM85"
+band = "2m SSB"
+mode = "SSB"
+frequency_mhz = 144.2
+min_confidence = "high"
+bearing_tolerance_deg = 25
+min_probe_count = 3
+max_age_minutes = 45
+alert_cooldown_minutes = 20
+my_antenna_height_m = 12.0
+target_antenna_height_m = 18.0
+my_tx_power_w = 100.0
+my_antenna_gain_dbi = 6.0
+""".strip(),
+                encoding="utf-8",
+            )
+
+            config = Config.load(path)
+            self.assertEqual(len(config.watched_paths), 1)
+            self.assertEqual(config.watched_paths[0].callsign, "WT1W")
+            self.assertEqual(config.watched_paths[0].min_confidence, "high")
+            self.assertEqual(config.watched_paths[0].bearing_tolerance_deg, 25)
+            self.assertEqual(config.watched_paths[0].grid, "EM85")
+            self.assertEqual(config.watched_paths[0].mode, "SSB")
+            self.assertAlmostEqual(config.watched_paths[0].frequency_mhz, 144.2)
+            self.assertAlmostEqual(config.watched_paths[0].my_tx_power_w, 100.0)
+            self.assertAlmostEqual(config.watched_paths[0].my_antenna_gain_dbi, 6.0)
+
+            saved_path = Path(tmp) / "saved.toml"
+            config.save(saved_path)
+            reloaded = Config.load(saved_path)
+            self.assertEqual(reloaded.watched_paths[0].band, "2m SSB")
+            self.assertEqual(reloaded.watched_paths[0].min_probe_count, 3)
+            self.assertEqual(reloaded.watched_paths[0].grid, "EM85")
+            self.assertAlmostEqual(reloaded.watched_paths[0].target_antenna_height_m, 18.0)
+            self.assertAlmostEqual(reloaded.watched_paths[0].my_tx_power_w, 100.0)
+            self.assertAlmostEqual(reloaded.watched_paths[0].my_antenna_gain_dbi, 6.0)
+
+    def test_loads_and_saves_callbook_settings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text(
+                """
+[callbook]
+provider = "auto"
+hamqth_username = "N0CALL"
+hamqth_password = "hamsecret"
+qrz_username = "N0CALL"
+qrz_password = "qrzsecret"
+""".strip(),
+                encoding="utf-8",
+            )
+
+            config = Config.load(path)
+            self.assertEqual(config.callbook.provider, "auto")
+            self.assertEqual(config.callbook.hamqth_username, "N0CALL")
+            self.assertEqual(config.callbook.hamqth_password, "hamsecret")
+            self.assertEqual(config.callbook.qrz_password, "qrzsecret")
+
+            saved_path = Path(tmp) / "saved.toml"
+            config.save(saved_path)
+            reloaded = Config.load(saved_path)
+
+            self.assertEqual(reloaded.callbook.provider, "auto")
+            self.assertEqual(reloaded.callbook.hamqth_password, "hamsecret")
+            self.assertEqual(reloaded.callbook.qrz_username, "N0CALL")
+
     def test_tile_cache_key_separates_tile_sources(self):
         osm = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         local = "http://127.0.0.1:8080/tile/{z}/{x}/{y}.png"
@@ -367,6 +490,112 @@ watched_callsigns = ["WB5TZN-1", "KJ4AJP-5"]
         self.assertTrue(coords)
         self.assertTrue(all(z == 8 for z, _x, _y in coords))
         self.assertEqual(len(coords), len(set(coords)))
+
+class CallbookTests(unittest.TestCase):
+    def test_callook_lookup_extracts_current_fcc_location(self):
+        response = b"""{
+            "status": "VALID",
+            "current": {"callsign": "WT1W", "operClass": "EXTRA"},
+            "name": "JIM H PERRY",
+            "address": {"line2": "HOPE HULL, AL 36043"},
+            "location": {"latitude": "32.1757206", "longitude": "-86.3493209", "gridsquare": "EM62te"}
+        }"""
+
+        def fake_fetch(url, timeout):
+            self.assertIn("callook.info/WT1W/json", url)
+            return response
+
+        result = lookup_callook_sync(CallbookCredentials(provider="callook"), "WT1W", fetcher=fake_fetch)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["source"], "callook")
+        self.assertEqual(result["callsign"], "WT1W")
+        self.assertEqual(result["grid"], "EM62TE")
+        self.assertAlmostEqual(result["latitude"], 32.1757206)
+        self.assertAlmostEqual(result["longitude"], -86.3493209)
+        self.assertEqual(result["country"], "United States")
+
+    def test_hamdb_lookup_extracts_location_fields(self):
+        response = b"""{
+            "hamdb": {
+                "callsign": {
+                    "call": "WT1W",
+                    "class": "E",
+                    "status": "A",
+                    "grid": "EM62te",
+                    "lat": "32.1757035",
+                    "lon": "-86.3493001",
+                    "fname": "Jim",
+                    "name": "Perry",
+                    "addr2": "Hope Hull",
+                    "state": "AL",
+                    "zip": "36043",
+                    "country": "United States"
+                },
+                "messages": {"status": "OK"}
+            }
+        }"""
+
+        def fake_fetch(url, timeout):
+            self.assertIn("api.hamdb.org/WT1W/json/APRSPropView", url)
+            return response
+
+        result = lookup_hamdb_sync(CallbookCredentials(provider="hamdb"), "WT1W", fetcher=fake_fetch)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["source"], "hamdb")
+        self.assertEqual(result["callsign"], "WT1W")
+        self.assertEqual(result["grid"], "EM62TE")
+        self.assertAlmostEqual(result["latitude"], 32.1757035)
+        self.assertAlmostEqual(result["longitude"], -86.3493001)
+        self.assertEqual(result["state"], "AL")
+
+    def test_hamqth_lookup_extracts_location_fields(self):
+        responses = [
+            b"""<?xml version="1.0"?><HamQTH><session><session_id>abc123</session_id></session></HamQTH>""",
+            b"""<?xml version="1.0"?><HamQTH><search><callsign>wt1w</callsign><grid>FM15</grid><latitude>35.5</latitude><longitude>-77.0</longitude><qth>Raleigh</qth><adr_country>United States</adr_country></search></HamQTH>""",
+        ]
+        urls = []
+
+        def fake_fetch(url, timeout):
+            urls.append(url)
+            return responses.pop(0)
+
+        result = lookup_hamqth_sync(
+            CallbookCredentials(provider="hamqth", hamqth_username="N0CALL", hamqth_password="secret"),
+            "WT1W",
+            fetcher=fake_fetch,
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["source"], "hamqth")
+        self.assertEqual(result["callsign"], "WT1W")
+        self.assertEqual(result["grid"], "FM15")
+        self.assertAlmostEqual(result["latitude"], 35.5)
+        self.assertAlmostEqual(result["longitude"], -77.0)
+        self.assertIn("xml.php", urls[0])
+
+    def test_qrz_lookup_extracts_location_fields(self):
+        responses = [
+            b"""<?xml version="1.0"?><QRZDatabase><Session><Key>xyz789</Key></Session></QRZDatabase>""",
+            b"""<?xml version="1.0"?><QRZDatabase><Callsign><call>WT1W</call><grid>FM15</grid><lat>35.5</lat><lon>-77.0</lon><addr2>Raleigh</addr2><country>United States</country></Callsign></QRZDatabase>""",
+        ]
+
+        def fake_fetch(_url, _timeout):
+            return responses.pop(0)
+
+        result = lookup_qrz_sync(
+            CallbookCredentials(provider="qrz", qrz_username="N0CALL", qrz_password="secret"),
+            "WT1W",
+            fetcher=fake_fetch,
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["source"], "qrz")
+        self.assertEqual(result["callsign"], "WT1W")
+        self.assertEqual(result["grid"], "FM15")
+        self.assertAlmostEqual(result["latitude"], 35.5)
+        self.assertAlmostEqual(result["longitude"], -77.0)
 
 
 class WxNowTests(unittest.TestCase):
@@ -924,6 +1153,239 @@ class MessagePersistenceTests(unittest.TestCase):
 
             self.assertEqual(station["last_port_name"], "KISS-Serial(COM7)")
             self.assertEqual(packets[0]["port_name"], "KISS-Serial(COM7)")
+
+        asyncio.run(run_test())
+
+    def test_exact_ssid_blocked_station_is_not_recorded(self):
+        async def run_test():
+            with tempfile.TemporaryDirectory() as tmp:
+                config = Config()
+                config.tracking.blocked_callsigns = ["VE3STP-10"]
+                db = Database(f"{tmp}/test.db")
+                await db.initialize()
+                try:
+                    ws = WebSocketManager()
+                    tracker = StationTracker(db, config, ws)
+                    blocked = parse_packet(
+                        r"VE3STP-10>APZ0:!4451.89N\07653.58W-STP2 Telemetry",
+                        source="rf",
+                    )
+                    allowed = parse_packet(
+                        r"VE3STP-11>APZ0:!4451.89N\07653.58W-STP2 Telemetry",
+                        source="rf",
+                    )
+
+                    await tracker.track_packet(blocked)
+                    await tracker.track_packet(allowed)
+                    blocked_station = await db.get_station("VE3STP-10", "rf")
+                    allowed_station = await db.get_station("VE3STP-11", "rf")
+                    packets = await db.get_recent_packets(limit=10)
+                finally:
+                    await db.close()
+
+            self.assertIsNone(blocked_station)
+            self.assertIsNotNone(allowed_station)
+            self.assertEqual([p["from_call"] for p in packets], ["VE3STP-11"])
+
+        asyncio.run(run_test())
+
+    def test_base_callsign_block_blocks_all_ssids(self):
+        async def run_test():
+            with tempfile.TemporaryDirectory() as tmp:
+                config = Config()
+                config.tracking.blocked_callsigns = ["VE3STP"]
+                db = Database(f"{tmp}/test.db")
+                await db.initialize()
+                try:
+                    ws = WebSocketManager()
+                    tracker = StationTracker(db, config, ws)
+                    for call in ("VE3STP", "VE3STP-10"):
+                        packet = parse_packet(
+                            rf"{call}>APZ0:!4451.89N\07653.58W-STP2 Telemetry",
+                            source="rf",
+                        )
+                        await tracker.track_packet(packet)
+                    packets = await db.get_recent_packets(limit=10)
+                finally:
+                    await db.close()
+
+            self.assertEqual(packets, [])
+
+        asyncio.run(run_test())
+
+    def test_maidenhead_grid_resolves_to_center_point(self):
+        pos = StationTracker.maidenhead_to_lat_lon("FM15")
+
+        self.assertIsNotNone(pos)
+        lat, lon = pos
+        self.assertAlmostEqual(lat, 35.5)
+        self.assertAlmostEqual(lon, -77.0)
+        self.assertIsNone(StationTracker.maidenhead_to_lat_lon("ZZ99"))
+
+    def test_watched_path_alerts_when_rf_evidence_matches_target_path(self):
+        async def run_test():
+            with tempfile.TemporaryDirectory() as tmp:
+                config = Config()
+                config.station.latitude = 35.0
+                config.station.longitude = -80.0
+                config.watched_paths = [
+                    WatchedPathConfig(
+                        callsign="WT1W",
+                        latitude=35.0,
+                        longitude=-77.0,
+                        min_confidence="medium",
+                        min_probe_count=1,
+                        bearing_tolerance_deg=35,
+                    )
+                ]
+                db = Database(f"{tmp}/test.db")
+                await db.initialize()
+                try:
+                    ws = WebSocketManager()
+                    tracker = StationTracker(db, config, ws)
+                    packet = parse_packet(
+                        r"K1ABC>APRS:!3500.00N/07654.00W-East probe",
+                        source="rf",
+                    )
+                    await tracker.track_packet(packet)
+                    result = await tracker.evaluate_watched_paths()
+                finally:
+                    await db.close()
+
+            self.assertEqual(len(result["opportunities"]), 1)
+            self.assertGreaterEqual(result["opportunities"][0]["score"], 60)
+            self.assertEqual(result["opportunities"][0]["confidence"], "high")
+            self.assertEqual(len(result["alerts"]), 1)
+            self.assertEqual(result["alerts"][0]["type"], "watched_path")
+
+        asyncio.run(run_test())
+
+    def test_watched_path_grid_target_includes_horizon_and_mode_metadata(self):
+        async def run_test():
+            with tempfile.TemporaryDirectory() as tmp:
+                config = Config()
+                config.station.latitude = 35.0
+                config.station.longitude = -80.0
+                config.watched_paths = [
+                    WatchedPathConfig(
+                        callsign="WT1W",
+                        grid="FM15",
+                        band="2m",
+                        mode="SSB",
+                        frequency_mhz=144.2,
+                        min_confidence="low",
+                        min_probe_count=1,
+                        bearing_tolerance_deg=35,
+                        my_antenna_height_m=12.0,
+                        target_antenna_height_m=18.0,
+                        my_tx_power_w=100.0,
+                        my_antenna_gain_dbi=6.0,
+                    )
+                ]
+                db = Database(f"{tmp}/test.db")
+                await db.initialize()
+                try:
+                    ws = WebSocketManager()
+                    tracker = StationTracker(db, config, ws)
+                    packet = parse_packet(
+                        r"K1ABC>APRS:!3500.00N/07654.00W-East probe",
+                        source="rf",
+                    )
+                    await tracker.track_packet(packet)
+                    result = await tracker.evaluate_watched_paths(allow_alerts=False)
+                finally:
+                    await db.close()
+
+            return result
+
+        result = asyncio.run(run_test())
+
+        opportunity = result["opportunities"][0]
+        self.assertEqual(opportunity["callsign"], "WT1W")
+        self.assertEqual(opportunity["grid"], "FM15")
+        self.assertEqual(opportunity["mode"], "SSB")
+        self.assertAlmostEqual(opportunity["frequency_mhz"], 144.2)
+        self.assertAlmostEqual(opportunity["target_latitude"], 35.5)
+        self.assertAlmostEqual(opportunity["target_longitude"], -77.0)
+        self.assertGreater(opportunity["radio_horizon_km"], 25.0)
+        self.assertEqual(opportunity["path_geometry"], "propagation_aided")
+        self.assertAlmostEqual(opportunity["my_tx_power_w"], 100.0)
+        self.assertAlmostEqual(opportunity["my_antenna_gain_dbi"], 6.0)
+        self.assertGreater(opportunity["my_eirp_w"], 390.0)
+        self.assertGreater(opportunity["capability_bonus"], 0.0)
+        self.assertEqual(result["alerts"], [])
+
+    def test_watched_path_exact_target_can_alert_without_probe_count_quorum(self):
+        async def run_test():
+            with tempfile.TemporaryDirectory() as tmp:
+                config = Config()
+                config.station.latitude = 35.0
+                config.station.longitude = -80.0
+                config.watched_paths = [
+                    WatchedPathConfig(
+                        callsign="WT1W-7",
+                        latitude=35.0,
+                        longitude=-77.0,
+                        min_confidence="medium",
+                        min_probe_count=3,
+                        bearing_tolerance_deg=10,
+                    )
+                ]
+                db = Database(f"{tmp}/test.db")
+                await db.initialize()
+                try:
+                    ws = WebSocketManager()
+                    tracker = StationTracker(db, config, ws)
+                    packet = parse_packet(
+                        r"WT1W-7>APRS:!3500.00N/07654.00W-Target heard",
+                        source="rf",
+                    )
+                    await tracker.track_packet(packet)
+                    result = await tracker.evaluate_watched_paths()
+                    second = await tracker.evaluate_watched_paths()
+                finally:
+                    await db.close()
+
+            return result, second
+
+        result, second = asyncio.run(run_test())
+
+        self.assertEqual(result["opportunities"][0]["probe_count"], 1)
+        self.assertEqual(len(result["alerts"]), 1)
+        self.assertEqual(second["alerts"], [])
+
+    def test_watched_path_does_not_alert_for_wrong_direction_evidence(self):
+        async def run_test():
+            with tempfile.TemporaryDirectory() as tmp:
+                config = Config()
+                config.station.latitude = 35.0
+                config.station.longitude = -80.0
+                config.watched_paths = [
+                    WatchedPathConfig(
+                        callsign="WT1W",
+                        latitude=35.0,
+                        longitude=-77.0,
+                        min_confidence="medium",
+                        min_probe_count=1,
+                        bearing_tolerance_deg=20,
+                    )
+                ]
+                db = Database(f"{tmp}/test.db")
+                await db.initialize()
+                try:
+                    ws = WebSocketManager()
+                    tracker = StationTracker(db, config, ws)
+                    packet = parse_packet(
+                        r"K1ABC>APRS:!3800.00N/08000.00W-North probe",
+                        source="rf",
+                    )
+                    await tracker.track_packet(packet)
+                    result = await tracker.evaluate_watched_paths()
+                finally:
+                    await db.close()
+
+            self.assertEqual(result["opportunities"][0]["confidence"], "none")
+            self.assertEqual(result["alerts"], [])
 
         asyncio.run(run_test())
 

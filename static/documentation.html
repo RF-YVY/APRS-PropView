@@ -384,8 +384,8 @@
         <h1>APRS PropView Documentation</h1>
         <p class="lede">A complete field guide for installing, configuring, operating, and understanding APRS PropView: a real-time APRS digipeater, IGate, propagation monitor, weather-aware map, analytics dashboard, and messaging console.</p>
         <div class="meta">
-            <span class="pill">Version covered: 1.6.2</span>
-            <span class="pill">Updated: June 18, 2026</span>
+            <span class="pill">Version covered: 1.7.0</span>
+            <span class="pill">Updated: June 23, 2026</span>
             <span class="pill">License: Apache 2.0</span>
         </div>
     </div>
@@ -712,7 +712,8 @@ python main.py</code></pre>
 
             <section id="settings">
                 <h2>13. Options Reference</h2>
-                <p>Most settings can be edited from the browser Settings tab and are stored in <code>config.toml</code>. Host, port, and KISS transport changes may require a restart. Many runtime settings apply immediately after saving.</p>
+                <p>Settings are organized into workflow categories with search, direct category links, collapsible sections, per-section reset, and a sticky Save Configuration action. Modified sections pulse yellow and remain listed in navigation until saved.</p>
+                <p>After every save, PropView states whether changes were applied immediately, require only a browser refresh, or require a full application restart. Restart-class settings are reported only when their values actually changed.</p>
                 <figure class="doc-figure">
                     <img src="/static/img/docs/desktop-settings.png" alt="APRS PropView settings tab with configuration sections and save controls" loading="lazy">
                     <figcaption>Settings tab with collapsible configuration groups for station, RF, APRS-IS, weather, alerts, GPS, MQTT, and web options.</figcaption>
@@ -728,7 +729,9 @@ python main.py</code></pre>
                     <tr><td><code>[aprs_is]</code></td><td>Server, port, passcode, filter mode, range, and extra filters.</td></tr>
                     <tr><td><code>[[rf_ports]]</code></td><td>Multi-port RF serial/TCP KISS and compatible monitor-style inputs.</td></tr>
                     <tr><td><code>[web]</code></td><td>Bind host, port, browser launch selection, UI font, map tile source, station ghosting, station expiry, and mobile PIN.</td></tr>
-                    <tr><td><code>[tracking]</code></td><td>Station age windows and cleanup intervals.</td></tr>
+                    <tr><td><code>[tracking]</code></td><td>Station age windows, cleanup intervals, and callsign/SSID blocklist. A base callsign blocks every SSID.</td></tr>
+                    <tr><td><code>[[watched_paths]]</code></td><td>Target callsign/grid/coordinates, band/mode/frequency, confidence, antenna heights, power, and antenna gain for VHF path opportunity alerts.</td></tr>
+                    <tr><td><code>[callbook]</code></td><td>Callook, HamDB, QRZ XML, and HamQTH lookup selection and optional credentials.</td></tr>
                     <tr><td><code>[messaging]</code></td><td>APRS message history retention and optional sibling-SSID receive behavior.</td></tr>
                     <tr><td><code>[database]</code></td><td>SQLite database path.</td></tr>
                     <tr><td><code>[propagation]</code></td><td>Direct and regional propagation scoring thresholds.</td></tr>
@@ -745,6 +748,10 @@ python main.py</code></pre>
                 </table>
                 <h3>Backup And Restore</h3>
                 <p>Use settings export before experimenting with RF, APRS-IS, host, port, or tile settings. Imported settings require an application restart before the full configuration is loaded.</p>
+                <h3>Watched VHF Paths</h3>
+                <p>Enter a target callsign and use Lookup to populate a license/callbook location, then choose band, mode, frequency, and confidence. Coordinates or Maidenhead grid can be corrected manually for portable or remote station sites. Antenna height, transmit power, and antenna gain provide radio-horizon and capability context but do not create an opportunity without matching observed RF propagation evidence.</p>
+                <h3>Station Blocklist</h3>
+                <p>Enter <code>W1AW-7</code> to block one station identifier or <code>W1AW</code> to block all SSIDs for that callsign. Blocked packets are rejected before station, packet, message, and propagation history updates.</p>
                 <a class="backtop" href="#top">Back to top</a>
             </section>
 
@@ -761,7 +768,7 @@ python main.py</code></pre>
                 </ul>
                 <h3>Updates</h3>
                 <p>The About tab checks GitHub releases for newer builds unless update checks are disabled. The app can also show an update banner in the dashboard.</p>
-                <p>On Windows installer-based releases, the update checker looks for a GitHub release asset named like <code>APRSPropViewSetup-1.6.2.exe</code>. When an installer asset is available, the About tab shows <b>Install Update</b>. Clicking it downloads the setup executable, asks APRS PropView to shut down cleanly, and launches setup after the server exits so newer application files can replace the existing install while keeping user settings and data intact. On Linux, Raspberry Pi, and macOS, release notices remain visible but the Windows-only installer action is hidden.</p>
+                <p>On Windows installer-based releases, the update checker looks for a GitHub release asset named like <code>APRSPropViewSetup-1.7.0.exe</code>. When an installer asset is available, the About/Help tab shows <b>Install Update</b>. Clicking it downloads the setup executable, asks APRS PropView to shut down cleanly, and launches setup after the server exits so newer application files can replace the existing install while keeping user settings and data intact. On Linux, Raspberry Pi, and macOS, release notices remain visible but the Windows-only installer action is hidden.</p>
                 <h3>Browser Launch Control</h3>
                 <p>Settings &rarr; Web Interface includes an Opening Browser selector. Leave it blank/system default for normal behavior, choose a discovered browser when you want a specific browser, or keep it blank for headless Pi/VM service deployments where opening a browser is not desired.</p>
                 <h3>Data Files</h3>

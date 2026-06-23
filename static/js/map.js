@@ -13,6 +13,7 @@ class PropViewMap {
         this.rfArrows = {};     // callsign -> [arrowhead markers]
         this.rfLineData = {};   // callsign -> {last_heard, distance_km}
         this.showLines = true;
+        this.showWatchedPaths = true;
         this.showRF = true;
         this.showIS = true;
         this.showDirectRFOnly = false;
@@ -23,6 +24,7 @@ class PropViewMap {
         this.spiderLayer = null;
         this.rangeCircles = null;
         this.observedRangeLayer = null;
+        this.watchedPathLayer = null;
         this.pickMode = false;
         this.objectMode = false;
         this.pickMarker = null;
@@ -94,6 +96,7 @@ class PropViewMap {
         this.rfLayer = L.layerGroup().addTo(this.map);
         this.isLayer = L.layerGroup().addTo(this.map);
         this.spiderLayer = L.layerGroup().addTo(this.map);
+        this.watchedPathLayer = L.layerGroup().addTo(this.map);
         this.map.createPane('weatherRadarPane');
         this.map.getPane('weatherRadarPane').style.zIndex = 320;
         this.map.getPane('weatherRadarPane').style.pointerEvents = 'none';
@@ -401,6 +404,54 @@ class PropViewMap {
         });
 
         return this._observedRangeRequest;
+    }
+
+    updateWatchedPaths(watched) {
+        if (!this.map || !this.myPosition || !this.watchedPathLayer) return;
+        this.watchedPathLayer.clearLayers();
+        const opportunities = watched?.opportunities || [];
+        opportunities.forEach((item) => {
+            const lat = Number(item.target_latitude);
+            const lng = Number(item.target_longitude);
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+            const color = this._watchedPathColor(item.confidence);
+            const popup = `
+                <div class="popup-header">
+                    <span class="popup-call popup-rf">${this._escapeHtml(item.callsign || 'Watched Path')}</span>
+                </div>
+                <table class="popup-table">
+                    <tr><td class="popup-lbl">Confidence</td><td>${this._escapeHtml((item.confidence || 'none').toUpperCase())} (${Math.round(item.score || 0)})</td></tr>
+                    <tr><td class="popup-lbl">Band</td><td>${this._escapeHtml([item.band, item.mode].filter(Boolean).join(' / ') || 'Any')}</td></tr>
+                    <tr><td class="popup-lbl">Target</td><td>${window.formatDist(item.target_distance_km || 0, 0)} bearing ${Math.round(item.target_heading || 0)} deg</td></tr>
+                    <tr><td class="popup-lbl">Geometry</td><td>${this._escapeHtml((item.path_geometry || 'unknown').replace(/_/g, ' '))}</td></tr>
+                    <tr><td class="popup-lbl">Station</td><td>${Math.round(item.my_tx_power_w || 0)} W, ${Number(item.my_antenna_gain_dbi || 0).toFixed(1)} dBi, EIRP ${Math.round(item.my_eirp_w || 0)} W</td></tr>
+                    <tr><td class="popup-lbl">RF Probes</td><td>${item.probe_count || 0}</td></tr>
+                </table>
+            `;
+            L.polyline([[this.myPosition.lat, this.myPosition.lng], [lat, lng]], {
+                color,
+                weight: Math.max(2, Math.min(6, 2 + Number(item.score || 0) / 25)),
+                opacity: item.confidence === 'none' ? 0.35 : 0.85,
+                dashArray: item.confidence === 'none' ? '4 6' : item.confidence === 'low' ? '7 6' : '',
+                interactive: true,
+            }).bindPopup(popup).addTo(this.watchedPathLayer);
+            L.circleMarker([lat, lng], {
+                radius: item.confidence === 'high' ? 7 : 5,
+                color,
+                fillColor: color,
+                fillOpacity: item.confidence === 'none' ? 0.25 : 0.75,
+                weight: 2,
+            }).bindPopup(popup).addTo(this.watchedPathLayer);
+        });
+    }
+
+    _watchedPathColor(confidence) {
+        switch ((confidence || 'none').toLowerCase()) {
+            case 'high': return '#3fb950';
+            case 'medium': return '#d29922';
+            case 'low': return '#58a6ff';
+            default: return '#8b949e';
+        }
     }
 
     addOrUpdateStation(station) {
@@ -1402,6 +1453,7 @@ class PropViewMap {
     _saveUIState() {
         const state = {
             showLines: this.showLines,
+            showWatchedPaths: this.showWatchedPaths,
             showRF: this.showRF,
             showIS: this.showIS,
             showDirectRFOnly: this.showDirectRFOnly,
@@ -1429,6 +1481,12 @@ class PropViewMap {
             this.map.removeLayer(this.lineLayer);
             const btn = document.getElementById('btn-toggle-lines');
             if (btn) btn.classList.remove('active');
+        }
+        if (state.showWatchedPaths === false) {
+            this.showWatchedPaths = false;
+            this.map.removeLayer(this.watchedPathLayer);
+            const checkbox = document.getElementById('line-show-watched-paths');
+            if (checkbox) checkbox.checked = false;
         }
         if (state.showRF === false) {
             this.showRF = false;
@@ -1529,6 +1587,17 @@ class PropViewMap {
         }
         this._saveUIState();
         return this.showLines;
+    }
+
+    setWatchedPathsVisible(visible) {
+        this.showWatchedPaths = !!visible;
+        if (this.showWatchedPaths) {
+            if (!this.map.hasLayer(this.watchedPathLayer)) this.map.addLayer(this.watchedPathLayer);
+        } else if (this.map.hasLayer(this.watchedPathLayer)) {
+            this.map.removeLayer(this.watchedPathLayer);
+        }
+        this._saveUIState();
+        return this.showWatchedPaths;
     }
 
     toggleRF() {
@@ -1645,6 +1714,7 @@ class PropViewMap {
         const weight = document.getElementById('line-weight');
         const pattern = document.getElementById('line-pattern');
         const opacity = document.getElementById('line-opacity');
+        const showWatchedPaths = document.getElementById('line-show-watched-paths');
         if (!btn || !popover) return;
 
         btn.addEventListener('click', (e) => {
@@ -1669,6 +1739,9 @@ class PropViewMap {
             el?.addEventListener('input', update);
             el?.addEventListener('change', update);
         });
+        showWatchedPaths?.addEventListener('change', (e) => {
+            this.setWatchedPathsVisible(e.target.checked);
+        });
         this._syncLineStyleControls();
     }
 
@@ -1683,6 +1756,8 @@ class PropViewMap {
         setValue('line-weight', style.weight || 2);
         setValue('line-pattern', style.pattern || 'solid');
         setValue('line-opacity', style.opacity || 0.7);
+        const showWatchedPaths = document.getElementById('line-show-watched-paths');
+        if (showWatchedPaths) showWatchedPaths.checked = this.showWatchedPaths;
         const customColor = document.getElementById('line-custom-color');
         if (customColor) customColor.disabled = style.colorMode !== 'custom';
     }

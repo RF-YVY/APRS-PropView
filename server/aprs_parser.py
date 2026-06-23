@@ -185,6 +185,8 @@ def _parse_lat_lon(data: str):
     """Parse uncompressed lat/lon: DDMM.hhN/DDDMM.hhW returns (lat, lon, rest, sym_table, sym_code)."""
     if len(data) < 19:
         return None
+    if not _is_uncompressed_position(data):
+        return None
 
     try:
         lat_str = data[0:8]  # DDMM.hhN
@@ -196,6 +198,8 @@ def _parse_lat_lon(data: str):
         # Parse latitude
         lat_deg = int(lat_str[0:2])
         lat_min = float(lat_str[2:7])
+        if lat_deg > 90 or lat_min >= 60:
+            return None
         lat = lat_deg + lat_min / 60.0
         if lat_str[7] in ("S", "s"):
             lat = -lat
@@ -203,6 +207,8 @@ def _parse_lat_lon(data: str):
         # Parse longitude
         lon_deg = int(lon_str[0:3])
         lon_min = float(lon_str[3:8])
+        if lon_deg > 180 or lon_min >= 60:
+            return None
         lon = lon_deg + lon_min / 60.0
         if lon_str[8] in ("W", "w"):
             lon = -lon
@@ -221,6 +227,11 @@ def _position_packet_type(pkt: APRSPacket) -> str:
 def _is_uncompressed_position(data: str) -> bool:
     """Return True when data begins with an uncompressed APRS position."""
     return bool(re.match(r"^\d{4}\.\d{2}[NSns].\d{5}\.\d{2}[EWew]", data))
+
+
+def _starts_like_uncompressed_latitude(data: str) -> bool:
+    """Return True when data appears to begin with an uncompressed APRS latitude."""
+    return bool(re.match(r"^\d{4,}\.\d{2}[NSns]", data))
 
 
 def _is_base91_position_chars(value: str) -> bool:
@@ -286,6 +297,21 @@ def _parse_position(pkt: APRSPacket, info: str, with_messaging: bool = False):
     if _parse_position_weather(pkt, info):
         return
 
+    # When a packet begins like uncompressed APRS latitude, do not let malformed
+    # data fall through into compressed-position decoding and create false fixes.
+    result = _parse_lat_lon(info)
+    if result:
+        pkt.latitude, pkt.longitude, rest, pkt.symbol_table, pkt.symbol_code = result
+        if pkt.symbol_code == "_":
+            pkt.comment = rest.strip()
+            pkt.weather = _parse_weather_telemetry(rest)
+        else:
+            _extract_data_extension(pkt, rest)
+        _extract_altitude(pkt)
+        return
+    if _starts_like_uncompressed_latitude(info):
+        return
+
     # Try compressed first (symbol table/overlay char followed by base-91)
     if _looks_like_compressed_position(info):
         result = _parse_compressed_lat_lon(info)
@@ -296,17 +322,6 @@ def _parse_position(pkt: APRSPacket, info: str, with_messaging: bool = False):
                 pkt.weather = _parse_weather_telemetry(rest)
             _extract_altitude(pkt)
             return
-
-    # Try uncompressed
-    result = _parse_lat_lon(info)
-    if result:
-        pkt.latitude, pkt.longitude, rest, pkt.symbol_table, pkt.symbol_code = result
-        if pkt.symbol_code == "_":
-            pkt.comment = rest.strip()
-            pkt.weather = _parse_weather_telemetry(rest)
-        else:
-            _extract_data_extension(pkt, rest)
-        _extract_altitude(pkt)
 
 
 def _parse_position_with_timestamp(pkt: APRSPacket, info: str, with_messaging: bool = False):

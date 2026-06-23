@@ -83,6 +83,29 @@ path = "propview.db"
 [tracking]
 max_station_age = 86400
 cleanup_interval = 3600
+blocked_callsigns = []
+
+[callbook]
+provider = "auto"
+hamqth_username = ""
+hamqth_password = ""
+qrz_username = ""
+qrz_password = ""
+
+# Watched propagation paths. When enabled, PropView watches recent RF evidence
+# in the target direction and range for possible two-way VHF opportunities.
+# Example:
+# [[watched_paths]]
+# enabled = true
+# callsign = "WT1W"
+# latitude = 35.0
+# longitude = -80.0
+# band = "2m"
+# min_confidence = "medium"
+# bearing_tolerance_deg = 30
+# min_probe_count = 2
+# max_age_minutes = 60
+# alert_cooldown_minutes = 30
 
 [messaging]
 message_retention_days = 30
@@ -339,6 +362,37 @@ class DatabaseConfig:
 class TrackingConfig:
     max_station_age: int = 86400
     cleanup_interval: int = 3600
+    blocked_callsigns: List[str] = field(default_factory=list)
+
+
+@dataclass
+class WatchedPathConfig:
+    enabled: bool = True
+    callsign: str = ""
+    latitude: float = 0.0
+    longitude: float = 0.0
+    grid: str = ""
+    band: str = "2m"
+    mode: str = ""
+    frequency_mhz: float = 0.0
+    min_confidence: str = "medium"
+    bearing_tolerance_deg: int = 30
+    min_probe_count: int = 2
+    max_age_minutes: int = 60
+    alert_cooldown_minutes: int = 30
+    my_antenna_height_m: float = 10.0
+    target_antenna_height_m: float = 10.0
+    my_tx_power_w: float = 50.0
+    my_antenna_gain_dbi: float = 0.0
+
+
+@dataclass
+class CallbookConfig:
+    provider: str = "auto"
+    hamqth_username: str = ""
+    hamqth_password: str = ""
+    qrz_username: str = ""
+    qrz_password: str = ""
 
 
 @dataclass
@@ -526,6 +580,8 @@ class Config:
     web: WebConfig = field(default_factory=WebConfig)
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     tracking: TrackingConfig = field(default_factory=TrackingConfig)
+    watched_paths: List[WatchedPathConfig] = field(default_factory=list)
+    callbook: CallbookConfig = field(default_factory=CallbookConfig)
     messaging: MessagingConfig = field(default_factory=MessagingConfig)
     alerts: AlertsConfig = field(default_factory=AlertsConfig)
     propagation: PropagationConfig = field(default_factory=PropagationConfig)
@@ -559,6 +615,7 @@ class Config:
             "web": (WebConfig, "web"),
             "database": (DatabaseConfig, "database"),
             "tracking": (TrackingConfig, "tracking"),
+            "callbook": (CallbookConfig, "callbook"),
             "messaging": (MessagingConfig, "messaging"),
             "alerts": (AlertsConfig, "alerts"),
             "propagation": (PropagationConfig, "propagation"),
@@ -583,6 +640,14 @@ class Config:
                     allowed = RFPortConfig.__dataclass_fields__.keys()
                     ports.append(RFPortConfig(**{k: v for k, v in item.items() if k in allowed}))
             config.rf_ports = ports
+
+        if "watched_paths" in data and isinstance(data["watched_paths"], list):
+            paths = []
+            allowed = WatchedPathConfig.__dataclass_fields__.keys()
+            for item in data["watched_paths"]:
+                if isinstance(item, dict):
+                    paths.append(WatchedPathConfig(**{k: v for k, v in item.items() if k in allowed}))
+            config.watched_paths = paths
 
         return config
 
@@ -682,6 +747,28 @@ class Config:
             ])
             port_lines.append("")
             lines.extend(port_lines)
+        for item in self.watched_paths:
+            lines.extend([
+                "[[watched_paths]]",
+                f"enabled = {'true' if item.enabled else 'false'}",
+                f'callsign = "{esc(item.callsign)}"',
+                f"latitude = {float(item.latitude)}",
+                f"longitude = {float(item.longitude)}",
+                f'grid = "{esc(item.grid)}"',
+                f'band = "{esc(item.band)}"',
+                f'mode = "{esc(item.mode)}"',
+                f"frequency_mhz = {float(item.frequency_mhz)}",
+                f'min_confidence = "{esc(item.min_confidence)}"',
+                f"bearing_tolerance_deg = {int(item.bearing_tolerance_deg)}",
+                f"min_probe_count = {int(item.min_probe_count)}",
+                f"max_age_minutes = {int(item.max_age_minutes)}",
+                f"alert_cooldown_minutes = {int(item.alert_cooldown_minutes)}",
+                f"my_antenna_height_m = {float(item.my_antenna_height_m)}",
+                f"target_antenna_height_m = {float(item.target_antenna_height_m)}",
+                f"my_tx_power_w = {float(item.my_tx_power_w)}",
+                f"my_antenna_gain_dbi = {float(item.my_antenna_gain_dbi)}",
+                "",
+            ])
         lines.extend([
             "[web]",
             f'host = "{esc(self.web.host)}"',
@@ -705,6 +792,14 @@ class Config:
             "[tracking]",
             f"max_station_age = {int(self.tracking.max_station_age)}",
             f"cleanup_interval = {int(self.tracking.cleanup_interval)}",
+            'blocked_callsigns = [' + ', '.join('"' + esc(str(call).strip().upper()) + '"' for call in self.tracking.blocked_callsigns if str(call).strip()) + ']',
+            "",
+            "[callbook]",
+            f'provider = "{esc(self.callbook.provider)}"',
+            f'hamqth_username = "{esc(self.callbook.hamqth_username)}"',
+            f'hamqth_password = "{esc(self.callbook.hamqth_password)}"',
+            f'qrz_username = "{esc(self.callbook.qrz_username)}"',
+            f'qrz_password = "{esc(self.callbook.qrz_password)}"',
             "",
             "[messaging]",
             f"message_retention_days = {int(self.messaging.message_retention_days)}",

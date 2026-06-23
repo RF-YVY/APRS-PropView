@@ -107,12 +107,44 @@ path = "propview.db"
 max_station_age = 86400
 # How often to purge old records (seconds)
 cleanup_interval = 3600
+# Callsigns to ignore completely. Use CALL-SSID for one SSID, or CALL for all SSIDs.
+blocked_callsigns = []
+
+[callbook]
+# Watched-path lookup source. Auto tries Callook first, then HamDB, then configured QRZ/HamQTH.
+# Callook and HamDB are credential-free; QRZ XML may require a paid XML data subscription.
+provider = "auto"  # auto, callook, hamdb, qrz, hamqth
+hamqth_username = ""
+hamqth_password = ""
+qrz_username = ""
+qrz_password = ""
+
+# Optional watched VHF paths. PropView alerts when recent RF evidence suggests
+# enhancement along the target direction and distance.
+#[[watched_paths]]
+#enabled = true
+#callsign = "W1AW"
+#latitude = 35.0
+#longitude = -80.0
+#grid = ""
+#band = "2m"
+#mode = "SSB"
+#frequency_mhz = 144.2
+#min_confidence = "medium"  # low, medium, high
+#bearing_tolerance_deg = 30
+#min_probe_count = 2
+#max_age_minutes = 60
+#alert_cooldown_minutes = 30
+#my_antenna_height_m = 10.0
+#target_antenna_height_m = 10.0
+#my_tx_power_w = 50.0
+#my_antenna_gain_dbi = 0.0
 
 [messaging]
 # How many days to retain APRS message history in the database
 message_retention_days = 30
 # Also receive messages addressed to the same base callsign with any SSID.
-# Example: if the station ID is K5YVY-1, messages to K5YVY-7 or K5YVY-9
+# Example: if the station ID is W1AW-1, messages to W1AW-7 or W1AW-9
 # appear in the app inbox. Exact station-ID messages are still the only ones
 # auto-ACKed by this running instance.
 receive_sibling_ssids = true

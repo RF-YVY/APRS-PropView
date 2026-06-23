@@ -25,9 +25,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from server.config import (
     Config, StationConfig, DigiConfig, IGateConfig, APRSISConfig,
-    KISSSerialConfig, KISSTCPConfig, RFPortConfig, WebConfig, DatabaseConfig, TrackingConfig,
+    KISSSerialConfig, KISSTCPConfig, RFPortConfig, WatchedPathConfig, WebConfig, DatabaseConfig, TrackingConfig,
     MessagingConfig, AlertsConfig, PropagationConfig, WeatherConfig, GPSConfig, MQTTConfig,
 )
+from server.callbook import CallbookCredentials, lookup_callsign
 from server.browser_launch import available_browsers, browser_ids
 from server.database import Database
 from server.station_tracker import StationTracker
@@ -81,6 +82,29 @@ _BLOCKED_CALLSIGNS = {'N0CALL', 'NOCALL', 'MYCALL', 'TEST'}
 _INVALID_CALLSIGN_MESSAGE = "Invalid callsign format. Use 1-9 letters/numbers; APRS-IS will validate your account when connecting."
 _IGATE_CALLSIGN_MESSAGE = "IGate requires your assigned callsign. Change your callsign from the default."
 _IGATE_PASSCODE_MESSAGE = "RF\u2192APRS-IS gating requires a valid APRS-IS passcode. Read-only (passcode -1) cannot inject packets."
+
+
+def _rf_ports_signature(ports) -> tuple:
+    """Return the restart-relevant RF port configuration."""
+    return tuple(
+        (
+            port.name,
+            bool(port.enabled),
+            port.type,
+            port.port,
+            int(port.baudrate),
+            port.host,
+            int(port.tcp_port),
+            port.protocol,
+            port.mode,
+            port.flow_control,
+            port.init_profile,
+            port.init_commands,
+            bool(port.rx_only_rf),
+            bool(port.rx_only_is),
+        )
+        for port in ports
+    )
 
 
 def _is_valid_message_addressee(value: str) -> bool:
@@ -371,6 +395,67 @@ def _validate_config(body: Dict[str, Any]) -> Optional[str]:
                     return "Enter only the APRS-IS filter tokens, not the leading 'filter' command word."
                 if not _FILTER_TOKEN_RE.match(token):
                     return f"Invalid APRS-IS filter token: '{token}'. Filters use format like r/35/-79/80, m/80, b/CALL, t/poimq, or -p/CW."
+
+    if "tracking" in body:
+        t = body["tracking"]
+        blocked = t.get("blocked_callsigns", [])
+        if isinstance(blocked, str):
+            blocked = re.split(r"[\s,]+", blocked)
+        if not isinstance(blocked, list):
+            return "Station blocklist must be a list of callsigns."
+        for value in blocked:
+            call = str(value or "").strip().upper()
+            if not call:
+                continue
+            if not re.fullmatch(r"[A-Z0-9]{1,9}(?:-(?:[0-9]|1[0-5]))?", call):
+                return "Blocked callsigns must look like CALL or CALL-SSID, with SSID 0-15."
+
+    if "watched_paths" in body:
+        paths = body["watched_paths"]
+        if isinstance(paths, str):
+            paths = [line for line in paths.splitlines() if line.strip()]
+        if not isinstance(paths, list):
+            return "Watched paths must be a list."
+        for item in paths:
+            if isinstance(item, str):
+                parts = [part.strip() for part in item.split("|")]
+                if len(parts) < 2:
+                    return "Watched path lines must use CALL|latitude|longitude or CALL|grid."
+                call = parts[0]
+                if len(parts) >= 3 and re.fullmatch(r"-?\d+(?:\.\d+)?", parts[1] or ""):
+                    lat_value, lon_value = parts[1], parts[2]
+                    grid_value = ""
+                else:
+                    lat_value, lon_value = 0, 0
+                    grid_value = parts[1] if len(parts) > 1 else ""
+            elif isinstance(item, dict):
+                call = str(item.get("callsign", "") or "").strip()
+                lat_value = item.get("latitude", 0)
+                lon_value = item.get("longitude", 0)
+                grid_value = item.get("grid", "")
+            else:
+                return "Watched path entries must be objects or CALL|lat|lon lines."
+            if call and not re.fullmatch(r"[A-Z0-9]{1,9}(?:-(?:[0-9]|1[0-5]))?", call.upper()):
+                return "Watched path callsigns must look like CALL or CALL-SSID."
+            if str(grid_value or "").strip() and StationTracker.maidenhead_to_lat_lon(str(grid_value)) is None:
+                return "Watched path grid squares must be valid Maidenhead locators, such as EM85 or EM85AB."
+            try:
+                lat = float(lat_value)
+                lon = float(lon_value)
+            except (TypeError, ValueError):
+                return "Watched path latitude/longitude must be valid numbers."
+            if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                return "Watched path latitude/longitude are out of range."
+
+    if "callbook" in body:
+        cb = body["callbook"]
+        provider = str(cb.get("provider", "auto") or "auto").strip().lower()
+        if provider not in {"auto", "callook", "hamdb", "hamqth", "qrz"}:
+            return "Callbook provider must be auto, callook, hamdb, hamqth, or qrz."
+        for field in ("hamqth_username", "qrz_username"):
+            value = str(cb.get(field, "") or "").strip()
+            if value and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._@+-]{0,63}", value):
+                return "Callbook usernames can contain letters, numbers, dots, underscores, plus, at, and dash."
 
     # IGate policy checks
     if "igate" in body:
@@ -881,6 +966,7 @@ def create_app(
 
             # Send propagation data
             prop_data = await tracker.get_propagation_data()
+            prop_data["watched_paths"] = await tracker.evaluate_watched_paths(allow_alerts=False)
             await ws_manager.send_to(websocket, {"type": "propagation", "data": prop_data})
 
             # Keep connection alive and handle incoming messages
@@ -1199,6 +1285,7 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 content={"success": False, "message": "Station not found."},
             )
         prop_data = await tracker.get_propagation_data()
+        prop_data["watched_paths"] = await tracker.evaluate_watched_paths(allow_alerts=False)
         await ws_manager.broadcast({"type": "propagation", "data": prop_data})
         return {"success": True}
 
@@ -1212,7 +1299,34 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
 
     @app.get("/api/propagation")
     async def get_propagation():
-        return await tracker.get_propagation_data()
+        prop_data = await tracker.get_propagation_data()
+        prop_data["watched_paths"] = await tracker.evaluate_watched_paths(allow_alerts=False)
+        return prop_data
+
+    @app.post("/api/callbook/lookup")
+    async def callbook_lookup(request: Request):
+        body = await request.json()
+        callsign = str(body.get("callsign", "") or "").strip().upper()
+        if not callsign:
+            return JSONResponse(status_code=400, content={"success": False, "message": "Enter a callsign to look up."})
+        base_call = callsign.split("-", 1)[0]
+        if not re.fullmatch(r"[A-Z0-9]{1,9}", base_call):
+            return JSONResponse(status_code=400, content={"success": False, "message": "Callsign must look like a valid station callsign."})
+
+        credentials = CallbookCredentials(
+            provider=config.callbook.provider,
+            hamqth_username=config.callbook.hamqth_username,
+            hamqth_password=config.callbook.hamqth_password,
+            qrz_username=config.callbook.qrz_username,
+            qrz_password=config.callbook.qrz_password,
+        )
+        try:
+            result = await lookup_callsign(credentials, base_call)
+        except Exception as exc:
+            logger.warning("Callbook lookup failed for %s: %s", base_call, exc)
+            return JSONResponse(status_code=502, content={"success": False, "message": "Callbook lookup failed. Check provider credentials and network access."})
+        status = 200 if result.get("success") else 404
+        return JSONResponse(status_code=status, content=result)
 
     @app.get("/api/propagation/history")
     async def get_propagation_history(hours: int = Query(24, ge=1, le=168)):
@@ -2106,6 +2220,38 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
             "tracking": {
                 "max_station_age": config.tracking.max_station_age,
                 "cleanup_interval": config.tracking.cleanup_interval,
+                "blocked_callsigns": config.tracking.blocked_callsigns,
+            },
+            "watched_paths": [
+                {
+                    "enabled": item.enabled,
+                    "callsign": item.callsign,
+                    "latitude": item.latitude,
+                    "longitude": item.longitude,
+                    "grid": item.grid,
+                    "band": item.band,
+                    "mode": item.mode,
+                    "frequency_mhz": item.frequency_mhz,
+                    "min_confidence": item.min_confidence,
+                    "bearing_tolerance_deg": item.bearing_tolerance_deg,
+                    "min_probe_count": item.min_probe_count,
+                    "max_age_minutes": item.max_age_minutes,
+                    "alert_cooldown_minutes": item.alert_cooldown_minutes,
+                    "my_antenna_height_m": item.my_antenna_height_m,
+                    "target_antenna_height_m": item.target_antenna_height_m,
+                    "my_tx_power_w": item.my_tx_power_w,
+                    "my_antenna_gain_dbi": item.my_antenna_gain_dbi,
+                }
+                for item in config.watched_paths
+            ],
+            "callbook": {
+                "provider": config.callbook.provider,
+                "hamqth_username": config.callbook.hamqth_username,
+                "hamqth_password": _mask_passcode(config.callbook.hamqth_password),
+                "hamqth_password_configured": bool(config.callbook.hamqth_password),
+                "qrz_username": config.callbook.qrz_username,
+                "qrz_password": _mask_passcode(config.callbook.qrz_password),
+                "qrz_password_configured": bool(config.callbook.qrz_password),
             },
             "messaging": {
                 "message_retention_days": config.messaging.message_retention_days,
@@ -2307,6 +2453,10 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
             return {
                 "success": True,
                 "needRestart": True,
+                "applicationRestartRequired": True,
+                "applicationRestartReasons": ["imported configuration"],
+                "browserRefreshRequired": False,
+                "browserRefreshReasons": [],
                 "message": "Settings imported. Restart APRS PropView to load the imported configuration.",
             }
 
@@ -2340,6 +2490,7 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
 
             live_applied = []   # Settings applied immediately
             need_restart = []   # Settings that need a restart
+            need_browser_refresh = []  # Saved UI changes that require a page reload
 
             # Snapshot APRS-IS settings before update (for change detection)
             old_aprs_is = (
@@ -2416,6 +2567,15 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
             # Update KISS serial config
             if "kiss_serial" in body:
                 ks = body["kiss_serial"]
+                old_kiss_serial = (
+                    config.kiss_serial.enabled,
+                    config.kiss_serial.port,
+                    config.kiss_serial.baudrate,
+                    config.kiss_serial.mode,
+                    config.kiss_serial.flow_control,
+                    config.kiss_serial.init_profile,
+                    config.kiss_serial.init_commands,
+                )
                 config.kiss_serial.enabled = bool(ks.get("enabled", config.kiss_serial.enabled))
                 config.kiss_serial.port = ks.get("port", config.kiss_serial.port)
                 config.kiss_serial.baudrate = int(ks.get("baudrate", config.kiss_serial.baudrate))
@@ -2423,19 +2583,42 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 config.kiss_serial.flow_control = (ks.get("flow_control", config.kiss_serial.flow_control) or "none").strip().lower()
                 config.kiss_serial.init_profile = (ks.get("init_profile", config.kiss_serial.init_profile) or "none").strip().lower()
                 config.kiss_serial.init_commands = ks.get("init_commands", config.kiss_serial.init_commands) or ""
-                need_restart.append("KISS serial")
+                new_kiss_serial = (
+                    config.kiss_serial.enabled,
+                    config.kiss_serial.port,
+                    config.kiss_serial.baudrate,
+                    config.kiss_serial.mode,
+                    config.kiss_serial.flow_control,
+                    config.kiss_serial.init_profile,
+                    config.kiss_serial.init_commands,
+                )
+                if new_kiss_serial != old_kiss_serial:
+                    need_restart.append("KISS serial")
 
             # Update KISS TCP config
             if "kiss_tcp" in body:
                 kt = body["kiss_tcp"]
+                old_kiss_tcp = (
+                    config.kiss_tcp.enabled,
+                    config.kiss_tcp.host,
+                    config.kiss_tcp.port,
+                )
                 config.kiss_tcp.enabled = bool(kt.get("enabled", config.kiss_tcp.enabled))
                 config.kiss_tcp.host = kt.get("host", config.kiss_tcp.host)
                 config.kiss_tcp.port = int(kt.get("port", config.kiss_tcp.port))
-                need_restart.append("KISS TCP")
+                new_kiss_tcp = (
+                    config.kiss_tcp.enabled,
+                    config.kiss_tcp.host,
+                    config.kiss_tcp.port,
+                )
+                if new_kiss_tcp != old_kiss_tcp:
+                    need_restart.append("KISS TCP")
 
             # Update multi RF port config. When this list is present it replaces
             # the legacy single serial/TCP startup path on the next restart.
             if "rf_ports" in body:
+                old_rf_ports = _rf_ports_signature(config.rf_ports)
+                legacy_rf_was_enabled = bool(config.kiss_serial.enabled or config.kiss_tcp.enabled)
                 rf_ports = []
                 for idx, item in enumerate(body["rf_ports"], 1):
                     port_type = (item.get("type", "serial") or "serial").strip().lower()
@@ -2474,7 +2657,8 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 config.rf_ports = rf_ports
                 config.kiss_serial.enabled = False
                 config.kiss_tcp.enabled = False
-                need_restart.append("RF ports")
+                if _rf_ports_signature(config.rf_ports) != old_rf_ports or legacy_rf_was_enabled:
+                    need_restart.append("RF ports")
 
             # Update web config
             if "web" in body:
@@ -2531,15 +2715,121 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
             # Update database config
             if "database" in body:
                 db_cfg = body["database"]
+                old_database_path = config.database.path
                 config.database.path = db_cfg.get("path", config.database.path)
-                need_restart.append("database path")
+                if config.database.path != old_database_path:
+                    need_restart.append("database path")
 
             # Update tracking config
             if "tracking" in body:
                 t = body["tracking"]
                 config.tracking.max_station_age = int(t.get("max_station_age", config.tracking.max_station_age))
                 config.tracking.cleanup_interval = int(t.get("cleanup_interval", config.tracking.cleanup_interval))
+                config.tracking.blocked_callsigns = StationTracker.normalize_blocked_callsigns(
+                    t.get("blocked_callsigns", config.tracking.blocked_callsigns)
+                )
                 live_applied.append("tracking")
+
+            if "watched_paths" in body:
+                raw_paths = body["watched_paths"]
+                if isinstance(raw_paths, str):
+                    raw_paths = [line for line in raw_paths.splitlines() if line.strip()]
+                parsed_paths = []
+                path_items = raw_paths if isinstance(raw_paths, list) else []
+                def watched_float(item, key, default, min_value=None, max_value=None):
+                    try:
+                        value = float(item.get(key, default) or default)
+                    except (TypeError, ValueError):
+                        value = float(default)
+                    if min_value is not None:
+                        value = max(float(min_value), value)
+                    if max_value is not None:
+                        value = min(float(max_value), value)
+                    return value
+
+                for item in path_items:
+                    if isinstance(item, str):
+                        parts = [part.strip() for part in item.split("|")]
+                        if len(parts) < 2:
+                            continue
+                        if len(parts) >= 3 and re.fullmatch(r"-?\d+(?:\.\d+)?", parts[1] or ""):
+                            item = {
+                                "callsign": parts[0],
+                                "latitude": parts[1],
+                                "longitude": parts[2],
+                                "band": parts[3] if len(parts) > 3 else "2m",
+                                "min_confidence": parts[4] if len(parts) > 4 else "medium",
+                                "mode": parts[5] if len(parts) > 5 else "",
+                                "frequency_mhz": parts[6] if len(parts) > 6 else 0,
+                                "my_antenna_height_m": parts[7] if len(parts) > 7 else 10.0,
+                                "target_antenna_height_m": parts[8] if len(parts) > 8 else 10.0,
+                                "my_tx_power_w": parts[9] if len(parts) > 9 else 50.0,
+                                "my_antenna_gain_dbi": parts[10] if len(parts) > 10 else 0.0,
+                            }
+                        else:
+                            item = {
+                                "callsign": parts[0],
+                                "grid": parts[1],
+                                "latitude": 0,
+                                "longitude": 0,
+                                "band": parts[2] if len(parts) > 2 else "2m",
+                                "min_confidence": parts[3] if len(parts) > 3 else "medium",
+                                "mode": parts[4] if len(parts) > 4 else "",
+                                "frequency_mhz": parts[5] if len(parts) > 5 else 0,
+                                "my_antenna_height_m": parts[6] if len(parts) > 6 else 10.0,
+                                "target_antenna_height_m": parts[7] if len(parts) > 7 else 10.0,
+                                "my_tx_power_w": parts[8] if len(parts) > 8 else 50.0,
+                                "my_antenna_gain_dbi": parts[9] if len(parts) > 9 else 0.0,
+                            }
+                    if not isinstance(item, dict):
+                        continue
+                    call = (item.get("callsign", "") or "").strip().upper()
+                    if not call:
+                        continue
+                    confidence = (item.get("min_confidence", "medium") or "medium").strip().lower()
+                    if confidence not in {"low", "medium", "high"}:
+                        confidence = "medium"
+                    parsed_paths.append(WatchedPathConfig(
+                        enabled=bool(item.get("enabled", True)),
+                        callsign=call,
+                        latitude=float(item.get("latitude", 0) or 0),
+                        longitude=float(item.get("longitude", 0) or 0),
+                        grid=(item.get("grid", "") or "").strip().upper()[:8],
+                        band=(item.get("band", "2m") or "2m").strip()[:24],
+                        mode=(item.get("mode", "") or "").strip()[:24],
+                        frequency_mhz=watched_float(item, "frequency_mhz", 0.0, 0.0, 10000.0),
+                        min_confidence=confidence,
+                        bearing_tolerance_deg=max(5, min(90, int(item.get("bearing_tolerance_deg", 30) or 30))),
+                        min_probe_count=max(1, min(10, int(item.get("min_probe_count", 2) or 2))),
+                        max_age_minutes=max(5, min(360, int(item.get("max_age_minutes", 60) or 60))),
+                        alert_cooldown_minutes=max(5, min(1440, int(item.get("alert_cooldown_minutes", 30) or 30))),
+                        my_antenna_height_m=watched_float(item, "my_antenna_height_m", 10.0, 0.0, 610.0),
+                        target_antenna_height_m=watched_float(item, "target_antenna_height_m", 10.0, 0.0, 610.0),
+                        my_tx_power_w=watched_float(item, "my_tx_power_w", 50.0, 0.1, 2000.0),
+                        my_antenna_gain_dbi=watched_float(item, "my_antenna_gain_dbi", 0.0, -20.0, 30.0),
+                    ))
+                config.watched_paths = parsed_paths[:50]
+                live_applied.append("watched paths")
+
+            if "callbook" in body:
+                cb = body["callbook"]
+                provider = (cb.get("provider", config.callbook.provider) or "auto").strip().lower()
+                if provider not in {"auto", "callook", "hamdb", "hamqth", "qrz"}:
+                    provider = "auto"
+                config.callbook.provider = provider
+                config.callbook.hamqth_username = (cb.get("hamqth_username", config.callbook.hamqth_username) or "").strip()
+                config.callbook.hamqth_password = _merge_secret_value(
+                    config.callbook.hamqth_password,
+                    cb.get("hamqth_password", ""),
+                    submitted_present="hamqth_password" in cb,
+                )
+                config.callbook.qrz_username = (cb.get("qrz_username", config.callbook.qrz_username) or "").strip()
+                config.callbook.qrz_password = _merge_secret_value(
+                    config.callbook.qrz_password,
+                    cb.get("qrz_password", ""),
+                    submitted_present="qrz_password" in cb,
+                )
+                live_applied.append("callbook")
 
             if "messaging" in body:
                 m = body["messaging"]
@@ -2857,14 +3147,26 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
 
             # Build response message
             parts = []
-            if live_applied:
-                parts.append(f"Applied live: {', '.join(live_applied)}.")
             if need_restart:
-                parts.append(f"Restart required for: {', '.join(need_restart)}.")
-            if not parts:
-                parts.append("Configuration saved (no changes detected).")
+                parts.append(f"Application restart required for: {', '.join(need_restart)}.")
+            elif need_browser_refresh:
+                parts.append(
+                    f"Browser refresh required for: {', '.join(need_browser_refresh)}. "
+                    "APRS PropView does not need to be restarted."
+                )
+            else:
+                parts.append("Settings saved and applied. No browser refresh or application restart is needed.")
 
-            return {"success": True, "message": " ".join(parts), "needRestart": bool(need_restart)}
+            return {
+                "success": True,
+                "message": " ".join(parts),
+                "needRestart": bool(need_restart),
+                "applicationRestartRequired": bool(need_restart),
+                "applicationRestartReasons": need_restart,
+                "browserRefreshRequired": bool(need_browser_refresh),
+                "browserRefreshReasons": need_browser_refresh,
+                "liveApplied": live_applied,
+            }
 
         except Exception as e:
             logger.error(f"Failed to save config: {e}")

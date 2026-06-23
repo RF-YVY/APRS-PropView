@@ -1,6 +1,6 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.6.2** | June 18, 2026
+**Version 1.7.0** | June 23, 2026
 
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/RF-YVY/APRS-PropView/total)
@@ -21,7 +21,7 @@
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
 
-Version 1.6.2 is a Windows updater reliability patch: it reduces false in-app download errors during the intentional shutdown handoff, avoids restart-manager relaunch conflicts, and makes the installer launch APRS PropView from the installed application folder.
+Version 1.7.0 adds watched VHF path opportunity alerts, callsign-assisted target setup, station blocklists, antenna-aware path scoring, malformed APRS position protection, and a redesigned category-based Settings workspace.
 
 Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs/linux-raspberry-pi.md).
 
@@ -65,6 +65,9 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 ### Alerts
 
 - **Band Opening Detection** — Automatic alerts when propagation thresholds are exceeded
+- **Watched VHF Paths** — Monitor a target station by callsign, grid, or coordinates and alert when observed RF enhancement reaches the target bearing and distance
+- **Antenna-Aware Opportunity Scoring** — Include local/target antenna height, transmit power, antenna gain, EIRP, and radio-horizon context in watched-path confidence
+- **Callsign-Assisted Target Builder** — Look up station coordinates through Callook, HamDB, QRZ XML, or HamQTH, with worldwide grid/coordinate overrides
 - **Alert Tuning Helper** — Analyze recent RF path history and recommend more selective band-opening thresholds from your local baseline
 - **Status/DX Reports** — Optional compact APRS status beacons with the best direct DX station, bearing, counts, and propagation level
 - **Dynamic, MHeard, and Weather Alert Beacons** — Rotate preset status messages, beacon direct-heard RF stations, or beacon severe weather alert text with preview-before-transmit controls
@@ -109,6 +112,11 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 ### Settings & UX
 
 - **Web-based Configuration** — Edit all settings from the browser (saved to `config.toml`)
+- **Category-Based Settings Workspace** — Navigate Station, Radio, APRS, Tracking, Propagation, Alerts, Display, and Integrations without scrolling one long page
+- **Settings Search And Deep Links** — Search all controls, retain the selected category, and link directly to routes such as `#settings/propagation`
+- **Unsaved Change Guidance** — Modified sections pulse yellow, appear in navigation, and clear only after a successful save
+- **Precise Save Impact** — Save confirmation distinguishes settings applied immediately, browser refresh requirements, and full application restart requirements
+- **Section Reset And Validation Routing** — Restore one section to its last saved values and automatically open the category containing an invalid field
 - **First-Run Checklist** — Guided setup reminders for callsign, location, APRS-IS passcode/filter, RF port, beacon path, save, and test transmit
 - **Settings Import/Export** — Back up or restore `config.toml` before experimenting with RF, APRS-IS, host, or port settings
 - **Hot-Reload Settings** — Most settings apply immediately without restarting the server
@@ -136,6 +144,9 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 - **Persistent UI State** — Map toggles, zoom, position, theme, line time filter, station type filters, callsign labels, and auto-fit are saved to the browser and restored on next launch
 - **Linux/Pi Friendly Configuration** — Example config and install guide include multi-port RF, AGWPE TCP, private APRS-IS feeds, scheduled packets, and smart beaconing notes
 - **Station Cleanup** — Automatic pruning of stale stations from memory with real-time UI removal
+- **Station Blocklist** — Ignore one callsign/SSID or every SSID belonging to a base callsign before packets enter station, message, propagation, or history data
+- **Malformed APRS Position Protection** — Reject invalid uncompressed coordinates instead of misinterpreting them as compressed positions and plotting them in the wrong region
+- **Watched Path Map Toggle** — Show or hide watched VHF path lines from the map Line options
 
 ### APRS-IS Policy Compliance
 
@@ -233,7 +244,7 @@ the current `APRSPropView.exe`.
 Installer upgrades replace the application executable and bundled files only.
 User data such as `config.toml`, `propview.db`, `map_tile_cache/`, and
 `user_audio/` is left in place. Publish both `APRSPropView.exe` and the setup
-asset on GitHub releases; assets named like `APRSPropViewSetup-1.6.2.exe` are
+asset on GitHub releases; assets named like `APRSPropViewSetup-1.7.0.exe` are
 detected by the in-app update checker so users can click **Install Update** in
 the About tab. On Linux, Raspberry Pi, and macOS, users still see release
 notices but installer-based update buttons are hidden because those platforms
