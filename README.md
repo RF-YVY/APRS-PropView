@@ -23,6 +23,11 @@ A real-time APRS digipeater and IGate application focused on visualizing VHF pro
 
 Version 1.8.0 adds Docker/app-registry deployment support, TrueNAS SCALE and Portainer templates, tighter watched-path target-area scoring, clearer digipeater path handling, container health diagnostics, and Windows update reliability fixes.
 
+**PLUS** several new Themes to select from in Settings->Map & Display. Choose your desire console color or choose from fantastic themes.
+
+<img width="1907" height="912" alt="image" src="https://github.com/user-attachments/assets/3dbfab6f-0a0f-4bfd-8444-f4b8964df76f" />
+
+
 Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs/linux-raspberry-pi.md).
 Docker, TrueNAS SCALE, Portainer, and app-registry installs are covered in [docs/docker.md](docs/docker.md).
 
