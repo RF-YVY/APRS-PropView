@@ -49,8 +49,8 @@ reliability fixes. Existing `config.toml`, `propview.db`, cached map tiles, and
 user audio files are preserved by the installer.
 
 If you run the app as a headless Pi service and do not want browser launch
-attempts, leave `[web].launch_browser` blank in `config.toml` or choose
-`System Default`/blank in Settings - Web Interface.
+attempts, set `[web].launch_browser = "none"` in `config.toml` or choose
+`Do not open automatically` in Settings - Web Interface.
 
 ## Remote Mobile Companion With Tailscale
 

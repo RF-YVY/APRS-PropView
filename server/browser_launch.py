@@ -96,11 +96,14 @@ BROWSER_CANDIDATES: tuple[BrowserCandidate, ...] = (
 
 
 def browser_ids() -> set[str]:
-    return {candidate.id for candidate in BROWSER_CANDIDATES}
+    return {"none"} | {candidate.id for candidate in BROWSER_CANDIDATES}
 
 
 def available_browsers() -> list[dict[str, str]]:
-    browsers = [{"id": "", "name": "System Default"}]
+    browsers = [
+        {"id": "none", "name": "Do not open automatically"},
+        {"id": "", "name": "System Default"},
+    ]
     for candidate in BROWSER_CANDIDATES:
         if _resolve_candidate(candidate):
             browsers.append({"id": candidate.id, "name": candidate.name})
@@ -109,6 +112,8 @@ def available_browsers() -> list[dict[str, str]]:
 
 def open_url(url: str, browser_id: str = "") -> bool:
     browser_id = (browser_id or "").strip().lower()
+    if browser_id == "none":
+        return False
     if browser_id:
         candidate = _candidate_by_id(browser_id)
         if candidate and _open_with_candidate(candidate, url):

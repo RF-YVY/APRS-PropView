@@ -143,7 +143,7 @@ Docker, TrueNAS SCALE, Portainer, and app-registry installs are covered in [docs
 - **Collapsible Sidebar** — Toggle button to collapse/expand the sidebar for a larger map view
 - **Persistent Weather Banner** — Weather conditions stay visible on the map unless disabled in settings
 - **Font Selector** — Choose from multiple fonts in Settings for crisp, readable text
-- **Opening Browser Selector** - Choose the browser APRS PropView opens on startup, or leave it blank/system default to avoid unwanted browser launch behavior on headless/service deployments
+- **Opening Browser Selector** - Choose the browser APRS PropView opens on startup, or select `Do not open automatically` / `launch_browser = "none"` for headless/service deployments
 - **About Tab** — Application version, build info, diagnostics, update checks, and attribution
 - **Help & User Guide** — In-app help modal covering every feature, control, and setting
 - **Installer-Based Updates** - Windows setup installs can detect GitHub setup assets, download the newer installer from the About tab, close APRS PropView cleanly, and launch setup while keeping user settings and data intact

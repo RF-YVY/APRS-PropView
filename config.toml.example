@@ -85,7 +85,8 @@ port = 8001
 host = "127.0.0.1"
 port = 14501
 # Browser used when APRS PropView opens the UI at launch.
-# Leave blank for the system default. Other values are detected in Settings.
+# Leave blank for the system default, or use "none" to disable startup browser launch.
+# Other values are detected in Settings.
 launch_browser = ""
 font_family = ""
 map_tile_source = "osm"

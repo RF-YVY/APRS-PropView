@@ -12,6 +12,7 @@ Released: June 26, 2026
 - Added popup guidance when a via-digipeater RF station cannot draw a map path because the digipeater has not yet sent a known position.
 - Added richer `/api/health?full=true` diagnostics for containers, including runtime paths, uptime, update-check state, and first-run configuration warnings.
 - Improved Windows in-app update handoff so the installer starts after the running app has had more time to exit cleanly.
+- Added an explicit `Do not open automatically` browser launch option for headless/service deployments.
 - Added SQLite indexes for high-volume packet and path-history queries.
 
 ## Upgrade Notes

@@ -113,7 +113,7 @@
             select.value = saved;
         } catch (err) {
             console.warn('Browser discovery failed:', err);
-            select.innerHTML = '<option value="">System Default</option>';
+            select.innerHTML = '<option value="none">Do not open automatically</option><option value="">System Default</option>';
             if (saved) {
                 const option = document.createElement('option');
                 option.value = saved;

@@ -33,6 +33,7 @@ from server.config import Config, RFPortConfig, WatchedPathConfig
 from server.database import Database
 from server.digipeater import Digipeater
 from server.export import MQTTPublisher
+from server.browser_launch import available_browsers, open_url
 from server.packet_handler import PacketHandler
 from server.station_tracker import StationTracker
 from server.websocket_manager import WebSocketManager
@@ -81,6 +82,13 @@ class SettingsImpactTests(unittest.TestCase):
             self.assertEqual(config.station.ssid, 7)
             self.assertAlmostEqual(config.station.latitude, 35.25)
             self.assertAlmostEqual(config.station.longitude, -80.5)
+
+    def test_launch_browser_none_is_valid_and_disables_open(self):
+        self.assertIsNone(_validate_config({"web": {"launch_browser": "none"}}))
+        self.assertIn({"id": "none", "name": "Do not open automatically"}, available_browsers())
+        with patch("server.browser_launch.webbrowser.open") as open_default:
+            self.assertFalse(open_url("http://127.0.0.1:14501", "none"))
+            open_default.assert_not_called()
 
     def test_container_env_override_warnings_name_restart_settings(self):
         body = {

@@ -218,7 +218,8 @@ def _start_tray(url: str, config: Config, shutdown_event: asyncio.Event, loop):
         image = Image.new("RGB", (64, 64), "#58a6ff")
 
     def on_open(icon, item):
-        open_url(url, config.web.launch_browser)
+        launch_browser = "" if config.web.launch_browser == "none" else config.web.launch_browser
+        open_url(url, launch_browser)
 
     def on_quit(icon, item):
         icon.stop()

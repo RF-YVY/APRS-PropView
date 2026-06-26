@@ -772,7 +772,7 @@ python main.py</code></pre>
                 <p>The About tab checks GitHub releases for newer builds unless update checks are disabled. The app can also show an update banner in the dashboard.</p>
                 <p>On Windows installer-based releases, the update checker looks for a GitHub release asset named like <code>APRSPropViewSetup-1.8.0.exe</code>. When an installer asset is available, the About/Help tab shows <b>Install Update</b>. Clicking it downloads the setup executable, asks APRS PropView to shut down cleanly, and launches setup after the server exits so newer application files can replace the existing install while keeping user settings and data intact. On Linux, Raspberry Pi, and macOS, release notices remain visible but the Windows-only installer action is hidden.</p>
                 <h3>Browser Launch Control</h3>
-                <p>Settings &rarr; Web Interface includes an Opening Browser selector. Leave it blank/system default for normal behavior, choose a discovered browser when you want a specific browser, or keep it blank for headless Pi/VM service deployments where opening a browser is not desired.</p>
+                <p>Settings &rarr; Web Interface includes an Opening Browser selector. Leave it blank/system default for normal behavior, choose a discovered browser when you want a specific browser, or choose <b>Do not open automatically</b> for headless Pi/VM service deployments where opening a browser is not desired.</p>
                 <h3>Data Files</h3>
                 <table>
                     <thead>

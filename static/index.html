@@ -1160,6 +1160,7 @@
                         <div class="settings-row">
                             <label for="cfg-web-launch-browser">Opening Browser</label>
                             <select id="cfg-web-launch-browser">
+                                <option value="none">Do not open automatically</option>
                                 <option value="">System Default</option>
                             </select>
                         </div>
@@ -2305,7 +2306,7 @@
                     <p>WXnow can send APRS weather packets from a local <code>WXnow.txt</code>, with optional position included in the packet. When positionless weather is selected, PropView can seed a matching weather-symbol position packet and then transmit the positionless WX report. Use <b>Preview WXnow</b> before <b>Transmit Now</b>.</p>
                     <h4>Web Interface</h4>
                     <p><b>Host/Port</b> — Bind address and port for the web UI (default <code>127.0.0.1:14501</code>). Use <code>0.0.0.0</code> to allow network access.</p>
-                    <p><b>Opening Browser</b> &mdash; Choose which browser APRS PropView opens at startup, or leave blank/system default for headless Pi/VM/service deployments where browser auto-open is not desired.</p>
+                    <p><b>Opening Browser</b> &mdash; Choose which browser APRS PropView opens at startup, or choose <b>Do not open automatically</b> for headless Pi/VM/service deployments where browser auto-open is not desired.</p>
                     <p><b>Font</b> — Choose a display font for the entire UI.</p>
                     <p><b>UI Theme</b> — Choose interface brightness, a visual skin, and an accent color independently from the map tile theme. Mission Control, Industrial, Neon Grid, Radio, iVIEW, and HackR alter panel materials and controls. iVIEW uses translucent liquid-glass surfaces; HackR uses a compact intelligence-console layout and night-vision map. Radio uses transceiver-style dual analog propagation meters whose needles follow the current direct and regional scores. Terminal Green Screen replaces the graphical dashboard with a numbered text console: use 1–8 for menus, F1 for help, F3/F12 to close, F5 to refresh, and F9 to switch between text and map views.</p>
                     <p><b>Visualizations</b> — Independently enable the propagation aura, new-path reveal, map color harmony, condition backdrops, expressive home marker, watched-path flow, and quiet direct-heard activity moments.</p>
