@@ -28,3 +28,5 @@ healthcheck:
 notes:
   - Prefer a TCP KISS source such as Direwolf for container installs.
   - If using a USB TNC, pass the serial device through to the app and configure the matching /dev path in PropView.
+  - Keep /data mounted to persistent storage; config.toml, propview.db, tile cache, and uploaded audio live there.
+  - Environment variables are startup overrides. If a setting reverts after Stop/Start, change or remove the matching TrueNAS environment variable.

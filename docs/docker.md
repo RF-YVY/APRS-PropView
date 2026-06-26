@@ -57,6 +57,12 @@ These variables are useful for containers and app registries:
 | `PROPVIEW_MAP_TILE_CACHE_DIR` | `$PROPVIEW_DATA_DIR/map_tile_cache` | Override map tile cache location. |
 | `PROPVIEW_USER_AUDIO_DIR` | `$PROPVIEW_DATA_DIR/user_audio` | Override alert audio upload location. |
 
+Environment variables are applied every time the container starts. If you set a
+variable such as `PROPVIEW_HOST`, `PROPVIEW_PORT`, `PROPVIEW_CALLSIGN`, or
+`PROPVIEW_KISS_TCP_HOST` in TrueNAS, Portainer, or Compose, that value wins over
+what is saved in the web UI after the next restart. For settings you want to
+manage from PropView itself, leave the matching environment variable unset.
+
 ## RF Input
 
 For containers, TCP KISS is the smoothest setup. A common pattern is Direwolf on
@@ -114,6 +120,15 @@ In TrueNAS SCALE, create a Custom App with:
 
 A reference values file is included at
 `deploy/docker/truenas-scale-custom-app.yaml`.
+
+Make sure the storage mount is a persistent host path or dataset mounted to
+`/data`. If `/data` is not mounted, settings can appear to save inside the
+running container but disappear when TrueNAS recreates it. To verify the active
+paths, open `/api/health?full=true` and confirm that `paths.config` points to
+`/data/config.toml`.
+
+If a saved setting reverts after Stop/Start, check the Custom App environment
+variables first. TrueNAS reapplies those values on every container start.
 
 For TrueNAS, TCP KISS is strongly recommended. Run Direwolf on the host, another
 container, or another machine on the LAN, then point PropView at that TCP KISS

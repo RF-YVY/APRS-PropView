@@ -11,6 +11,7 @@ from server.aprs_parser import make_message_packet, parse_packet
 from server.app import (
     _is_valid_message_addressee,
     _is_valid_station_callsign,
+    _container_env_override_warnings,
     _merge_secret_value,
     _rf_ports_signature,
     _tile_cache_key,
@@ -80,6 +81,28 @@ class SettingsImpactTests(unittest.TestCase):
             self.assertEqual(config.station.ssid, 7)
             self.assertAlmostEqual(config.station.latitude, 35.25)
             self.assertAlmostEqual(config.station.longitude, -80.5)
+
+    def test_container_env_override_warnings_name_restart_settings(self):
+        body = {
+            "web": {"host": "127.0.0.1", "port": 14501},
+            "rf_ports": [],
+            "station": {"callsign": "K5ABC"},
+        }
+        with patch.dict(
+            "os.environ",
+            {
+                "PROPVIEW_HOST": "0.0.0.0",
+                "PROPVIEW_PORT": "14501",
+                "PROPVIEW_KISS_TCP_HOST": "direwolf",
+                "PROPVIEW_CALLSIGN": "N0CALL",
+            },
+            clear=False,
+        ):
+            warnings = _container_env_override_warnings(body)
+
+        self.assertTrue(any("web host/port" in item for item in warnings))
+        self.assertTrue(any("RF ports" in item for item in warnings))
+        self.assertTrue(any("station identity/location" in item for item in warnings))
 
     def test_rf_port_signature_only_changes_when_port_settings_change(self):
         original = RFPortConfig(

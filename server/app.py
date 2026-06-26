@@ -108,6 +108,29 @@ def _rf_ports_signature(ports) -> tuple:
     )
 
 
+def _container_env_override_warnings(body: Dict[str, Any]) -> list[str]:
+    """Describe saved settings that will be replaced by container env on restart."""
+    if not isinstance(body, dict):
+        return []
+
+    checks = [
+        ("station", "station identity/location", ("PROPVIEW_CALLSIGN", "PROPVIEW_SSID", "PROPVIEW_LATITUDE", "PROPVIEW_LONGITUDE")),
+        ("web", "web host/port/browser/update checks", ("PROPVIEW_HOST", "PROPVIEW_PORT", "PROPVIEW_LAUNCH_BROWSER", "PROPVIEW_UPDATE_CHECKS")),
+        ("database", "database path", ("PROPVIEW_DB",)),
+        ("aprs_is", "APRS-IS enabled state", ("PROPVIEW_APRS_IS_ENABLED",)),
+        ("kiss_tcp", "legacy KISS TCP input", ("PROPVIEW_KISS_TCP_ENABLED", "PROPVIEW_KISS_TCP_HOST", "PROPVIEW_KISS_TCP_PORT")),
+        ("rf_ports", "RF ports", ("PROPVIEW_KISS_TCP_ENABLED", "PROPVIEW_KISS_TCP_HOST", "PROPVIEW_KISS_TCP_PORT")),
+    ]
+    warnings = []
+    for section, label, env_names in checks:
+        if section not in body:
+            continue
+        active = [name for name in env_names if os.environ.get(name) is not None]
+        if active:
+            warnings.append(f"{label} is controlled at startup by {', '.join(active)}")
+    return warnings
+
+
 def _is_valid_message_addressee(value: str) -> bool:
     """Validate the APRS message addressee field.
 
@@ -3218,6 +3241,8 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 config.weather.alert_scope_zone or "<unset>",
             )
 
+            container_override_warnings = _container_env_override_warnings(body)
+
             # Build response message
             parts = []
             if need_restart:
@@ -3229,6 +3254,11 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 )
             else:
                 parts.append("Settings saved and applied. No browser refresh or application restart is needed.")
+            if container_override_warnings:
+                parts.append(
+                    "Container environment overrides are active; after a Docker/TrueNAS restart these saved values "
+                    f"may be replaced unless changed in the app's environment: {'; '.join(container_override_warnings)}."
+                )
 
             return {
                 "success": True,
@@ -3239,6 +3269,7 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 "browserRefreshRequired": bool(need_browser_refresh),
                 "browserRefreshReasons": need_browser_refresh,
                 "liveApplied": live_applied,
+                "containerOverrideWarnings": container_override_warnings,
             }
 
         except Exception as e:

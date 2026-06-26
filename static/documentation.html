@@ -786,6 +786,9 @@ python main.py</code></pre>
                     </tbody>
                 </table>
                 <p>Installer upgrades do not delete <code>config.toml</code>, <code>propview.db</code>, <code>map_tile_cache/</code>, or <code>user_audio/</code>. Uninstall also leaves those user data files in place unless they are removed manually.</p>
+                <h3>Docker and TrueNAS Persistence</h3>
+                <p>Container installs store writable state in the configured data directory, normally <code>/data</code>. In TrueNAS SCALE, Portainer, Unraid, and Compose installs, mount persistent storage to <code>/data</code> so <code>config.toml</code>, <code>propview.db</code>, cached map tiles, and uploaded alert audio survive container recreation. Open <code>/api/health?full=true</code> to confirm the active config path points to <code>/data/config.toml</code>.</p>
+                <p>Docker environment variables are startup overrides. If values such as <code>PROPVIEW_HOST</code>, <code>PROPVIEW_PORT</code>, <code>PROPVIEW_CALLSIGN</code>, or <code>PROPVIEW_KISS_TCP_HOST</code> are set in the app platform, those values replace the saved configuration on every start. Change the value in the platform environment, or remove the environment variable and manage that setting from PropView.</p>
                 <a class="backtop" href="#top">Back to top</a>
             </section>
 

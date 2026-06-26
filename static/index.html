@@ -2265,6 +2265,7 @@
                     <h3>⚙️ Settings</h3>
                     <p>All settings are saved to <code>config.toml</code> next to the executable. The category rail and search box replace the older single scrolling list. Modified sections pulse yellow, the sticky save action shows the number of changed sections, and each section can be restored to its last saved values.</p>
                     <p>After saving, PropView clearly reports whether settings applied immediately, require a browser refresh, or require a full application restart. Restart warnings name only settings whose values actually changed.</p>
+                    <p>In Docker and TrueNAS installs, mount persistent storage to <code>/data</code>. Environment variables set in the container platform are startup overrides, so matching values saved in the web UI can be replaced when the app is stopped and started again.</p>
                     <p>The Overview category includes a first-run checklist, settings import/export buttons for safe experimentation, and a last-transmitted history panel for station, WXnow, status, MHeard, and weather-alert beacons.</p>
                     <h4>Station</h4>
                     <p>Your callsign, SSID, latitude/longitude (or use the 📌 map picker), APRS symbol, status comment, beacon interval (minutes), and beacon path (e.g. <code>WIDE1-1</code>). Use <b>Preview Station Beacon</b> to inspect the exact packet text before using <b>Transmit Station Now</b>.</p>
