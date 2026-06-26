@@ -25,6 +25,21 @@ class PropViewMap {
         this.rangeCircles = null;
         this.observedRangeLayer = null;
         this.watchedPathLayer = null;
+        this.ambientLayer = null;
+        this.propagationAura = null;
+        this._lastPropagationData = null;
+        this._lastWatchedPaths = null;
+        this._visualReadyAt = Date.now() + 4000;
+        this._lastActivityMomentAt = 0;
+        this.visualizations = {
+            propagationAura: true,
+            pathReveal: true,
+            mapHarmony: true,
+            conditionBackdrop: true,
+            homeMarker: true,
+            watchedPathFlow: true,
+            activityMoments: true,
+        };
         this.pickMode = false;
         this.objectMode = false;
         this.pickMarker = null;
@@ -97,6 +112,10 @@ class PropViewMap {
         this.isLayer = L.layerGroup().addTo(this.map);
         this.spiderLayer = L.layerGroup().addTo(this.map);
         this.watchedPathLayer = L.layerGroup().addTo(this.map);
+        this.map.createPane('ambientPane');
+        this.map.getPane('ambientPane').style.zIndex = 210;
+        this.map.getPane('ambientPane').style.pointerEvents = 'none';
+        this.ambientLayer = L.layerGroup([], { pane: 'ambientPane' }).addTo(this.map);
         this.map.createPane('weatherRadarPane');
         this.map.getPane('weatherRadarPane').style.zIndex = 320;
         this.map.getPane('weatherRadarPane').style.pointerEvents = 'none';
@@ -125,6 +144,7 @@ class PropViewMap {
 
         // Restore saved UI state from localStorage
         this._restoreUIState();
+        this._applyVisualizationClasses();
 
         return this;
     }
@@ -163,6 +183,7 @@ class PropViewMap {
                 ? await window.pvConfigPromise
                 : await fetch('/api/config').then((resp) => resp.json());
             this.setMapTileConfig(cfg.web || {});
+            this.setVisualizationConfig(cfg.web || {});
         } catch (e) {
             console.warn('Failed to load map tile config, using default OSM tiles:', e);
             this.setMapTileConfig(this._defaultTileConfig());
@@ -197,6 +218,78 @@ class PropViewMap {
 
         this.baseTileLayer = L.tileLayer(next.map_tile_url, options).addTo(this.map);
         this.mapTileConfig = next;
+    }
+
+    setVisualizationConfig(config = {}) {
+        this.visualizations = {
+            propagationAura: config.visual_propagation_aura ?? true,
+            pathReveal: config.visual_path_reveal ?? true,
+            mapHarmony: config.visual_map_harmony ?? true,
+            conditionBackdrop: config.visual_condition_backdrop ?? true,
+            homeMarker: config.visual_home_marker ?? true,
+            watchedPathFlow: config.visual_watched_path_flow ?? true,
+            activityMoments: config.visual_activity_moments ?? true,
+        };
+        this._applyVisualizationClasses();
+        if (this.myPosition) {
+            this.setMyPosition(this.myPosition.lat, this.myPosition.lng, this.myCallsign, this.myStationInfo);
+        }
+        if (this._lastPropagationData) this.setPropagationVisuals(this._lastPropagationData);
+        if (this._lastWatchedPaths) this.updateWatchedPaths(this._lastWatchedPaths);
+    }
+
+    _applyVisualizationClasses() {
+        const panel = document.getElementById('map-panel');
+        if (!panel) return;
+        panel.classList.toggle('visual-map-harmony', !!this.visualizations.mapHarmony);
+        panel.classList.toggle('visual-condition-backdrop', !!this.visualizations.conditionBackdrop);
+        panel.classList.toggle('visual-home-marker', !!this.visualizations.homeMarker);
+        document.documentElement.classList.toggle('visual-condition-backdrop', !!this.visualizations.conditionBackdrop);
+    }
+
+    setPropagationVisuals(data = {}) {
+        this._lastPropagationData = data;
+        const normalizeLevel = (value) => {
+            const level = (value || 'none').toLowerCase();
+            return ['poor', 'fair', 'good', 'excellent'].includes(level) ? level : 'none';
+        };
+        document.querySelectorAll('.prop-gauge').forEach((meter) => {
+            meter.classList.remove('ambient-none', 'ambient-poor', 'ambient-fair', 'ambient-good', 'ambient-excellent');
+        });
+        if (this.visualizations.conditionBackdrop) {
+            document.getElementById('prop-meter-my')?.classList.add(`ambient-${normalizeLevel(data.my_level)}`);
+            document.getElementById('prop-meter-reg')?.classList.add(`ambient-${normalizeLevel(data.level)}`);
+        }
+
+        if (!this.map || !this.myPosition || !this.ambientLayer) return;
+        if (this.propagationAura) {
+            this.ambientLayer.removeLayer(this.propagationAura);
+            this.propagationAura = null;
+        }
+        if (!this.visualizations.propagationAura) return;
+
+        const score = Math.max(0, Math.min(100, Number(data.my_score || 0)));
+        const distanceKm = Math.max(20, Number(data.my_max_distance_km || 0), 25 + score * 1.5);
+        const level = normalizeLevel(data.my_level);
+        const colors = {
+            excellent: '#45d483',
+            good: '#58a6ff',
+            fair: '#d9a62e',
+            poor: '#ef6a70',
+            none: '#6e93b8',
+        };
+        const color = colors[level];
+        this.propagationAura = L.circle([this.myPosition.lat, this.myPosition.lng], {
+            pane: 'ambientPane',
+            radius: distanceKm * 1000,
+            color,
+            weight: 1,
+            opacity: 0.2 + score / 500,
+            fillColor: color,
+            fillOpacity: 0.035 + score / 1800,
+            interactive: false,
+            className: 'propagation-aura',
+        }).addTo(this.ambientLayer);
     }
 
     _markerMetrics(isMine = false) {
@@ -259,7 +352,7 @@ class PropViewMap {
             : '';
         const icon = L.divIcon({
             className: 'aprs-icon-wrapper my-station-icon-wrapper',
-            html: `<div class="aprs-emoji-marker aprs-emoji-my" style="${this._markerStyle(true)}">${markerSprite}</div>`,
+            html: `<div class="my-station-visual"><span class="my-station-ring ring-one"></span><span class="my-station-ring ring-two"></span><div class="aprs-emoji-marker aprs-emoji-my" style="${this._markerStyle(true)}">${markerSprite}</div></div>`,
             iconSize: this._markerIconSize(true),
             iconAnchor: this._markerIconAnchor(true),
             popupAnchor: [0, -this._markerIconAnchor(true)[1]],
@@ -300,6 +393,7 @@ class PropViewMap {
                 interactive: false,
             }).addTo(this.map)
         );
+        if (this._lastPropagationData) this.setPropagationVisuals(this._lastPropagationData);
     }
 
     centerOnStation() {
@@ -408,6 +502,7 @@ class PropViewMap {
 
     updateWatchedPaths(watched) {
         if (!this.map || !this.myPosition || !this.watchedPathLayer) return;
+        this._lastWatchedPaths = watched;
         this.watchedPathLayer.clearLayers();
         const opportunities = watched?.opportunities || [];
         opportunities.forEach((item) => {
@@ -428,13 +523,24 @@ class PropViewMap {
                     <tr><td class="popup-lbl">RF Probes</td><td>${item.probe_count || 0}</td></tr>
                 </table>
             `;
-            L.polyline([[this.myPosition.lat, this.myPosition.lng], [lat, lng]], {
+            const route = [[this.myPosition.lat, this.myPosition.lng], [lat, lng]];
+            L.polyline(route, {
                 color,
                 weight: Math.max(2, Math.min(6, 2 + Number(item.score || 0) / 25)),
                 opacity: item.confidence === 'none' ? 0.35 : 0.85,
                 dashArray: item.confidence === 'none' ? '4 6' : item.confidence === 'low' ? '7 6' : '',
                 interactive: true,
             }).bindPopup(popup).addTo(this.watchedPathLayer);
+            if (this.visualizations.watchedPathFlow && item.confidence !== 'none') {
+                L.polyline(route, {
+                    color: '#e7fbff',
+                    weight: Math.max(1, Math.min(3, 1 + Number(item.score || 0) / 50)),
+                    opacity: item.confidence === 'high' ? 0.8 : 0.55,
+                    dashArray: '2 14',
+                    interactive: false,
+                    className: 'watched-path-flow',
+                }).addTo(this.watchedPathLayer);
+            }
             L.circleMarker([lat, lng], {
                 radius: item.confidence === 'high' ? 7 : 5,
                 color,
@@ -454,7 +560,7 @@ class PropViewMap {
         }
     }
 
-    addOrUpdateStation(station) {
+    addOrUpdateStation(station, options = {}) {
         if (!station.latitude || !station.longitude) return;
         if (station.latitude === 0 && station.longitude === 0) return;
 
@@ -466,6 +572,7 @@ class PropViewMap {
         const dist = station.distance_km;
         const markers = source === 'rf' ? this.rfMarkers : this.isMarkers;
         const layer = source === 'rf' ? this.rfLayer : this.isLayer;
+        const isNewMarker = !markers[call];
 
         // Build popup content
         const distStr = dist ? window.formatDist(dist) : 'N/A';
@@ -501,6 +608,9 @@ class PropViewMap {
             : isDirect === false
                 ? '<span style="color:#d29922;font-weight:600;">Via Digipeater</span>'
                 : '';
+        const unknownDigiHtml = source === 'rf' && isDirect === false
+            ? this._unknownDigiPathHtml(station.last_path)
+            : '';
         const weatherRows = this._weatherRowsHTML(station, category);
         const commentHtml = station.last_comment ? this._escapeHtml(station.last_comment) : '';
         const pathHtml = station.last_path ? this._escapeHtml(station.last_path) : '';
@@ -530,6 +640,7 @@ class PropViewMap {
                 ${commentHtml && !weatherRows ? `<tr><td class="popup-lbl">Comment</td><td>${commentHtml}</td></tr>` : ''}
                 ${pathHtml ? `<tr><td class="popup-lbl">Path</td><td class="popup-path">${pathHtml}</td></tr>` : ''}
                 ${heardViaHtml ? `<tr><td class="popup-lbl">Via</td><td>${heardViaHtml}</td></tr>` : ''}
+                ${unknownDigiHtml ? `<tr><td class="popup-lbl">Map Path</td><td>${unknownDigiHtml}</td></tr>` : ''}
                 <tr><td class="popup-lbl">Position</td><td>${lat.toFixed(4)}, ${lng.toFixed(4)}</td></tr>
             </table>
             <div class="popup-actions">
@@ -568,9 +679,22 @@ class PropViewMap {
             // Respect current label visibility
             if (!this.showLabels) markers[call].closeTooltip();
         }
+        const heardAgeSeconds = Math.max(0, Date.now() / 1000 - Number(station.last_heard || 0));
+        if (
+            options.announceActivity === true
+            && isNewMarker
+            && source === 'rf'
+            && isDirect
+            && heardAgeSeconds <= 30
+            && Date.now() >= this._visualReadyAt
+        ) {
+            this._showActivityMoment(station);
+        }
 
-        // Remove ghost class on fresh update
-        this._setGhost(call, source, false);
+        // Replacing an icon removes its CSS classes. Restore the correct
+        // ghost state from the station timestamp instead of briefly forcing
+        // every periodically synchronized station solid.
+        this._setGhost(call, source, this._isStationStale(station.last_heard, window._ghostMinutes));
 
         // Apply type filter visibility
         this._applyTypeFilterToStation(call, source);
@@ -700,7 +824,7 @@ class PropViewMap {
         if (this.spiderLayer) this.spiderLayer.clearLayers();
     }
 
-    /** Apply or remove ghhost CSS on a marker's icon element. */
+    /** Apply or remove ghost CSS on a marker's icon element. */
     _setGhost(callsign, source, ghosted) {
         const markers = source === 'rf' ? this.rfMarkers : this.isMarkers;
         const marker = markers[callsign];
@@ -716,6 +840,15 @@ class PropViewMap {
         }
     }
 
+    _isStationStale(lastHeard, ghostMinutes) {
+        const minutes = Number(ghostMinutes);
+        const heard = Number(lastHeard);
+        if (!Number.isFinite(minutes) || minutes <= 0 || !Number.isFinite(heard) || heard <= 0) {
+            return false;
+        }
+        return heard < (Date.now() / 1000 - minutes * 60);
+    }
+
     /** Check all markers and ghost/unghost based on last_heard age. */
     ghostStaleMarkers(ghostMinutes) {
         if (!ghostMinutes || ghostMinutes <= 0) {
@@ -725,9 +858,8 @@ class PropViewMap {
             }
             return;
         }
-        const cutoff = Date.now() / 1000 - ghostMinutes * 60;
         for (const [call, meta] of Object.entries(this.stationMeta)) {
-            const isStale = meta.last_heard > 0 && meta.last_heard < cutoff;
+            const isStale = this._isStationStale(meta.last_heard, ghostMinutes);
             this._setGhost(call, meta.source, isStale);
         }
     }
@@ -788,7 +920,9 @@ class PropViewMap {
             path: path || '',
         };
 
-        // Build multi-hop points: origin station → digis → my station
+        // Build multi-hop points: origin station -> digis -> my station.
+        // Suppress via-digi lines until every real hop has a known position;
+        // otherwise the fallback line can look like direct reception.
         const myPos = [this.myPosition.lat, this.myPosition.lng];
         const stationPos = [lat, lng];
         const digis = this._parseDigiPath(path);
@@ -814,11 +948,23 @@ class PropViewMap {
         const lineOptions = this._lineOptionsForDistance(distance);
         const { color, weight, opacity } = lineOptions;
 
+        const isNewLine = !this.rfLines[callsign];
         if (this.rfLines[callsign]) {
             this.rfLines[callsign].setLatLngs(points);
             this.rfLines[callsign].setStyle(lineOptions);
         } else {
             this.rfLines[callsign] = L.polyline(points, lineOptions).addTo(this.lineLayer);
+        }
+        this.rfLines[callsign].bindTooltip(this._lineTooltipText(callsign, path), {
+            sticky: true,
+            direction: 'top',
+        });
+        if (isNewLine && this.visualizations.pathReveal && this._isDirectPath(path)) {
+            const pathElement = this.rfLines[callsign].getElement();
+            if (pathElement) {
+                pathElement.classList.add('rf-path-reveal');
+                setTimeout(() => pathElement.classList.remove('rf-path-reveal'), 2600);
+            }
         }
 
         // Update arrowhead markers
@@ -844,6 +990,40 @@ class PropViewMap {
 
         // Apply time filter to this new/updated line
         this._applyLineTimeFilter(callsign);
+    }
+
+    _unknownDigiPathHtml(path) {
+        const missing = this._parseDigiPath(path)
+            .filter((call) => !this._getStationPosition(call));
+        if (!missing.length) return '';
+        return `No line until ${this._escapeHtml(missing.join(', '))} sends a position.`;
+    }
+
+    _lineTooltipText(callsign, path) {
+        const parts = [`${this._escapeHtml(callsign || 'RF station')} path`];
+        if (path) parts.push(this._escapeHtml(path));
+        return parts.join(' | ');
+    }
+
+    _showActivityMoment(station) {
+        if (!this.visualizations.activityMoments) return;
+        const now = Date.now();
+        if (now - this._lastActivityMomentAt < 4500) return;
+        this._lastActivityMomentAt = now;
+        const panel = document.getElementById('map-panel');
+        if (!panel) return;
+        panel.querySelector('.map-activity-moment')?.remove();
+        const distance = window.formatDist(Number(station.distance_km || 0), 0);
+        const bearing = this._formatBearing(station.heading) || '';
+        const moment = document.createElement('div');
+        moment.className = 'map-activity-moment';
+        moment.innerHTML = `
+            <span class="activity-moment-dot"></span>
+            <span><strong>Direct signal heard</strong><small>${this._escapeHtml(station.callsign || '')} · ${distance}${bearing ? ` · ${this._escapeHtml(bearing)}` : ''}</small></span>
+        `;
+        panel.appendChild(moment);
+        setTimeout(() => moment.classList.add('leaving'), 4200);
+        setTimeout(() => moment.remove(), 5200);
     }
 
     _clearLineVisuals(callsign) {
@@ -2194,7 +2374,9 @@ class PropViewMap {
         this._legendEl = document.createElement('div');
         this._legendEl.className = 'map-legend';
         this._updateLegendContent();
-        document.getElementById('map-panel').appendChild(this._legendEl);
+        // Keep the legend inside the map viewport so its bottom offset is
+        // measured above the separate map-controls row.
+        document.getElementById('map').appendChild(this._legendEl);
     }
 
     _updateLegendContent() {

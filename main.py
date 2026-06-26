@@ -4,7 +4,7 @@
 Launch this to start the application. The web interface opens automatically.
 """
 
-APP_VERSION = "1.7.0"
+APP_VERSION = "1.8.0"
 
 import asyncio
 import sys
@@ -63,6 +63,116 @@ logger = logging.getLogger("propview")
 # and works well for this app's socket usage.
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+
+def _env_value(name: str) -> str:
+    return (os.environ.get(name) or "").strip()
+
+
+def _env_bool(name: str) -> bool | None:
+    value = _env_value(name).lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    return None
+
+
+def _env_int(name: str) -> int | None:
+    value = _env_value(name)
+    if not value:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        logger.warning("Ignoring invalid integer in %s=%r", name, value)
+        return None
+
+
+def _env_float(name: str) -> float | None:
+    value = _env_value(name)
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        logger.warning("Ignoring invalid float in %s=%r", name, value)
+        return None
+
+
+def _runtime_data_dir() -> Path | None:
+    value = _env_value("PROPVIEW_DATA_DIR")
+    if not value:
+        return None
+    path = Path(value).expanduser().resolve()
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _resolve_config_path(data_dir: Path | None) -> Path:
+    configured = _env_value("PROPVIEW_CONFIG")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    if data_dir:
+        return data_dir / "config.toml"
+    return Path("config.toml")
+
+
+def _apply_env_overrides(config: Config, data_dir: Path | None) -> None:
+    """Apply container-friendly runtime overrides after TOML is loaded."""
+    host = _env_value("PROPVIEW_HOST")
+    if host:
+        config.web.host = host
+
+    port = _env_int("PROPVIEW_PORT")
+    if port is not None:
+        config.web.port = port
+
+    launch_browser = os.environ.get("PROPVIEW_LAUNCH_BROWSER")
+    if launch_browser is not None:
+        config.web.launch_browser = launch_browser.strip().lower()
+
+    db_path = _env_value("PROPVIEW_DB")
+    if db_path:
+        config.database.path = str(Path(db_path).expanduser())
+    elif data_dir and config.database.path == "propview.db":
+        config.database.path = str(data_dir / "propview.db")
+
+    update_checks = _env_bool("PROPVIEW_UPDATE_CHECKS")
+    if update_checks is not None:
+        config.web.update_check_enabled = update_checks
+
+    aprs_is_enabled = _env_bool("PROPVIEW_APRS_IS_ENABLED")
+    if aprs_is_enabled is not None:
+        config.aprs_is.enabled = aprs_is_enabled
+
+    kiss_tcp_enabled = _env_bool("PROPVIEW_KISS_TCP_ENABLED")
+    if kiss_tcp_enabled is not None:
+        config.kiss_tcp.enabled = kiss_tcp_enabled
+
+    kiss_tcp_host = _env_value("PROPVIEW_KISS_TCP_HOST")
+    if kiss_tcp_host:
+        config.kiss_tcp.host = kiss_tcp_host
+
+    kiss_tcp_port = _env_int("PROPVIEW_KISS_TCP_PORT")
+    if kiss_tcp_port is not None:
+        config.kiss_tcp.port = kiss_tcp_port
+
+    station_callsign = _env_value("PROPVIEW_CALLSIGN")
+    if station_callsign:
+        config.station.callsign = station_callsign.upper()
+
+    station_ssid = _env_int("PROPVIEW_SSID")
+    if station_ssid is not None:
+        config.station.ssid = max(0, min(15, station_ssid))
+
+    station_lat = _env_float("PROPVIEW_LATITUDE")
+    if station_lat is not None:
+        config.station.latitude = station_lat
+
+    station_lon = _env_float("PROPVIEW_LONGITUDE")
+    if station_lon is not None:
+        config.station.longitude = station_lon
 
 
 def _pause_for_packaged_error():
@@ -141,14 +251,20 @@ async def main():
 """
     )
 
+    data_dir = _runtime_data_dir()
+    if data_dir:
+        logger.info("Using APRS PropView data directory: %s", data_dir)
+
     # Load or create config
-    config_path = Path("config.toml")
+    config_path = _resolve_config_path(data_dir)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
     if not config_path.exists():
         Config.create_default(config_path)
         print(f"  Created default configuration: {config_path}")
         print("  Starting with default settings \u2014 open the web UI to configure.\n")
 
     config = Config.load(config_path)
+    _apply_env_overrides(config, data_dir)
     logger.info(f"Station: {config.station.full_callsign}")
     logger.info(
         f"Position: {config.station.latitude:.4f}, {config.station.longitude:.4f}"
@@ -408,6 +524,7 @@ async def main():
         mqtt_state=mqtt_state,
         app_version=APP_VERSION,
         shutdown_event=shutdown_event,
+        config_path=config_path,
     )
 
     # ── Start background tasks ──────────────────────────────────────

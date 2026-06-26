@@ -119,6 +119,7 @@ CREATE INDEX IF NOT EXISTS idx_stations_source ON stations(source);
 CREATE INDEX IF NOT EXISTS idx_stations_last_heard ON stations(last_heard);
 CREATE INDEX IF NOT EXISTS idx_packets_timestamp ON packets(timestamp);
 CREATE INDEX IF NOT EXISTS idx_packets_source ON packets(source);
+CREATE INDEX IF NOT EXISTS idx_packets_port_timestamp ON packets(port_name, timestamp);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_dedupe ON messages(dedupe_key) WHERE dedupe_key != '';
 CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
 CREATE INDEX IF NOT EXISTS idx_messages_contact ON messages(from_call, to_call);
@@ -127,6 +128,7 @@ CREATE INDEX IF NOT EXISTS idx_propagation_timestamp ON propagation_log(timestam
 CREATE INDEX IF NOT EXISTS idx_ducting_timestamp ON ducting_log(timestamp);
 CREATE INDEX IF NOT EXISTS idx_path_history_callsign ON path_history(callsign);
 CREATE INDEX IF NOT EXISTS idx_path_history_timestamp ON path_history(timestamp);
+CREATE INDEX IF NOT EXISTS idx_path_history_timestamp_direct ON path_history(timestamp, is_direct);
 CREATE INDEX IF NOT EXISTS idx_first_heard_timestamp ON first_heard_log(timestamp);
 """
 

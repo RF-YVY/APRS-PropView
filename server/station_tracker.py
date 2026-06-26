@@ -186,12 +186,17 @@ class StationTracker:
             cutoff = now - max_age_minutes * 60
             bearing_tolerance = max(5, min(90, int(getattr(target, "bearing_tolerance_deg", 30) or 30)))
             min_probe_count = max(1, int(getattr(target, "min_probe_count", 2) or 2))
+            target_area_radius_km = max(10.0, min(500.0, float(getattr(target, "target_area_radius_km", 100.0) or 100.0)))
             min_distance_km = target_distance_km * 0.85
             probes = []
 
             for station in station_rows:
                 last_heard = float(station.get("last_heard") or 0)
                 if last_heard < cutoff:
+                    continue
+                path = station.get("last_path", "")
+                direct = self._is_direct_path(path)
+                if not direct:
                     continue
                 distance_km = station.get("distance_km")
                 heading = station.get("heading")
@@ -202,17 +207,6 @@ class StationTracker:
                 heading_diff = self._angular_difference(heading, target_heading)
                 station_call = (station.get("callsign") or "").upper()
                 same_target = station_call == target_call or station_call.split("-", 1)[0] == target_call.split("-", 1)[0]
-                if not same_target and (heading_diff > bearing_tolerance or distance_km < min_distance_km):
-                    continue
-
-                age_ratio = max(0.0, min(1.0, 1.0 - ((now - last_heard) / (max_age_minutes * 60))))
-                bearing_score = 30.0 if same_target else max(0.0, 30.0 * (1.0 - heading_diff / bearing_tolerance))
-                distance_score = min(25.0, 25.0 * (distance_km / max(target_distance_km, 1.0)))
-                freshness_score = 20.0 * age_ratio
-                hop_count = self._count_hops(station.get("last_path", ""))
-                direct = self._is_direct_path(station.get("last_path", ""))
-                path_score = 20.0 if direct else 12.0 if hop_count <= 1 else 6.0
-                proximity_score = 0.0
                 proximity_km = None
                 if station.get("latitude") is not None and station.get("longitude") is not None:
                     proximity_km = calculate_distance(
@@ -221,9 +215,23 @@ class StationTracker:
                         target_lat,
                         target_lon,
                     )
-                    if proximity_km <= 50:
+                if not same_target:
+                    if heading_diff > bearing_tolerance or distance_km < min_distance_km:
+                        continue
+                    if proximity_km is None or proximity_km > target_area_radius_km:
+                        continue
+
+                age_ratio = max(0.0, min(1.0, 1.0 - ((now - last_heard) / (max_age_minutes * 60))))
+                bearing_score = 30.0 if same_target else max(0.0, 30.0 * (1.0 - heading_diff / bearing_tolerance))
+                distance_score = min(25.0, 25.0 * (distance_km / max(target_distance_km, 1.0)))
+                freshness_score = 20.0 * age_ratio
+                hop_count = self._count_hops(path)
+                path_score = 20.0
+                proximity_score = 0.0
+                if proximity_km is not None:
+                    if proximity_km <= target_area_radius_km * 0.5:
                         proximity_score = 15.0
-                    elif proximity_km <= 100:
+                    elif proximity_km <= target_area_radius_km:
                         proximity_score = 8.0
                 exact_score = 30.0 if same_target else 0.0
                 score = min(
@@ -237,7 +245,7 @@ class StationTracker:
                     "heading_diff": round(heading_diff, 1),
                     "last_heard": last_heard,
                     "age_seconds": round(now - last_heard),
-                    "path": station.get("last_path", ""),
+                    "path": path,
                     "is_direct": direct,
                     "hop_count": hop_count,
                     "proximity_km": round(proximity_km, 1) if proximity_km is not None else None,
@@ -286,6 +294,7 @@ class StationTracker:
                 "terrain_status": "terrain_profile_not_available",
                 "bearing_tolerance_deg": bearing_tolerance,
                 "min_probe_count": min_probe_count,
+                "target_area_radius_km": round(target_area_radius_km, 1),
                 "probe_count": len(qualifying),
                 "score": round(aggregate_score, 1),
                 "confidence": confidence,

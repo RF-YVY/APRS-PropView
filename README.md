@@ -1,6 +1,6 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.7.0** | June 23, 2026
+**Version 1.8.0** | June 26, 2026
 
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/RF-YVY/APRS-PropView/total)
@@ -21,9 +21,10 @@
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
 
-Version 1.7.0 adds watched VHF path opportunity alerts, callsign-assisted target setup, station blocklists, antenna-aware path scoring, malformed APRS position protection, and a redesigned category-based Settings workspace.
+Version 1.8.0 adds Docker/app-registry deployment support, TrueNAS SCALE and Portainer templates, tighter watched-path target-area scoring, clearer digipeater path handling, container health diagnostics, and Windows update reliability fixes.
 
 Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs/linux-raspberry-pi.md).
+Docker, TrueNAS SCALE, Portainer, and app-registry installs are covered in [docs/docker.md](docs/docker.md).
 
 ## Features
 
@@ -65,7 +66,8 @@ Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs
 ### Alerts
 
 - **Band Opening Detection** — Automatic alerts when propagation thresholds are exceeded
-- **Watched VHF Paths** — Monitor a target station by callsign, grid, or coordinates and alert when observed RF enhancement reaches the target bearing and distance
+- **Watched VHF Paths** — Monitor a target station by callsign, grid, or coordinates and alert when direct-heard RF enhancement reaches the target bearing and distance
+- **Optional Calm Visualizations** — Independently enable propagation aura, path reveals, map color harmony, condition backdrops, expressive home marker rings, watched-path flow, and quiet direct-heard activity moments
 - **Antenna-Aware Opportunity Scoring** — Include local/target antenna height, transmit power, antenna gain, EIRP, and radio-horizon context in watched-path confidence
 - **Callsign-Assisted Target Builder** — Look up station coordinates through Callook, HamDB, QRZ XML, or HamQTH, with worldwide grid/coordinate overrides
 - **Alert Tuning Helper** — Analyze recent RF path history and recommend more selective band-opening thresholds from your local baseline
@@ -189,6 +191,18 @@ python main.py
 
 The web interface opens automatically at `http://localhost:14501`.
 
+### Docker / App Registry
+
+```bash
+docker compose up -d
+```
+
+The container image uses `/data` for `config.toml`, `propview.db`,
+`map_tile_cache/`, and `user_audio/`. For TrueNAS SCALE custom apps, Portainer,
+and other registry-style installs, use `ghcr.io/rf-yvy/aprs-propview:latest`
+and mount persistent storage at `/data`. See [docs/docker.md](docs/docker.md)
+for TCP KISS, USB serial passthrough, and TrueNAS SCALE settings.
+
 ### Run From Source On macOS
 
 Install Python 3.11 or newer, then run APRS PropView from a terminal:
@@ -244,7 +258,7 @@ the current `APRSPropView.exe`.
 Installer upgrades replace the application executable and bundled files only.
 User data such as `config.toml`, `propview.db`, `map_tile_cache/`, and
 `user_audio/` is left in place. Publish both `APRSPropView.exe` and the setup
-asset on GitHub releases; assets named like `APRSPropViewSetup-1.7.0.exe` are
+asset on GitHub releases; assets named like `APRSPropViewSetup-1.8.0.exe` are
 detected by the in-app update checker so users can click **Install Update** in
 the About tab. On Linux, Raspberry Pi, and macOS, users still see release
 notices but installer-based update buttons are hidden because those platforms

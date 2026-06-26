@@ -1,0 +1,28 @@
+services:
+  aprs-propview:
+    image: ghcr.io/rf-yvy/aprs-propview:latest
+    container_name: aprs-propview
+    restart: unless-stopped
+    depends_on:
+      - direwolf
+    ports:
+      - "14501:14501"
+    environment:
+      PROPVIEW_DATA_DIR: /data
+      PROPVIEW_HOST: 0.0.0.0
+      PROPVIEW_PORT: 14501
+      PROPVIEW_LAUNCH_BROWSER: ""
+      PROPVIEW_KISS_TCP_ENABLED: "true"
+      PROPVIEW_KISS_TCP_HOST: direwolf
+      PROPVIEW_KISS_TCP_PORT: 8001
+    volumes:
+      - ./data:/data
+
+  direwolf:
+    image: ghcr.io/wb2osz/direwolf:latest
+    container_name: direwolf
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./direwolf:/etc/direwolf:ro

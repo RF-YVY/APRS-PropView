@@ -1,0 +1,17 @@
+services:
+  aprs-propview:
+    image: ghcr.io/rf-yvy/aprs-propview:latest
+    container_name: aprs-propview
+    restart: unless-stopped
+    ports:
+      - "14501:14501"
+    environment:
+      PROPVIEW_DATA_DIR: /data
+      PROPVIEW_HOST: 0.0.0.0
+      PROPVIEW_PORT: 14501
+      PROPVIEW_LAUNCH_BROWSER: ""
+    volumes:
+      - aprs-propview-data:/data
+
+volumes:
+  aprs-propview-data:

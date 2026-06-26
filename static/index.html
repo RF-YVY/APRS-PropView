@@ -15,15 +15,36 @@
         (function () {
             try {
                 var state = JSON.parse(localStorage.getItem('pvDesktopUIState') || '{}');
-                if (state.uiTheme === 'light') {
+                var mode = state.uiMode || state.uiTheme || 'dark';
+                var skin = state.uiSkin || 'standard';
+                var accent = state.uiAccent || 'blue';
+                var accentColors = {
+                    blue: '#58a6ff',
+                    cyan: '#39d5ff',
+                    green: '#3fb950',
+                    amber: '#d29922',
+                    purple: '#bc8cff',
+                    red: '#f85149'
+                };
+                if (mode === 'light') {
                     document.documentElement.classList.add('ui-theme-light');
                 }
+                document.documentElement.dataset.uiMode = mode === 'light' ? 'light' : 'dark';
+                document.documentElement.dataset.uiSkin = skin;
+                document.documentElement.dataset.uiAccent = accent;
+                document.documentElement.style.setProperty(
+                    '--user-accent',
+                    accent === 'custom' && /^#[0-9a-f]{6}$/i.test(state.uiAccentCustom || '')
+                        ? state.uiAccentCustom
+                        : (accentColors[accent] || accentColors.blue)
+                );
             } catch (e) {}
         })();
     </script>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css" />
-    <link rel="stylesheet" href="/static/css/style.css?v=__ASSET_VERSION__" />
+    <link rel="stylesheet" href="/static/css/style.css?v=__ASSET_VERSION__-branding" />
+    <link rel="stylesheet" href="/static/css/themes.css?v=__ASSET_VERSION__" />
     <!-- Leaflet JS -->
     <script defer src="/static/vendor/leaflet/leaflet.js"></script>
 </head>
@@ -31,7 +52,13 @@
     <!-- ── Header Bar ─────────────────────────────────────────── -->
     <header id="header">
         <div class="header-left">
-            <img src="/static/img/header.webp" alt="APRS PropView" class="header-logo" decoding="async" fetchpriority="high">
+            <div class="header-brand" aria-label="APRS PropView version __APP_VERSION__">
+                <img src="/static/img/app-icon.webp?v=__ASSET_VERSION__" alt="" class="header-logo" decoding="async" fetchpriority="high">
+                <div class="header-brand-copy">
+                    <span class="header-brand-title">APRS <strong>PropView</strong></span>
+                    <span class="header-brand-version">v__APP_VERSION__</span>
+                </div>
+            </div>
             <div class="station-identity" title="My Station">
                 <span class="station-identity-label">My Station</span>
                 <span id="station-call" class="station-badge">N0CALL</span>
@@ -39,8 +66,21 @@
         </div>
         <div class="header-center">
             <div class="prop-gauges-row">
-                <div class="prop-gauge">
+                <div class="prop-gauge" id="prop-meter-my">
                     <div class="prop-label">VHF Propagation My Station</div>
+                    <div class="radio-analog-meter" aria-hidden="true">
+                        <div class="radio-meter-arc"></div>
+                        <span class="radio-tick tick-0">0</span>
+                        <span class="radio-tick tick-1">1</span>
+                        <span class="radio-tick tick-3">3</span>
+                        <span class="radio-tick tick-5">5</span>
+                        <span class="radio-tick tick-7">7</span>
+                        <span class="radio-tick tick-9">9</span>
+                        <span class="radio-tick tick-db">+40dB</span>
+                        <div class="radio-meter-needle"></div>
+                        <div class="radio-meter-hub"></div>
+                        <div class="radio-meter-readout">PROP dB</div>
+                    </div>
                     <div class="prop-bar-container">
                         <div id="prop-bar-my" class="prop-bar" style="width: 0%"></div>
                     </div>
@@ -49,8 +89,21 @@
                         <span id="prop-score-my" class="prop-score">0</span>
                     </div>
                 </div>
-                <div class="prop-gauge">
+                <div class="prop-gauge" id="prop-meter-reg">
                     <div class="prop-label">Regional VHF Propagation</div>
+                    <div class="radio-analog-meter" aria-hidden="true">
+                        <div class="radio-meter-arc"></div>
+                        <span class="radio-tick tick-0">0</span>
+                        <span class="radio-tick tick-1">1</span>
+                        <span class="radio-tick tick-3">3</span>
+                        <span class="radio-tick tick-5">5</span>
+                        <span class="radio-tick tick-7">7</span>
+                        <span class="radio-tick tick-9">9</span>
+                        <span class="radio-tick tick-db">+40dB</span>
+                        <div class="radio-meter-needle"></div>
+                        <div class="radio-meter-hub"></div>
+                        <div class="radio-meter-readout">PROP dB</div>
+                    </div>
                     <div class="prop-bar-container">
                         <div id="prop-bar-reg" class="prop-bar" style="width: 0%"></div>
                     </div>
@@ -1126,12 +1179,47 @@
                                 <option value="'Courier New', monospace">Courier New (Mono)</option>
                             </select>
                         </div>
-                        <div class="settings-row">
-                            <label for="cfg-ui-theme">UI Theme</label>
-                            <select id="cfg-ui-theme">
-                                <option value="dark">Dark</option>
-                                <option value="light">Light</option>
-                            </select>
+                        <div class="theme-settings-card">
+                            <div class="settings-row">
+                                <label for="cfg-ui-mode">Brightness</label>
+                                <select id="cfg-ui-mode" data-local-setting>
+                                    <option value="dark">Dark</option>
+                                    <option value="light">Light</option>
+                                </select>
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-ui-skin">Visual Theme</label>
+                                <select id="cfg-ui-skin" data-local-setting>
+                                    <option value="standard">Standard</option>
+                                    <option value="mission-control">Mission Control</option>
+                                    <option value="industrial">Industrial</option>
+                                    <option value="neon-grid">Neon Grid</option>
+                                    <option value="terminal-green">Terminal Green Screen</option>
+                                    <option value="radio">Radio</option>
+                                    <option value="iview">iVIEW</option>
+                                    <option value="hackr">HackR</option>
+                                </select>
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-ui-accent">Accent Color</label>
+                                <div class="theme-accent-fields">
+                                    <select id="cfg-ui-accent" data-local-setting>
+                                        <option value="blue">Telemetry Blue</option>
+                                        <option value="cyan">Cyan</option>
+                                        <option value="green">Signal Green</option>
+                                        <option value="amber">Amber</option>
+                                        <option value="purple">Purple</option>
+                                        <option value="red">Red</option>
+                                        <option value="custom">Custom</option>
+                                    </select>
+                                    <input id="cfg-ui-accent-custom" data-local-setting type="color" value="#58a6ff" title="Choose a custom accent color" aria-label="Custom accent color">
+                                </div>
+                            </div>
+                            <div class="theme-preview-strip" aria-hidden="true">
+                                <span></span><span></span><span></span>
+                                <b>LIVE THEME PREVIEW</b>
+                            </div>
+                            <p class="settings-note">Visual themes change panel materials, controls, typography, and decorative details. Map tiles remain independently selectable.</p>
                         </div>
                         <div class="settings-row">
                             <label for="cfg-unit-system">Units</label>
@@ -1179,6 +1267,42 @@
                             <label for="cfg-web-update-check-hours">Update Check Interval (hours)</label>
                             <input type="number" id="cfg-web-update-check-hours" min="1" max="720" step="1" value="24">
                         </div>
+                    </div>
+
+                    <!-- Visualizations -->
+                    <div class="settings-section" data-settings-key="visualizations" data-summary="Optional ambient map effects and calm motion.">
+                        <h3>Visualizations</h3>
+                        <div class="visualization-settings-grid">
+                            <label class="visualization-setting">
+                                <input type="checkbox" id="cfg-visual-propagation-aura">
+                                <span><strong>Propagation Aura</strong><small>Soft range glow around your station that reflects direct propagation.</small></span>
+                            </label>
+                            <label class="visualization-setting">
+                                <input type="checkbox" id="cfg-visual-path-reveal">
+                                <span><strong>Elegant Path Reveal</strong><small>Briefly traces a newly heard direct RF path before it settles.</small></span>
+                            </label>
+                            <label class="visualization-setting">
+                                <input type="checkbox" id="cfg-visual-map-harmony">
+                                <span><strong>Map Color Harmony</strong><small>Adds a subtle edge tint so the map blends into the surrounding UI.</small></span>
+                            </label>
+                            <label class="visualization-setting">
+                                <input type="checkbox" id="cfg-visual-condition-backdrop">
+                                <span><strong>Condition Backdrop</strong><small>Gently colors propagation meters according to current conditions.</small></span>
+                            </label>
+                            <label class="visualization-setting">
+                                <input type="checkbox" id="cfg-visual-home-marker">
+                                <span><strong>Expressive Home Marker</strong><small>Adds calm concentric rings around your station marker.</small></span>
+                            </label>
+                            <label class="visualization-setting">
+                                <input type="checkbox" id="cfg-visual-watched-path-flow">
+                                <span><strong>Watched Path Flow</strong><small>Illuminates watched routes progressively as confidence rises.</small></span>
+                            </label>
+                            <label class="visualization-setting">
+                                <input type="checkbox" id="cfg-visual-activity-moments">
+                                <span><strong>Quiet Activity Moments</strong><small>Shows a small fading note when a new direct station is heard.</small></span>
+                            </label>
+                        </div>
+                        <p class="settings-note">Each effect is independent. Motion is automatically reduced when your operating system requests reduced motion.</p>
                     </div>
 
                     <!-- Tracking -->
@@ -1301,6 +1425,10 @@
                                 <div class="settings-row">
                                     <label for="watched-builder-gain-dbi">Antenna Gain dBi</label>
                                     <input type="number" id="watched-builder-gain-dbi" min="-20" max="30" step="0.1" value="0">
+                                </div>
+                                <div class="settings-row">
+                                    <label for="watched-builder-radius-km">Target Area km</label>
+                                    <input type="number" id="watched-builder-radius-km" min="10" max="500" step="5" value="100">
                                 </div>
                             </div>
                             <div class="settings-row settings-action-row">
@@ -1896,7 +2024,7 @@
                 <div class="about-panel">
                     <div class="about-header">
                         <h2>APRS PropView</h2>
-                        <span id="about-version" class="about-version">v1.7.0</span>
+                        <span id="about-version" class="about-version">v1.8.0</span>
                     </div>
                     <div class="about-section">
                         <p>A real-time APRS digipeater and IGate focused on VHF propagation, live mapping, APRS messaging, analytics, and weather-aware situational awareness.</p>
@@ -1913,9 +2041,9 @@
                     </div>
                     <div class="about-section">
                         <h3>Build Info</h3>
-                        <p>Version: <span id="about-version-detail">1.7.0</span></p>
-                        <p>Release Date: <span id="about-date">June 23, 2026</span></p>
-                        <p>Highlights: watched VHF path opportunity alerts, callsign location lookup, station blocklists, malformed APRS position protection, antenna-aware scoring, and a redesigned Settings workspace.</p>
+                        <p>Version: <span id="about-version-detail">1.8.0</span></p>
+                        <p>Release Date: <span id="about-date">June 26, 2026</span></p>
+                        <p>Highlights: Docker/app-registry deployment support, TrueNAS SCALE and Portainer templates, tighter watched-path target-area scoring, clearer digipeater path handling, container health diagnostics, and Windows update reliability fixes.</p>
                     </div>
                     <div class="about-section">
                         <h3>Video Guide</h3>
@@ -1948,7 +2076,7 @@
                         </form>
                         <div class="about-donate-divider" role="separator">or</div>
                         <div class="about-coffee">
-                            <script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="K5YVY" data-color="#5F7FFF" data-emoji="" data-font="Cookie" data-text="Buy me a PropView Coffee" data-outline-color="#000000" data-font-color="#ffffff" data-coffee-color="#FFDD00"></script>
+                            <script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="K5YVY" data-color="#5F7FFF" data-emoji="" data-font="Cookie" data-text="Buy me a Coffee" data-outline-color="#000000" data-font-color="#ffffff" data-coffee-color="#FFDD00"></script>
                         </div>
                     </div>
                     <div id="about-documentation-actions" class="about-section about-doc-actions">
@@ -2069,7 +2197,7 @@
                         <li><b style="color:#3fb950;">Green</b> — 62–124 mi (100–200 km)</li>
                         <li><b style="color:#bc8cff;">Purple</b> — &gt; 124 mi (200 km) — DX!</li>
                     </ul>
-                    <p>Small white dots along a path indicate digipeater hops. When a packet is heard through a known digipeater, the map draws the path through that digipeater instead of showing it as a direct heard contact; if the digipeater position is unknown, the direct-looking line is suppressed until the waypoint is known.</p>
+                    <p>Small white dots along a path indicate known digipeater hops. Direct-heard stations draw a line straight to your station; digipeated stations draw through known digipeater waypoints. If a used digipeater position is unknown, no line is drawn so the contact is not mistaken for direct reception.</p>
                     <p>If a moving station was last heard by your RF station and later appears from APRS-IS at a newer, different position, PropView removes the stale RF map marker and keeps the newer network position so one callsign does not appear in two places.</p>
                 </section>
 
@@ -2166,7 +2294,7 @@
                     <h4>Tracking Blocklist</h4>
                     <p>Use <code>CALL-SSID</code> to reject one station identifier or a base <code>CALL</code> to reject every SSID. Blocked packets are ignored before station, packet, message, propagation, and history updates.</p>
                     <h4>Watched VHF Paths</h4>
-                    <p>Watched Paths alerts when observed RF enhancement in a target direction reaches or exceeds the distance to a selected station. Enter a callsign and use Callook, HamDB, optional QRZ XML, or HamQTH lookup to populate a starting location, then correct the grid or coordinates if the operating site differs from the license address.</p>
+                    <p>Watched Paths alerts when direct-heard RF enhancement near the target station area reaches or exceeds the distance to a selected station. Stations heard through another digipeater are excluded. Enter a callsign and use Callook, HamDB, optional QRZ XML, or HamQTH lookup to populate a starting location, then correct the grid or coordinates if the operating site differs from the license address.</p>
                     <p>Select band, mode, frequency, and confidence, then enter local/target antenna height, transmit power, and antenna gain. PropView shows radio-horizon, EIRP, and capability context while still requiring matching live propagation evidence. Watched path lines can be shown or hidden from the map Line options.</p>
                     <h4>Status, Dynamic, MHeard, and Weather Alert Beacons</h4>
                     <p>Status/DX can transmit a compact propagation summary, rotate preset dynamic messages in sequence or randomly, send a direct-heard RF MHeard list, or beacon severe weather alert text when active. Use <b>Preview Next Beacon</b> and the weather-alert preview before one-shot transmit or enabling periodic beaconing.</p>
@@ -2178,7 +2306,8 @@
                     <p><b>Host/Port</b> — Bind address and port for the web UI (default <code>127.0.0.1:14501</code>). Use <code>0.0.0.0</code> to allow network access.</p>
                     <p><b>Opening Browser</b> &mdash; Choose which browser APRS PropView opens at startup, or leave blank/system default for headless Pi/VM/service deployments where browser auto-open is not desired.</p>
                     <p><b>Font</b> — Choose a display font for the entire UI.</p>
-                    <p><b>UI Theme</b> — Switch the application interface between dark and light mode independently from the map tile theme.</p>
+                    <p><b>UI Theme</b> — Choose interface brightness, a visual skin, and an accent color independently from the map tile theme. Mission Control, Industrial, Neon Grid, Radio, iVIEW, and HackR alter panel materials and controls. iVIEW uses translucent liquid-glass surfaces; HackR uses a compact intelligence-console layout and night-vision map. Radio uses transceiver-style dual analog propagation meters whose needles follow the current direct and regional scores. Terminal Green Screen replaces the graphical dashboard with a numbered text console: use 1–8 for menus, F1 for help, F3/F12 to close, F5 to refresh, and F9 to switch between text and map views.</p>
+                    <p><b>Visualizations</b> — Independently enable the propagation aura, new-path reveal, map color harmony, condition backdrops, expressive home marker, watched-path flow, and quiet direct-heard activity moments.</p>
                     <p><b>Units</b> — Choose Imperial or Metric for distance, map weather temperature, APRS WX station temperature, wind, and precipitation displays.</p>
                     <p><b>Map Tiles</b> — Use the default online OpenStreetMap tiles or point PropView at a custom XYZ tile URL such as a local MBTiles/XYZ server. Custom URLs must include <code>{z}</code>, <code>{x}</code>, and <code>{y}</code>.</p>
                     <p><b>Ghost After (min)</b> — Stations not heard within this time will fade (pulsing dashed border, reduced opacity). Set to 0 to disable ghosting.</p>

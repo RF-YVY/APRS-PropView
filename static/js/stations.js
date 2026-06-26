@@ -41,7 +41,7 @@ class StationManager {
             this.isStations[call] = station;
         }
 
-        this._reconcileMapStation(station);
+        this._reconcileMapStation(station, { announceActivity: true });
         this._scheduleRenderStationList(source);
     }
 
@@ -62,6 +62,7 @@ class StationManager {
         this.hasLoadedInitialStations = true;
         this._syncSourceStations('rf', rfList || []);
         this._syncSourceStations('aprs_is', isList || []);
+        window.pvMap?.ghostStaleMarkers(window._ghostMinutes);
         this.render();
     }
 
@@ -531,18 +532,18 @@ class StationManager {
         this._rebuildMapStations();
     }
 
-    _reconcileMapStation(station) {
+    _reconcileMapStation(station, options = {}) {
         if (!window.pvMap || !station?.callsign) return;
         if (station.source === 'rf') {
             if (this._hasNewerAprsIsPosition(station)) {
                 window.pvMap.removeRfMapMarker(station.callsign);
                 return;
             }
-            window.pvMap.addOrUpdateStation(station);
+            window.pvMap.addOrUpdateStation(station, options);
             return;
         }
 
-        window.pvMap.addOrUpdateStation(station);
+        window.pvMap.addOrUpdateStation(station, options);
         if (this._shouldRetireRfMapForAprsIs(station)) {
             window.pvMap.removeRfMapMarker(station.callsign);
         }

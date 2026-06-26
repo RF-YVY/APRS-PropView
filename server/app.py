@@ -49,7 +49,8 @@ if getattr(_sys, 'frozen', False):
     STATIC_DIR = Path(_sys._MEIPASS) / "static"
 else:
     STATIC_DIR = Path(__file__).parent.parent / "static"
-USER_AUDIO_DIR = Path.cwd() / "user_audio"
+RUNTIME_DATA_DIR = Path(os.environ.get("PROPVIEW_DATA_DIR") or Path.cwd()).expanduser()
+USER_AUDIO_DIR = Path(os.environ.get("PROPVIEW_USER_AUDIO_DIR") or (RUNTIME_DATA_DIR / "user_audio")).expanduser()
 ALERT_AUDIO_KEYS = {
     "my_station_opening": "audio_my_station_opening_file",
     "regional_watch": "audio_regional_watch_file",
@@ -62,7 +63,7 @@ ALERT_AUDIO_KEYS = {
 }
 ALERT_AUDIO_EXTS = {".wav", ".mp3"}
 MAX_ALERT_AUDIO_BYTES = 15 * 1024 * 1024
-MAP_TILE_CACHE_DIR = Path.cwd() / "map_tile_cache"
+MAP_TILE_CACHE_DIR = Path(os.environ.get("PROPVIEW_MAP_TILE_CACHE_DIR") or (RUNTIME_DATA_DIR / "map_tile_cache")).expanduser()
 MAX_TILE_CACHE_REQUEST = 800
 
 # ── Validation helpers ──────────────────────────────────────────────
@@ -724,12 +725,15 @@ def create_app(
     mqtt_state: Optional[Dict[str, Any]] = None,
     app_version: str = "1.0.0",
     shutdown_event: Optional[asyncio.Event] = None,
+    config_path: Optional[Path] = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application."""
 
     app = FastAPI(title="APRS PropView", version=app_version)
     mqtt_state = mqtt_state if mqtt_state is not None else {"publisher": None}
     mqtt_lock = asyncio.Lock()
+    config_path = Path(config_path or "config.toml")
+    started_at = time.time()
 
     def _mqtt_snapshot() -> tuple:
         return (
@@ -814,10 +818,53 @@ def create_app(
 
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+    @app.get("/api/health")
+    async def get_health(full: bool = Query(False)):
+        status = handler.get_status() if handler else {}
+        payload = {
+            "ok": True,
+            "version": app_version,
+            "station": config.station.full_callsign,
+            "web": {
+                "host": config.web.host,
+                "port": config.web.port,
+            },
+            "rf_connected": bool(status.get("rf_connected")),
+            "aprs_is_connected": bool(status.get("aprs_is_connected")),
+            "rf_interfaces": status.get("rf_interfaces", []),
+        }
+        if full:
+            payload.update({
+                "uptime_seconds": round(time.time() - started_at),
+                "update_checks_enabled": bool(config.web.update_check_enabled),
+                "paths": {
+                    "config": str(config_path),
+                    "database": str(config.database.path),
+                    "map_tile_cache": str(MAP_TILE_CACHE_DIR),
+                    "user_audio": str(USER_AUDIO_DIR),
+                },
+                "configuration_warnings": [
+                    warning for warning in (
+                        "station_callsign_is_placeholder"
+                        if config.station.callsign.upper() in {"N0CALL", "NOCALL", "MYCALL", "TEST"}
+                        else "",
+                        "station_position_not_set"
+                        if float(config.station.latitude or 0.0) == 0.0 and float(config.station.longitude or 0.0) == 0.0
+                        else "",
+                    )
+                    if warning
+                ],
+            })
+        return payload
+
     @app.get("/")
     async def index():
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
-        return HTMLResponse(html.replace("__ASSET_VERSION__", app_version))
+        return HTMLResponse(
+            html
+            .replace("__ASSET_VERSION__", app_version)
+            .replace("__APP_VERSION__", app_version)
+        )
 
     @app.get("/mobile")
     async def mobile_page():
@@ -953,8 +1000,13 @@ def create_app(
             await ws_manager.send_to(websocket, {"type": "status", "data": status})
 
             # Send current stations
-            rf_stations = await tracker.get_rf_stations()
-            is_stations = await tracker.get_is_stations()
+            station_since = (
+                time.time() - config.web.expire_after_minutes * 60
+                if config.web.expire_after_minutes > 0
+                else None
+            )
+            rf_stations = await tracker.get_rf_stations(since=station_since)
+            is_stations = await tracker.get_is_stations(since=station_since)
             await ws_manager.send_to(
                 websocket,
                 {
@@ -1050,8 +1102,14 @@ def create_app(
 $installer = '{installer_arg}'
 $workingDir = '{working_dir_arg}'
 $parentPid = {os.getpid()}
-Wait-Process -Id $parentPid -Timeout 60 -ErrorAction SilentlyContinue
-Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS', '/FORCECLOSEAPPLICATIONS', '/NORESTARTAPPLICATIONS') -WorkingDirectory $workingDir
+Wait-Process -Id $parentPid -Timeout 90 -ErrorAction SilentlyContinue
+$deadline = (Get-Date).AddSeconds(30)
+while ((Get-Date) -lt $deadline) {{
+    $running = Get-Process -Name 'APRSPropView' -ErrorAction SilentlyContinue
+    if (-not $running) {{ break }}
+    Start-Sleep -Milliseconds 500
+}}
+Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS', '/FORCECLOSEAPPLICATIONS', '/NORESTARTAPPLICATIONS', '/PROPVIEWINAPPUPDATE=1') -WorkingDirectory $workingDir
 """
         encoded_script = base64.b64encode(helper_script.encode("utf-16le")).decode("ascii")
         subprocess.Popen(
@@ -1666,7 +1724,7 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 if str(existing.get("name", "")).strip().upper() != item["name"]
             ]
             config.aprs_objects.items.append(item)
-            config.save(Path("config.toml"))
+            config.save(config_path)
             if scheduled_transmitter:
                 await scheduled_transmitter.transmit_objects_once(force=True)
             return {"success": True, "message": f"Object {item['name']} saved.", "item": item}
@@ -2213,6 +2271,13 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 "mobile_pin": config.web.mobile_pin,
                 "update_check_enabled": config.web.update_check_enabled,
                 "update_check_interval_hours": config.web.update_check_interval_hours,
+                "visual_propagation_aura": config.web.visual_propagation_aura,
+                "visual_path_reveal": config.web.visual_path_reveal,
+                "visual_map_harmony": config.web.visual_map_harmony,
+                "visual_condition_backdrop": config.web.visual_condition_backdrop,
+                "visual_home_marker": config.web.visual_home_marker,
+                "visual_watched_path_flow": config.web.visual_watched_path_flow,
+                "visual_activity_moments": config.web.visual_activity_moments,
             },
             "database": {
                 "path": config.database.path,
@@ -2235,6 +2300,7 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                     "min_confidence": item.min_confidence,
                     "bearing_tolerance_deg": item.bearing_tolerance_deg,
                     "min_probe_count": item.min_probe_count,
+                    "target_area_radius_km": item.target_area_radius_km,
                     "max_age_minutes": item.max_age_minutes,
                     "alert_cooldown_minutes": item.alert_cooldown_minutes,
                     "my_antenna_height_m": item.my_antenna_height_m,
@@ -2411,11 +2477,11 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
 
     @app.get("/api/config/export")
     async def export_config():
-        path = Path("config.toml")
+        path = config_path
         if not path.exists() or not path.is_file():
             return JSONResponse(
                 status_code=404,
-                content={"success": False, "message": "config.toml was not found."},
+                content={"success": False, "message": f"{path.name} was not found."},
             )
         return FileResponse(
             path,
@@ -2449,7 +2515,8 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 if temp_name:
                     Path(temp_name).unlink(missing_ok=True)
 
-            Path("config.toml").write_text(content, encoding="utf-8")
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            config_path.write_text(content, encoding="utf-8")
             return {
                 "success": True,
                 "needRestart": True,
@@ -2680,6 +2747,13 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 config.web.mobile_pin = (w.get("mobile_pin", config.web.mobile_pin) or "").strip()
                 config.web.update_check_enabled = bool(w.get("update_check_enabled", config.web.update_check_enabled))
                 config.web.update_check_interval_hours = max(1, int(w.get("update_check_interval_hours", config.web.update_check_interval_hours)))
+                config.web.visual_propagation_aura = bool(w.get("visual_propagation_aura", config.web.visual_propagation_aura))
+                config.web.visual_path_reveal = bool(w.get("visual_path_reveal", config.web.visual_path_reveal))
+                config.web.visual_map_harmony = bool(w.get("visual_map_harmony", config.web.visual_map_harmony))
+                config.web.visual_condition_backdrop = bool(w.get("visual_condition_backdrop", config.web.visual_condition_backdrop))
+                config.web.visual_home_marker = bool(w.get("visual_home_marker", config.web.visual_home_marker))
+                config.web.visual_watched_path_flow = bool(w.get("visual_watched_path_flow", config.web.visual_watched_path_flow))
+                config.web.visual_activity_moments = bool(w.get("visual_activity_moments", config.web.visual_activity_moments))
                 if update_checker:
                     update_checker.configure(
                         config.web.update_check_enabled,
@@ -2801,6 +2875,7 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                         min_confidence=confidence,
                         bearing_tolerance_deg=max(5, min(90, int(item.get("bearing_tolerance_deg", 30) or 30))),
                         min_probe_count=max(1, min(10, int(item.get("min_probe_count", 2) or 2))),
+                        target_area_radius_km=watched_float(item, "target_area_radius_km", 100.0, 10.0, 500.0),
                         max_age_minutes=max(5, min(360, int(item.get("max_age_minutes", 60) or 60))),
                         alert_cooldown_minutes=max(5, min(1440, int(item.get("alert_cooldown_minutes", 30) or 30))),
                         my_antenna_height_m=watched_float(item, "my_antenna_height_m", 10.0, 0.0, 610.0),
@@ -3127,8 +3202,6 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                     normalized_watched.append(call)
                 config.mqtt.watched_callsigns = normalized_watched[:40]
 
-            # Save to file
-            config_path = Path("config.toml")
             config.save(config_path)
             if mqtt_save_requested:
                 if _mqtt_snapshot() != old_mqtt or (config.mqtt.enabled and not mqtt_state.get("publisher")):

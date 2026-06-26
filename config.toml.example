@@ -98,6 +98,13 @@ expire_after_minutes = 0
 mobile_pin = ""
 update_check_enabled = true
 update_check_interval_hours = 24
+visual_propagation_aura = true
+visual_path_reveal = true
+visual_map_harmony = true
+visual_condition_backdrop = true
+visual_home_marker = true
+visual_watched_path_flow = true
+visual_activity_moments = true
 
 [database]
 path = "propview.db"
@@ -119,8 +126,8 @@ hamqth_password = ""
 qrz_username = ""
 qrz_password = ""
 
-# Optional watched VHF paths. PropView alerts when recent RF evidence suggests
-# enhancement along the target direction and distance.
+# Optional watched VHF paths. PropView alerts when recent direct-heard RF
+# evidence suggests enhancement along the target direction and distance.
 #[[watched_paths]]
 #enabled = true
 #callsign = "W1AW"
@@ -133,6 +140,7 @@ qrz_password = ""
 #min_confidence = "medium"  # low, medium, high
 #bearing_tolerance_deg = 30
 #min_probe_count = 2
+#target_area_radius_km = 100.0
 #max_age_minutes = 60
 #alert_cooldown_minutes = 30
 #my_antenna_height_m = 10.0

@@ -3,7 +3,7 @@
 ; Build through build_installer.py so MyAppVersion is supplied from main.py.
 
 #ifndef MyAppVersion
-#define MyAppVersion "1.7.0"
+#define MyAppVersion "1.8.0"
 #endif
 
 #define MyAppName "APRS PropView"
@@ -63,7 +63,7 @@ Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+Filename: "{cmd}"; Parameters: "/C start """" /D ""{app}"" ""{app}\{#MyAppExeName}"""; WorkingDir: "{app}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent runhidden
 
 [UninstallDelete]
 ; Keep config.toml, propview.db, map_tile_cache, and user_audio intact.
@@ -74,9 +74,11 @@ procedure StopRunningApp();
 var
   ResultCode: Integer;
 begin
-  { PyInstaller one-file builds can keep the old EXE locked while the web UI,
-    tray icon, or update handoff is still shutting down. Ask Windows to close
-    any running APRS PropView process before file replacement begins. }
+  { In-app updates wait for the old process before setup starts. Keep the
+    access-denied protection for stubborn processes, but give the normal
+    shutdown path a little more time first. }
+  if ExpandConstant('{param:PROPVIEWINAPPUPDATE|0}') = '1' then
+    Sleep(2500);
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM {#MyAppExeName} /T /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(1500);
 end;

@@ -11,6 +11,33 @@
 <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
 <script defer src="/static/vendor/leaflet/leaflet.js"></script>
 <script defer src="/static/js/icons.js"></script>
+<script>
+(function applySavedMobileTheme() {
+    try {
+        var state = JSON.parse(localStorage.getItem('pvDesktopUIState') || '{}');
+        var allowedSkins = ['standard', 'mission-control', 'industrial', 'neon-grid', 'terminal-green', 'radio', 'iview', 'hackr'];
+        var accentColors = {
+            blue: '#58a6ff', cyan: '#39d5ff', green: '#3fb950',
+            amber: '#d29922', purple: '#bc8cff', red: '#f85149'
+        };
+        var mode = state.uiMode || state.uiTheme || 'dark';
+        var skin = allowedSkins.indexOf(state.uiSkin) >= 0 ? state.uiSkin : 'standard';
+        var accent = state.uiAccent || 'blue';
+        var accentColor = accent === 'custom'
+            ? (state.uiAccentCustom || '#58a6ff')
+            : (accentColors[accent] || accentColors.blue);
+        var root = document.documentElement;
+        root.dataset.uiMode = mode === 'light' ? 'light' : 'dark';
+        root.dataset.uiSkin = skin;
+        root.dataset.uiAccent = accent;
+        root.classList.toggle('ui-light', mode === 'light');
+        root.style.setProperty('--user-accent', accentColor);
+    } catch (_) {
+        document.documentElement.dataset.uiMode = 'dark';
+        document.documentElement.dataset.uiSkin = 'standard';
+    }
+})();
+</script>
 <style>
 :root {
     --bg: #0d1117;
@@ -25,14 +52,84 @@
     --accent-orange: #d29922;
     --accent-purple: #bc8cff;
     --nav-height: 56px;
+    --user-accent: #58a6ff;
+    --panel-radius: 12px;
+    --control-radius: 10px;
+    --panel-shadow: none;
+    --panel-texture: none;
 }
-html.ui-light {
+html.ui-light,
+html[data-ui-mode="light"] {
     --bg: #f5f7fb;
     --bg-card: #ffffff;
     --bg-input: #eef2f7;
     --border: #ccd6e3;
     --text: #152033;
     --text-muted: #607086;
+}
+:root[data-ui-accent] { --accent-blue: var(--user-accent); }
+
+/* Compact companions for the desktop visual skins. */
+:root[data-ui-skin="mission-control"] {
+    --bg: #030712; --bg-card: rgba(8,18,34,.96); --bg-input: #10243a;
+    --border: #294b68; --text: #e8f7ff; --text-muted: #83a9bf;
+    --panel-radius: 18px; --control-radius: 999px;
+    --panel-shadow: inset 0 1px rgba(255,255,255,.06), 0 8px 24px rgba(0,0,0,.38);
+}
+:root[data-ui-skin="industrial"] {
+    --bg: #151a1c; --bg-card: #30383b; --bg-input: #171d1f;
+    --border: #697477; --text: #e6e1d3; --text-muted: #a9a69d;
+    --accent-blue: #d87937; --panel-radius: 4px; --control-radius: 3px;
+    --panel-shadow: inset 0 1px rgba(255,255,255,.08), inset 0 -2px rgba(0,0,0,.55);
+    --panel-texture:
+        radial-gradient(circle at 10px 10px, #131719 0 2px, #899295 2.5px 3.5px, transparent 4px),
+        linear-gradient(145deg, rgba(130,52,24,.22), transparent 38%);
+}
+:root[data-ui-skin="neon-grid"] {
+    --bg: #07040b; --bg-card: rgba(16,8,22,.96); --bg-input: #160d1d;
+    --border: #8d4dff; --text: #fff4ff; --text-muted: #c29aca;
+    --accent-blue: #3de8ff; --panel-radius: 6px; --control-radius: 7px;
+    --panel-shadow: 0 0 6px rgba(141,77,255,.72), inset 0 0 14px rgba(255,63,174,.06);
+}
+:root[data-ui-skin="terminal-green"] {
+    --bg: #000; --bg-card: #000; --bg-input: #000;
+    --border: #00d84a; --text: #00ff55; --text-muted: #63a8ff;
+    --accent-blue: #00ff55; --accent-green: #00ff55;
+    --panel-radius: 0; --control-radius: 0; --panel-shadow: none;
+}
+:root[data-ui-skin="radio"] {
+    --bg: #090b0c; --bg-card: #202528; --bg-input: #080b0d;
+    --border: #626b70; --text: #dcecf5; --text-muted: #91a5af;
+    --accent-blue: #36c9ff; --panel-radius: 3px; --control-radius: 4px;
+    --panel-shadow: inset 0 1px rgba(255,255,255,.08), 0 3px 8px #000;
+}
+:root[data-ui-skin="iview"] {
+    --bg: #6bbfea; --bg-card: rgba(235,248,254,.46); --bg-input: rgba(255,255,255,.34);
+    --border: rgba(255,255,255,.72); --text: #102b45; --text-muted: #3e6681;
+    --panel-radius: 22px; --control-radius: 999px;
+    --panel-shadow: inset 0 1px rgba(255,255,255,.82), 0 8px 24px rgba(25,79,119,.18);
+}
+:root[data-ui-skin="iview"][data-ui-mode="dark"] {
+    --bg: #082744; --bg-card: rgba(19,61,94,.58); --bg-input: rgba(7,35,65,.52);
+    --text: #f5fbff; --text-muted: #bad6e7;
+}
+:root[data-ui-skin="hackr"] {
+    --bg: #030607; --bg-card: #081013; --bg-input: #030708;
+    --border: #294047; --text: #b8f7dc; --text-muted: #79b9ab;
+    --accent-blue: #2ce0d0; --panel-radius: 2px; --control-radius: 1px;
+    --panel-shadow: inset 0 0 14px rgba(44,224,208,.035);
+}
+:root[data-ui-skin="mission-control"][data-ui-mode="light"] {
+    --bg: #dde5e6; --bg-card: rgba(244,243,234,.94); --bg-input: #ecebe3;
+    --border: #879193; --text: #15272c; --text-muted: #657478;
+}
+:root[data-ui-skin="industrial"][data-ui-mode="light"] {
+    --bg: #c5c1b5; --bg-card: #d7d2c5; --bg-input: #eee9dc;
+    --border: #676b68; --text: #292d2d; --text-muted: #626762;
+}
+:root[data-ui-skin="neon-grid"][data-ui-mode="light"] {
+    --bg: #eee8f3; --bg-card: rgba(255,252,255,.94); --bg-input: #f2eaf7;
+    --border: #8b55bc; --text: #2d1737; --text-muted: #785f81;
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body {
@@ -395,6 +492,94 @@ html, body {
 }
 .pin-gate button:active { opacity: 0.7; }
 .pin-gate .pin-error { color: var(--accent-red); font-size: 13px; min-height: 20px; }
+
+/* Shared skin materials applied to the standalone mobile interface. */
+.m-header,
+.m-quick-actions,
+.m-nav {
+    box-shadow: var(--panel-shadow);
+}
+.m-quick-actions button,
+.home-action,
+.msg-filter-bar button,
+.msg-filter-bar select,
+.msg-compose input,
+.msg-compose button,
+.m-map-tools button,
+.m-map-segment,
+.msg-conversation-picker select,
+.msg-conversation-picker input {
+    border-radius: var(--control-radius);
+}
+.home-card,
+.msg-bubble,
+.station-card,
+.prop-stat,
+.m-empty {
+    border-radius: var(--panel-radius);
+    box-shadow: var(--panel-shadow);
+}
+.home-card,
+.station-card,
+.prop-stat {
+    background-image: var(--panel-texture);
+}
+:root[data-ui-skin="neon-grid"] body {
+    background:
+        radial-gradient(circle at 50% 0, rgba(139,49,255,.14), transparent 38%),
+        repeating-linear-gradient(0deg, rgba(61,232,255,.025) 0 1px, transparent 1px 4px),
+        var(--bg);
+}
+:root[data-ui-skin="industrial"] body {
+    background: linear-gradient(145deg, #2f373a, #111517 62%);
+}
+:root[data-ui-skin="iview"] body {
+    background:
+        radial-gradient(circle at 12% 14%, rgba(165,242,255,.78), transparent 28%),
+        radial-gradient(circle at 84% 30%, rgba(35,123,229,.58), transparent 36%),
+        linear-gradient(145deg, #65d2d2, #2581dc 62%, #194f8f);
+}
+:root[data-ui-skin="iview"] .m-header,
+:root[data-ui-skin="iview"] .m-quick-actions,
+:root[data-ui-skin="iview"] .m-nav,
+:root[data-ui-skin="iview"] .home-card {
+    backdrop-filter: blur(18px) saturate(1.35);
+}
+:root[data-ui-skin="neon-grid"] .m-header,
+:root[data-ui-skin="neon-grid"] .m-nav,
+:root[data-ui-skin="neon-grid"] .home-card {
+    box-shadow: 0 0 7px rgba(61,232,255,.34), inset 0 0 14px rgba(255,63,174,.06);
+}
+:root[data-ui-skin="terminal-green"] body,
+:root[data-ui-skin="terminal-green"] button,
+:root[data-ui-skin="terminal-green"] input,
+:root[data-ui-skin="terminal-green"] select {
+    font-family: "Consolas", "Courier New", monospace;
+    text-transform: uppercase;
+}
+:root[data-ui-skin="terminal-green"] .m-nav button .icon {
+    display: none;
+}
+:root[data-ui-skin="terminal-green"] .home-card,
+:root[data-ui-skin="terminal-green"] .home-action,
+:root[data-ui-skin="terminal-green"] .station-card,
+:root[data-ui-skin="terminal-green"] .prop-stat {
+    background: #000;
+}
+:root[data-ui-skin="hackr"] body {
+    background:
+        repeating-linear-gradient(180deg, rgba(67,255,159,.025) 0 1px, transparent 1px 4px),
+        var(--bg);
+}
+:root[data-ui-skin="hackr"] .m-app {
+    font-family: "Consolas", "Courier New", monospace;
+}
+:root[data-ui-skin="hackr"] #m-map {
+    background: #000;
+}
+:root[data-ui-skin="hackr"] #m-map .leaflet-tile-pane {
+    filter: invert(1) grayscale(1) sepia(1) hue-rotate(72deg) saturate(4.2) brightness(.52) contrast(1.85);
+}
 </style>
 </head>
 <body>
@@ -639,6 +824,12 @@ const MOBILE_TAB_KEY = 'pvMobileTab';
 const MOBILE_MSG_FILTER_KEY = 'pvMobileMsgFilter';
 const MOBILE_MSG_SORT_KEY = 'pvMobileMsgSort';
 const MOBILE_MAP_THEME_KEY = 'pvMobileMapTheme';
+const DESKTOP_UI_STATE_KEY = 'pvDesktopUIState';
+const MOBILE_UI_SKINS = new Set(['standard', 'mission-control', 'industrial', 'neon-grid', 'terminal-green', 'radio', 'iview', 'hackr']);
+const MOBILE_ACCENT_COLORS = {
+    blue: '#58a6ff', cyan: '#39d5ff', green: '#3fb950',
+    amber: '#d29922', purple: '#bc8cff', red: '#f85149',
+};
 
 const S = {
     ws: null, connected: false, myCall: '', messages: [], msgFilter: 'all', msgSort: 'asc',
@@ -654,6 +845,24 @@ const S = {
 
 // ── Helpers ────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
+function applySavedUITheme() {
+    let state = {};
+    try { state = JSON.parse(localStorage.getItem(DESKTOP_UI_STATE_KEY) || '{}'); } catch { state = {}; }
+    const mode = (state.uiMode || state.uiTheme) === 'light' ? 'light' : 'dark';
+    const skin = MOBILE_UI_SKINS.has(state.uiSkin) ? state.uiSkin : 'standard';
+    const accent = state.uiAccent || 'blue';
+    const accentColor = accent === 'custom'
+        ? (state.uiAccentCustom || MOBILE_ACCENT_COLORS.blue)
+        : (MOBILE_ACCENT_COLORS[accent] || MOBILE_ACCENT_COLORS.blue);
+    const root = document.documentElement;
+    root.dataset.uiMode = mode;
+    root.dataset.uiSkin = skin;
+    root.dataset.uiAccent = accent;
+    root.classList.toggle('ui-light', mode === 'light');
+    root.style.setProperty('--user-accent', accentColor);
+    const metaTheme = document.querySelector('meta[name="theme-color"]');
+    if (metaTheme) metaTheme.content = getComputedStyle(root).getPropertyValue('--bg').trim() || (mode === 'light' ? '#f5f7fb' : '#0d1117');
+}
 function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 function timeAgo(ts) {
     if (!ts) return '--';
@@ -1120,7 +1329,6 @@ function updateMapThemeButton() {
     const darkBtn = $('m-map-theme-dark');
     const lightBtn = $('m-map-theme-light');
     const customTiles = !!(S.config?.web?.map_tile_source === 'custom' && S.config?.web?.map_tile_url);
-    document.documentElement.classList.toggle('ui-light', S.mapTheme === 'light');
     if (darkBtn) {
         darkBtn.classList.toggle('active', S.mapTheme !== 'light');
         darkBtn.title = customTiles ? 'Custom tile source is configured; theme toggle uses default tiles only.' : 'Use dark mobile map tiles';
@@ -1668,6 +1876,7 @@ function toggleMobileGps() {
 
 // ── Init ───────────────────────────────────────────────────
 async function init() {
+    applySavedUITheme();
     S.activeTab = localStorage.getItem(MOBILE_TAB_KEY) || S.activeTab;
     if (!['mtab-home', 'mtab-messages', 'mtab-map', 'mtab-stations', 'mtab-prop', 'mtab-about'].includes(S.activeTab)) {
         S.activeTab = 'mtab-home';
@@ -1723,6 +1932,10 @@ $('m-map-theme-dark')?.addEventListener('click', () => setMobileMapTheme('dark')
 $('m-map-theme-light')?.addEventListener('click', () => setMobileMapTheme('light'));
 $('m-map-fit')?.addEventListener('click', fitMobileMap);
 
+window.addEventListener('storage', event => {
+    if (event.key === DESKTOP_UI_STATE_KEY) applySavedUITheme();
+});
+window.addEventListener('pageshow', applySavedUITheme);
 document.addEventListener('DOMContentLoaded', init);
 </script>
 </body>

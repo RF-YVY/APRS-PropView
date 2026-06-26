@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>APRS-PropView</Name>
+  <Repository>ghcr.io/rf-yvy/aprs-propview:latest</Repository>
+  <Registry>https://ghcr.io/rf-yvy/aprs-propview</Registry>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/rf-yvy/aprs-propview/issues</Support>
+  <Project>https://github.com/rf-yvy/aprs-propview</Project>
+  <Overview>VHF APRS propagation monitor, map, digipeater, and IGate web application.</Overview>
+  <Category>Network:Other Status:Stable</Category>
+  <WebUI>http://[IP]:[PORT:14501]/</WebUI>
+  <Icon>https://raw.githubusercontent.com/rf-yvy/aprs-propview/main/static/img/app-icon.webp</Icon>
+  <Config Name="Web UI Port" Target="14501" Default="14501" Mode="tcp" Description="HTTP port for APRS PropView." Type="Port" Display="always" Required="true" Mask="false">14501</Config>
+  <Config Name="App Data" Target="/data" Default="/mnt/user/appdata/aprs-propview" Mode="rw" Description="Persistent config, database, tile cache, and uploaded audio." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/aprs-propview</Config>
+  <Config Name="PROPVIEW_DATA_DIR" Target="PROPVIEW_DATA_DIR" Default="/data" Description="Persistent state directory inside the container." Type="Variable" Display="advanced" Required="true" Mask="false">/data</Config>
+  <Config Name="PROPVIEW_HOST" Target="PROPVIEW_HOST" Default="0.0.0.0" Description="Web bind host inside the container." Type="Variable" Display="advanced" Required="true" Mask="false">0.0.0.0</Config>
+  <Config Name="PROPVIEW_PORT" Target="PROPVIEW_PORT" Default="14501" Description="Web bind port inside the container." Type="Variable" Display="advanced" Required="true" Mask="false">14501</Config>
+  <Config Name="PROPVIEW_LAUNCH_BROWSER" Target="PROPVIEW_LAUNCH_BROWSER" Default="" Description="Leave empty for containers/headless installs." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+</Container>

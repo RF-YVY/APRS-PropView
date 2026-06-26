@@ -30,7 +30,7 @@ cd APRS-PropView
 If you already have the source on the Pi, run the installer from the repository
 root.
 
-## Update To v1.7.0
+## Update To v1.8.0
 
 For an existing Linux or Raspberry Pi service install, update the repository,
 rerun the installer so `/opt/aprs-propview` receives the new application files,
@@ -42,11 +42,11 @@ sudo bash ./scripts/install_linux.sh
 sudo systemctl restart aprs-propview
 ```
 
-Version 1.7.0 adds watched VHF path opportunity alerts, callsign-assisted
-target setup, station blocklists, antenna-aware scoring, malformed APRS
-position protection, and a redesigned category-based Settings workspace. Existing
-`config.toml`, `propview.db`, cached map tiles, and user audio files are
-preserved by the installer.
+Version 1.8.0 adds Docker/app-registry deployment support, TrueNAS SCALE and
+Portainer templates, tighter watched-path target-area scoring, clearer
+digipeater path handling, container health diagnostics, and Windows update
+reliability fixes. Existing `config.toml`, `propview.db`, cached map tiles, and
+user audio files are preserved by the installer.
 
 If you run the app as a headless Pi service and do not want browser launch
 attempts, leave `[web].launch_browser` blank in `config.toml` or choose

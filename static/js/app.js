@@ -12,7 +12,17 @@
     const UI_STATE_KEY = 'pvDesktopUIState';
     const UPDATE_BANNER_DISMISS_KEY = 'pvUpdateBannerDismissed';
     const MANUAL_BEACON_MODE_KEY = 'pvManualBeaconMode';
-    const DEFAULT_UI_THEME = 'dark';
+    const DEFAULT_UI_MODE = 'dark';
+    const DEFAULT_UI_SKIN = 'standard';
+    const DEFAULT_UI_ACCENT = 'blue';
+    const UI_ACCENT_COLORS = {
+        blue: '#58a6ff',
+        cyan: '#39d5ff',
+        green: '#3fb950',
+        amber: '#d29922',
+        purple: '#bc8cff',
+        red: '#f85149',
+    };
     const ALERT_AUDIO_SLOTS = window.pvAlertAudio?.slots || [];
     const ALERT_AUDIO_FIELD_BY_KEY = window.pvAlertAudio?.fieldByKey || {};
     const RF_PORT_TYPES = {
@@ -43,6 +53,10 @@
     let pendingAlertRecommendations = null;
     let headerNotifications = [];
     let unreadNotifications = 0;
+    let terminalModeInitialized = false;
+    let terminalMapVisible = false;
+    let terminalRefreshTimer = null;
+    let radioNeedleTimer = null;
     const MAX_HEADER_NOTIFICATIONS = 50;
 
     async function loadConfig(force) {
@@ -198,6 +212,27 @@
         window.pvMap?.refreshOpenPopups?.();
     }
 
+    async function loadHeaderBrandVersion() {
+        const versionEl = document.querySelector('.header-brand-version');
+        if (!versionEl) return;
+        try {
+            const response = await fetch('/api/version');
+            const data = await response.json();
+            const version = data.version || '';
+            if (version) {
+                versionEl.textContent = `v${version}`;
+                document.querySelector('.header-brand')?.setAttribute(
+                    'aria-label',
+                    `APRS PropView version ${version}`
+                );
+            }
+        } catch (e) {
+            if (versionEl.textContent.includes('__APP_VERSION__')) {
+                versionEl.textContent = '';
+            }
+        }
+    }
+
     /** Refresh every distance-related display after a unit toggle. */
     function _refreshAllDistanceDisplays() {
         const u = window.pvDistUnit;
@@ -221,6 +256,7 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         initUIThemeControls();
+        loadHeaderBrandVersion();
 
         // Apply saved distance unit to all labels
         _refreshAllDistanceDisplays();
@@ -464,7 +500,7 @@
             { key: 'tracking', title: 'Tracking & Callsigns', summary: 'Retention, blocklist, callbook, messages', sections: ['tracking', 'messaging'] },
             { key: 'propagation', title: 'Propagation', summary: 'Scoring and watched VHF paths', sections: ['propagation', 'watched-paths'] },
             { key: 'alerts', title: 'Alerts & Weather', summary: 'Notifications, radar, severe weather', sections: ['alerts', 'weather'] },
-            { key: 'display', title: 'Map & Display', summary: 'Map tiles, theme, units, web UI', sections: ['web'] },
+            { key: 'display', title: 'Map & Display', summary: 'Map tiles, theme, visualizations, units', sections: ['web', 'visualizations'] },
             { key: 'integrations', title: 'Integrations', summary: 'MQTT and Home Assistant', sections: ['mqtt'] },
         ];
         const categoryBySection = new Map();
@@ -762,7 +798,7 @@
     function captureSettingsSnapshots() {
         document.querySelectorAll('.settings-section').forEach((section) => {
             section._savedSettingsValues = Array.from(section.querySelectorAll('input, select, textarea'))
-                .filter((control) => control.id !== 'cfg-is-filter')
+                .filter((control) => control.id !== 'cfg-is-filter' && !control.hasAttribute('data-local-setting'))
                 .map((control) => ({
                     control,
                     value: control.value,
@@ -791,6 +827,7 @@
             'igate',
             'digipeater',
             'web',
+            'visualizations',
             'smart-beaconing',
             'bulletins',
             'aprs-objects',
@@ -856,17 +893,299 @@
         localStorage.setItem(UI_STATE_KEY, JSON.stringify(state || {}));
     }
 
-    function getUITheme() {
-        return _loadUIState().uiTheme === 'light' ? 'light' : DEFAULT_UI_THEME;
+    function _normalizeUIThemeState(value = {}) {
+        const legacyMode = value.uiTheme === 'light' ? 'light' : DEFAULT_UI_MODE;
+        const requestedMode = value.mode || value.uiMode;
+        const mode = requestedMode === 'light' ? 'light' : (requestedMode === 'dark' ? 'dark' : legacyMode);
+        const allowedSkins = new Set(['standard', 'mission-control', 'industrial', 'neon-grid', 'terminal-green', 'radio', 'iview', 'hackr']);
+        const requestedSkin = value.skin || value.uiSkin;
+        const requestedAccent = value.accent || value.uiAccent;
+        const skin = allowedSkins.has(requestedSkin) ? requestedSkin : DEFAULT_UI_SKIN;
+        const accent = requestedAccent === 'custom' || UI_ACCENT_COLORS[requestedAccent]
+            ? requestedAccent
+            : DEFAULT_UI_ACCENT;
+        const requestedCustom = value.customAccent || value.uiAccentCustom;
+        const customAccent = /^#[0-9a-f]{6}$/i.test(requestedCustom || '')
+            ? requestedCustom
+            : UI_ACCENT_COLORS[DEFAULT_UI_ACCENT];
+        return { mode, skin, accent, customAccent };
     }
 
-    function applyUITheme(theme) {
-        const normalized = theme === 'light' ? 'light' : DEFAULT_UI_THEME;
-        const isLight = normalized === 'light';
+    function getUITheme() {
+        return _normalizeUIThemeState(_loadUIState());
+    }
+
+    function _hexToRgbChannels(hex) {
+        const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+        return match
+            ? `${parseInt(match[1], 16)}, ${parseInt(match[2], 16)}, ${parseInt(match[3], 16)}`
+            : '88, 166, 255';
+    }
+
+    window.pvThemeColor = function (token, fallback = '') {
+        return getComputedStyle(document.documentElement).getPropertyValue(token).trim() || fallback;
+    };
+
+    function ensureTerminalModeElements() {
+        if (terminalModeInitialized) return;
+        terminalModeInitialized = true;
+
+        const tabLabels = [
+            ['tab-rf', '1', 'RF STATIONS'],
+            ['tab-is', '2', 'APRS-IS'],
+            ['tab-packets', '3', 'PACKETS'],
+            ['tab-messages', '4', 'MESSAGES'],
+            ['tab-prop', '5', 'PROPAGATION'],
+            ['tab-analytics', '6', 'ANALYTICS'],
+            ['tab-settings', '7', 'SETTINGS'],
+            ['tab-about', '8', 'ABOUT / HELP'],
+        ];
+        tabLabels.forEach(([tab, key, label]) => {
+            const button = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
+            if (!button) return;
+            button.dataset.terminalKey = key;
+            button.dataset.terminalLabel = label;
+        });
+
+        document.querySelectorAll('.prop-gauge').forEach((meter) => {
+            if (meter.querySelector('.terminal-meter-text')) return;
+            const output = document.createElement('div');
+            output.className = 'terminal-meter-text';
+            meter.appendChild(output);
+        });
+
+        const mapPanel = document.getElementById('map-panel');
+        if (mapPanel && !document.getElementById('terminal-map-screen')) {
+            const screen = document.createElement('section');
+            screen.id = 'terminal-map-screen';
+            screen.setAttribute('aria-label', 'Terminal station summary');
+            screen.innerHTML = `
+                <div class="terminal-screen-title">APRS PROPVIEW - OPERATIONS DISPLAY</div>
+                <pre id="terminal-screen-output"></pre>
+            `;
+            mapPanel.insertBefore(screen, document.getElementById('map'));
+        }
+
+        if (!document.getElementById('terminal-command-bar')) {
+            const commandBar = document.createElement('div');
+            commandBar.id = 'terminal-command-bar';
+            commandBar.innerHTML = [
+                '<span>1-8=Menu</span>',
+                '<span>F1=Help</span>',
+                '<span>F3=Exit</span>',
+                '<span>F5=Refresh</span>',
+                '<span>F9=Map/Text</span>',
+                '<span>F12=Cancel</span>',
+            ].join('');
+            document.body.appendChild(commandBar);
+        }
+
+        document.addEventListener('keydown', handleTerminalKeydown);
+    }
+
+    function terminalFocusedInEditor(target) {
+        return !!target?.closest?.('input, select, textarea, [contenteditable="true"]');
+    }
+
+    function closeTopTerminalSurface() {
+        const visibleModal = Array.from(document.querySelectorAll('.modal-overlay'))
+            .find((modal) => getComputedStyle(modal).display !== 'none');
+        if (visibleModal) {
+            visibleModal.querySelector('.modal-close')?.click();
+            return true;
+        }
+        if (document.getElementById('tab-settings')?.classList.contains('active')) {
+            closeSettingsPane();
+            return true;
+        }
+        if (document.getElementById('tab-messages')?.classList.contains('active')) {
+            closeMessagesPane();
+            return true;
+        }
+        return false;
+    }
+
+    function toggleTerminalMap() {
+        terminalMapVisible = !terminalMapVisible;
+        document.documentElement.classList.toggle('terminal-map-visible', terminalMapVisible);
+        setTimeout(() => window.pvMap?.map?.invalidateSize(), 50);
+        updateTerminalScreen();
+    }
+
+    function handleTerminalKeydown(event) {
+        if (document.documentElement.dataset.uiSkin !== 'terminal-green') return;
+        if (terminalFocusedInEditor(event.target) && /^[1-8]$/.test(event.key)) return;
+        if (event.ctrlKey || event.altKey || event.metaKey) return;
+
+        const tabByKey = {
+            '1': 'tab-rf',
+            '2': 'tab-is',
+            '3': 'tab-packets',
+            '4': 'tab-messages',
+            '5': 'tab-prop',
+            '6': 'tab-analytics',
+            '7': 'tab-settings',
+            '8': 'tab-about',
+        };
+        if (tabByKey[event.key]) {
+            event.preventDefault();
+            document.querySelector(`.tab-btn[data-tab="${tabByKey[event.key]}"]`)?.click();
+            return;
+        }
+
+        switch (event.key) {
+            case 'F1':
+                event.preventDefault();
+                document.getElementById('btn-settings-help')?.click();
+                break;
+            case 'F3':
+            case 'F12':
+            case 'Escape':
+                event.preventDefault();
+                closeTopTerminalSurface();
+                break;
+            case 'F5':
+                event.preventDefault();
+                refreshLiveData();
+                updateTerminalScreen();
+                break;
+            case 'F9':
+                event.preventDefault();
+                toggleTerminalMap();
+                break;
+        }
+    }
+
+    function terminalPad(text, length) {
+        return String(text ?? '').slice(0, length).padEnd(length, ' ');
+    }
+
+    function terminalStationLines() {
+        const source = document.querySelector('.tab-content.active .station-list')
+            || document.getElementById('rf-station-list');
+        const stations = Array.from(source?.querySelectorAll('.station-item') || []).slice(0, 10);
+        if (!stations.length) return ['No station records currently displayed.'];
+        return stations.map((item) => {
+            const call = item.querySelector('.station-call')?.childNodes?.[0]?.textContent?.trim()
+                || item.querySelector('.station-call')?.textContent?.trim()
+                || 'UNKNOWN';
+            const detail = item.querySelector('.station-detail')?.textContent?.trim() || '';
+            const distance = item.querySelector('.station-distance')?.textContent?.trim() || '--';
+            const age = item.querySelector('.station-time')?.textContent?.trim() || '--';
+            return `${terminalPad(call, 12)} ${terminalPad(distance, 12)} ${terminalPad(age, 10)} ${detail.slice(0, 55)}`;
+        });
+    }
+
+    function updateTerminalMeters() {
+        document.querySelectorAll('.prop-gauge').forEach((meter) => {
+            const scoreText = meter.querySelector('.prop-score')?.textContent || '';
+            const scoreMatch = scoreText.match(/(\d+)(?!.*\d)/);
+            const score = Math.max(0, Math.min(100, parseInt(scoreMatch?.[1], 10) || 0));
+            const level = meter.querySelector('.prop-level')?.textContent?.trim() || 'NONE';
+            const filled = Math.round(score / 10);
+            const bar = `${'#'.repeat(filled)}${'.'.repeat(10 - filled)}`;
+            const output = meter.querySelector('.terminal-meter-text');
+            if (output) output.textContent = `[${bar}] ${String(score).padStart(3, '0')} ${level}`;
+        });
+    }
+
+    function updateTerminalScreen() {
+        if (document.documentElement.dataset.uiSkin !== 'terminal-green') return;
+        updateTerminalMeters();
+        const output = document.getElementById('terminal-screen-output');
+        if (!output) return;
+        const call = document.getElementById('station-call')?.textContent?.trim() || 'N0CALL';
+        const rfCount = document.getElementById('rf-count-1h')?.textContent?.trim() || '0';
+        const isCount = document.getElementById('is-count-1h')?.textContent?.trim() || '0';
+        const maxDistance = document.getElementById('max-distance')?.textContent?.trim() || '0';
+        const connections = Array.from(document.querySelectorAll('.connection-chip')).map((chip) => {
+            const label = chip.querySelector('.chip-label')?.textContent?.trim() || 'LINK';
+            const value = chip.querySelector('.chip-value')?.textContent?.trim() || 'UNKNOWN';
+            return `${terminalPad(label, 12)} . . . . . . . . : ${value}`;
+        });
+        output.textContent = [
+            `Station profile . . . . . . . . . : ${call}`,
+            `RF stations (1h) . . . . . . . . : ${rfCount}`,
+            `APRS-IS stations (1h)  . . . . . : ${isCount}`,
+            `Maximum distance . . . . . . . . : ${maxDistance} ${window.distLabel?.() || 'mi'}`,
+            ...connections,
+            '',
+            terminalMapVisible ? 'GRAPHICAL MAP DISPLAY ACTIVE - PRESS F9 FOR TEXT.' : 'RECENT STATIONS',
+            terminalMapVisible ? '' : 'CALLSIGN     DISTANCE     LAST HEARD SOURCE / DETAIL',
+            terminalMapVisible ? '' : '------------ ------------ ---------- -----------------------------------------------',
+            ...(terminalMapVisible ? [] : terminalStationLines()),
+            '',
+            'Press a menu number or click an option.',
+        ].join('\n');
+    }
+
+    function applyTerminalMode(enabled) {
+        ensureTerminalModeElements();
+        document.documentElement.classList.toggle('terminal-mode', enabled);
+        document.documentElement.classList.toggle('terminal-map-visible', enabled && terminalMapVisible);
+        const bar = document.getElementById('terminal-command-bar');
+        if (bar) bar.hidden = !enabled;
+        if (terminalRefreshTimer) {
+            clearInterval(terminalRefreshTimer);
+            terminalRefreshTimer = null;
+        }
+        if (enabled) {
+            terminalRefreshTimer = setInterval(updateTerminalScreen, 2000);
+            updateTerminalScreen();
+        }
+    }
+
+    function stopRadioNeedleMotion() {
+        if (radioNeedleTimer) {
+            clearTimeout(radioNeedleTimer);
+            radioNeedleTimer = null;
+        }
+        document.querySelectorAll('.prop-gauge').forEach((meter) => {
+            meter.style.setProperty('--radio-meter-jitter', '0');
+        });
+    }
+
+    function scheduleRadioNeedleMotion() {
+        stopRadioNeedleMotion();
+        if (document.documentElement.dataset.uiSkin !== 'radio') return;
+        if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+
+        const fluctuate = () => {
+            if (document.documentElement.dataset.uiSkin !== 'radio') {
+                stopRadioNeedleMotion();
+                return;
+            }
+            document.querySelectorAll('.prop-gauge').forEach((meter) => {
+                const score = Number(meter.style.getPropertyValue('--radio-meter-score')) || 0;
+                const edgeScale = Math.min(1, score / 12, (100 - score) / 12);
+                const amplitude = 1.2 + Math.max(0, edgeScale) * 2.3;
+                const jitter = (Math.random() * 2 - 1) * amplitude;
+                meter.style.setProperty('--radio-meter-jitter', jitter.toFixed(2));
+            });
+            radioNeedleTimer = setTimeout(fluctuate, 520 + Math.random() * 680);
+        };
+        radioNeedleTimer = setTimeout(fluctuate, 350);
+    }
+
+    function applyUITheme(themeState) {
+        const theme = _normalizeUIThemeState(themeState);
+        const isLight = theme.mode === 'light';
+        const accentColor = theme.accent === 'custom'
+            ? theme.customAccent
+            : UI_ACCENT_COLORS[theme.accent];
+        const root = document.documentElement;
         document.documentElement.classList.toggle('ui-theme-light', isLight);
+        root.dataset.uiMode = theme.mode;
+        root.dataset.uiSkin = theme.skin;
+        root.dataset.uiAccent = theme.accent;
+        root.style.setProperty('--user-accent', accentColor);
+        root.style.setProperty('--user-accent-rgb', _hexToRgbChannels(accentColor));
 
         const metaTheme = document.querySelector('meta[name="theme-color"]');
-        if (metaTheme) metaTheme.setAttribute('content', isLight ? '#f5f7fa' : '#0d1117');
+        if (metaTheme) {
+            const computedBackground = getComputedStyle(root).getPropertyValue('--bg-primary').trim();
+            metaTheme.setAttribute('content', computedBackground || (isLight ? '#f5f7fa' : '#0d1117'));
+        }
 
         const toggle = document.getElementById('btn-toggle-ui-theme');
         if (toggle) {
@@ -875,29 +1194,59 @@
             toggle.setAttribute('aria-label', toggle.title);
         }
 
-        const select = document.getElementById('cfg-ui-theme');
-        if (select) select.value = normalized;
+        const modeSelect = document.getElementById('cfg-ui-mode');
+        const skinSelect = document.getElementById('cfg-ui-skin');
+        const accentSelect = document.getElementById('cfg-ui-accent');
+        const customInput = document.getElementById('cfg-ui-accent-custom');
+        if (modeSelect) modeSelect.value = theme.mode;
+        if (skinSelect) skinSelect.value = theme.skin;
+        if (accentSelect) accentSelect.value = theme.accent;
+        if (customInput) {
+            customInput.value = theme.customAccent;
+            customInput.disabled = theme.accent !== 'custom';
+        }
+
+        window.dispatchEvent(new CustomEvent('pvthemechange', {
+            detail: { ...theme, accentColor },
+        }));
+        applyTerminalMode(theme.skin === 'terminal-green');
+        if (theme.skin === 'radio') scheduleRadioNeedleMotion();
+        else stopRadioNeedleMotion();
     }
 
-    function setUITheme(theme) {
-        const normalized = theme === 'light' ? 'light' : DEFAULT_UI_THEME;
+    function setUITheme(updates) {
         const uiState = _loadUIState();
-        uiState.uiTheme = normalized;
+        const current = _normalizeUIThemeState(uiState);
+        const next = _normalizeUIThemeState({ ...current, ...updates });
+        uiState.uiMode = next.mode;
+        uiState.uiTheme = next.mode;
+        uiState.uiSkin = next.skin;
+        uiState.uiAccent = next.accent;
+        uiState.uiAccentCustom = next.customAccent;
         _saveUIState(uiState);
-        applyUITheme(normalized);
+        applyUITheme(next);
     }
 
     function toggleUITheme() {
-        const next = getUITheme() === 'light' ? DEFAULT_UI_THEME : 'light';
-        setUITheme(next);
+        const current = getUITheme();
+        setUITheme({ mode: current.mode === 'light' ? 'dark' : 'light' });
     }
 
     function initUIThemeControls() {
         applyUITheme(getUITheme());
 
         document.getElementById('btn-toggle-ui-theme')?.addEventListener('click', toggleUITheme);
-        document.getElementById('cfg-ui-theme')?.addEventListener('change', (e) => {
-            setUITheme(e.target.value);
+        document.getElementById('cfg-ui-mode')?.addEventListener('change', (e) => {
+            setUITheme({ mode: e.target.value });
+        });
+        document.getElementById('cfg-ui-skin')?.addEventListener('change', (e) => {
+            setUITheme({ skin: e.target.value });
+        });
+        document.getElementById('cfg-ui-accent')?.addEventListener('change', (e) => {
+            setUITheme({ accent: e.target.value });
+        });
+        document.getElementById('cfg-ui-accent-custom')?.addEventListener('input', (e) => {
+            setUITheme({ accent: 'custom', customAccent: e.target.value });
         });
         document.getElementById('cfg-unit-system')?.addEventListener('change', (e) => {
             applyUnitSystem(e.target.value, true);
@@ -1432,6 +1781,7 @@
         }
         setTextById('prop-level-my', myLevel.toUpperCase());
         setTextById('prop-score-my', `Score: ${myScore.toFixed(0)}`);
+        document.getElementById('prop-meter-my')?.style.setProperty('--radio-meter-score', Math.min(myScore, 100));
 
         // ── Regional meter (all RF) ────────────────────────
         const score = data.score || 0;
@@ -1443,6 +1793,7 @@
         }
         setTextById('prop-level-reg', level.toUpperCase());
         setTextById('prop-score-reg', `Score: ${score.toFixed(0)}`);
+        document.getElementById('prop-meter-reg')?.style.setProperty('--radio-meter-score', Math.min(score, 100));
 
         // Header stats
         setTextById('rf-count-1h', data.rf_stations_1h || 0);
@@ -1465,6 +1816,7 @@
         }
         renderWatchedPaths(data.watched_paths);
         window.pvMap?.updateWatchedPaths?.(data.watched_paths);
+        window.pvMap?.setPropagationVisuals?.(data);
     }
 
     function renderWatchedPaths(watched) {
@@ -1485,6 +1837,7 @@
             const geometry = (item.path_geometry || '').replace(/_/g, ' ');
             const profile = `${Math.round((item.my_tx_power_w || 0))} W, ${Number(item.my_antenna_gain_dbi || 0).toFixed(1)} dBi, EIRP ${Math.round(item.my_eirp_w || 0)} W`;
             const bonus = item.capability_bonus ? `, score adj ${item.capability_bonus > 0 ? '+' : ''}${item.capability_bonus}` : '';
+            const radius = item.target_area_radius_km ? ` - target area ${window.formatDist(item.target_area_radius_km || 0, 0)}` : '';
             return `
                 <div class="watched-path-card watched-path-${_escapeHTML(conf)}">
                     <div class="watched-path-top">
@@ -1492,7 +1845,7 @@
                         <span>${_escapeHTML(conf.toUpperCase())} ${Math.round(item.score || 0)}</span>
                     </div>
                     <div class="watched-path-meta">${_escapeHTML(mode || 'any band')} - ${window.formatDist(item.target_distance_km || 0, 0)} - bearing ${Math.round(item.target_heading || 0)} deg</div>
-                    <div class="watched-path-meta">${_escapeHTML(geometry || 'geometry unknown')} - horizon ${window.formatDist(item.radio_horizon_km || 0, 0)}</div>
+                    <div class="watched-path-meta">${_escapeHTML(geometry || 'geometry unknown')} - horizon ${window.formatDist(item.radio_horizon_km || 0, 0)}${radius}</div>
                     <div class="watched-path-meta">${_escapeHTML(profile + bonus)}</div>
                     <div class="watched-path-probes">${probeLine}</div>
                 </div>
@@ -1501,6 +1854,19 @@
     }
 
     // ── Charts ─────────────────────────────────────────────────
+
+    function getChartTheme() {
+        const color = window.pvThemeColor || ((token, fallback) => fallback);
+        return {
+            grid: color('--border', '#30363d'),
+            text: color('--text-primary', '#e6edf3'),
+            secondary: color('--text-secondary', '#8b949e'),
+            muted: color('--text-muted', '#6e7681'),
+            accent: color('--user-accent', '#58a6ff'),
+            accentFill: `rgba(${color('--user-accent-rgb', '88, 166, 255')}, 0.1)`,
+            positive: color('--accent-green', '#3fb950'),
+        };
+    }
 
     function drawDistanceChart(distances) {
         const canvas = document.getElementById('distance-chart');
@@ -1530,9 +1896,10 @@
         const chartW = w - padding.left - padding.right;
         const chartH = h - padding.top - padding.bottom;
         const barW = chartW / numBins - 2;
+        const theme = getChartTheme();
 
         // Draw axes
-        ctx.strokeStyle = '#30363d';
+        ctx.strokeStyle = theme.grid;
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(padding.left, padding.top);
@@ -1560,7 +1927,7 @@
 
             // Count label
             if (count > 0) {
-                ctx.fillStyle = '#e6edf3';
+                ctx.fillStyle = theme.text;
                 ctx.font = '10px sans-serif';
                 ctx.textAlign = 'center';
                 ctx.fillText(count, x + barW / 2, y - 4);
@@ -1568,7 +1935,7 @@
         });
 
         // X-axis labels
-        ctx.fillStyle = '#8b949e';
+        ctx.fillStyle = theme.secondary;
         ctx.font = '10px sans-serif';
         ctx.textAlign = 'center';
         for (let i = 0; i <= numBins; i += Math.max(1, Math.floor(numBins / 6))) {
@@ -1578,7 +1945,7 @@
         }
 
         // Labels
-        ctx.fillStyle = '#6e7681';
+        ctx.fillStyle = theme.muted;
         ctx.font = '10px sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(`Distance (${window.distLabel()})`, w / 2, h - 4);
@@ -1603,6 +1970,7 @@
 
         const chartW = w - padding.left - padding.right;
         const chartH = h - padding.top - padding.bottom;
+        const theme = getChartTheme();
 
         const counts = history.map(p => p.rf_station_count || 0);
         const maxCount = Math.max(...counts, 1);
@@ -1612,7 +1980,7 @@
         const timeRange = maxTime - minTime || 1;
 
         // Draw axes
-        ctx.strokeStyle = '#30363d';
+        ctx.strokeStyle = theme.grid;
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(padding.left, padding.top);
@@ -1622,7 +1990,7 @@
 
         // Draw line chart for station count
         ctx.beginPath();
-        ctx.strokeStyle = '#58a6ff';
+        ctx.strokeStyle = theme.accent;
         ctx.lineWidth = 2;
         history.forEach((point, i) => {
             const x = padding.left + ((point.timestamp - minTime) / timeRange) * chartW;
@@ -1636,7 +2004,7 @@
         ctx.lineTo(padding.left + chartW, h - padding.bottom);
         ctx.lineTo(padding.left, h - padding.bottom);
         ctx.closePath();
-        ctx.fillStyle = 'rgba(88, 166, 255, 0.1)';
+        ctx.fillStyle = theme.accentFill;
         ctx.fill();
 
         // Draw max distance on secondary axis
@@ -1644,7 +2012,7 @@
         const maxDistVal = Math.max(...maxDists, 1);
 
         ctx.beginPath();
-        ctx.strokeStyle = '#3fb950';
+        ctx.strokeStyle = theme.positive;
         ctx.lineWidth = 1.5;
         ctx.setLineDash([4, 3]);
         history.forEach((point, i) => {
@@ -1657,7 +2025,7 @@
         ctx.setLineDash([]);
 
         // X-axis time labels
-        ctx.fillStyle = '#8b949e';
+        ctx.fillStyle = theme.secondary;
         ctx.font = '10px sans-serif';
         ctx.textAlign = 'center';
         const numLabels = 6;
@@ -1669,16 +2037,16 @@
         }
 
         // Legend
-        ctx.fillStyle = '#58a6ff';
+        ctx.fillStyle = theme.accent;
         ctx.fillRect(padding.left + 10, padding.top + 2, 12, 3);
-        ctx.fillStyle = '#8b949e';
+        ctx.fillStyle = theme.secondary;
         ctx.font = '10px sans-serif';
         ctx.textAlign = 'left';
         ctx.fillText('Stations', padding.left + 26, padding.top + 7);
 
-        ctx.fillStyle = '#3fb950';
+        ctx.fillStyle = theme.positive;
         ctx.fillRect(padding.left + 90, padding.top + 2, 12, 3);
-        ctx.fillStyle = '#8b949e';
+        ctx.fillStyle = theme.secondary;
         ctx.fillText('Max Dist', padding.left + 106, padding.top + 7);
     }
 
@@ -1752,7 +2120,7 @@
         try {
             const [statusResp, stationsResp] = await Promise.all([
                 fetch('/api/status'),
-                fetch('/api/stations/all?hours=0'),
+                fetch(`/api/stations/all?hours=${window._expireMinutes > 0 ? window._expireMinutes / 60 : 0}`),
             ]);
             if (statusResp.ok) handleStatus(await statusResp.json());
             if (stationsResp.ok) {
@@ -1825,6 +2193,8 @@
             if (btn) btn.disabled = updateHandoffStarted;
         }
     }
+
+    window.addEventListener('pvthemechange', fetchPropagationHistory);
 
     function dismissUpdateBanner() {
         const banner = document.getElementById('update-alert-banner');
@@ -2139,6 +2509,7 @@
             el &&
             el.id &&
             el.id.startsWith('cfg-') &&
+            !el.hasAttribute('data-local-setting') &&
             el.id !== 'cfg-is-filter'
         );
     }
@@ -2647,7 +3018,6 @@
             setVal('cfg-web-port', cfg.web?.port);
             await loadBrowserOptions();
             setVal('cfg-web-font', cfg.web?.font_family || '');
-            setVal('cfg-ui-theme', getUITheme());
             applyUITheme(getUITheme());
             applyFont(cfg.web?.font_family || '');
             setVal('cfg-unit-system', cfg.web?.unit_system || 'imperial');
@@ -2664,6 +3034,14 @@
             setVal('cfg-web-pin', cfg.web?.mobile_pin || '');
             setChk('cfg-web-update-check-enabled', cfg.web?.update_check_enabled ?? true);
             setVal('cfg-web-update-check-hours', cfg.web?.update_check_interval_hours ?? 24);
+            setChk('cfg-visual-propagation-aura', cfg.web?.visual_propagation_aura ?? true);
+            setChk('cfg-visual-path-reveal', cfg.web?.visual_path_reveal ?? true);
+            setChk('cfg-visual-map-harmony', cfg.web?.visual_map_harmony ?? true);
+            setChk('cfg-visual-condition-backdrop', cfg.web?.visual_condition_backdrop ?? true);
+            setChk('cfg-visual-home-marker', cfg.web?.visual_home_marker ?? true);
+            setChk('cfg-visual-watched-path-flow', cfg.web?.visual_watched_path_flow ?? true);
+            setChk('cfg-visual-activity-moments', cfg.web?.visual_activity_moments ?? true);
+            window.pvMap?.setVisualizationConfig?.(cfg.web || {});
             window._expireMinutes = cfg.web?.expire_after_minutes ?? 0;
 
             // Tracking
@@ -2895,6 +3273,7 @@
                     item.target_antenna_height_m ?? 10,
                     item.my_tx_power_w ?? 50,
                     item.my_antenna_gain_dbi ?? 0,
+                    item.target_area_radius_km ?? 100,
                 ].join('|');
             }
             return [
@@ -2909,6 +3288,7 @@
                 item.target_antenna_height_m ?? 10,
                 item.my_tx_power_w ?? 50,
                 item.my_antenna_gain_dbi ?? 0,
+                item.target_area_radius_km ?? 100,
             ].join('|');
         }).join('\n');
     }
@@ -2927,6 +3307,7 @@
         setVal('watched-builder-target-height-ft', metersToFeet(first?.target_antenna_height_m ?? 10));
         setVal('watched-builder-power-w', first?.my_tx_power_w ?? 50);
         setVal('watched-builder-gain-dbi', first?.my_antenna_gain_dbi ?? 0);
+        setVal('watched-builder-radius-km', first?.target_area_radius_km ?? 100);
     }
 
     function collectWatchedPaths() {
@@ -2953,6 +3334,7 @@
                         target_antenna_height_m: parts[7] || '10',
                         my_tx_power_w: parts[8] || '50',
                         my_antenna_gain_dbi: parts[9] || '0',
+                        target_area_radius_km: parts[10] || '100',
                     };
                 }
                 return {
@@ -2968,6 +3350,7 @@
                     target_antenna_height_m: parts[8] || '10',
                     my_tx_power_w: parts[9] || '50',
                     my_antenna_gain_dbi: parts[10] || '0',
+                    target_area_radius_km: parts[11] || '100',
                 };
             });
     }
@@ -2985,16 +3368,17 @@
         const targetHeightM = feetToMeters(getVal('watched-builder-target-height-ft') || '33');
         const powerW = Math.max(0.1, parseFloat(getVal('watched-builder-power-w')) || 50);
         const gainDbi = Math.max(-20, Math.min(30, parseFloat(getVal('watched-builder-gain-dbi')) || 0));
+        const radiusKm = Math.max(10, Math.min(500, parseFloat(getVal('watched-builder-radius-km')) || 100));
         if (!/^[A-Z0-9]{1,9}(-([0-9]|1[0-5]))?$/.test(callsign)) {
             throw new Error('Enter a valid target callsign.');
         }
         if (grid) {
-            return [callsign, grid, band, confidence, mode, frequency, myHeightM, targetHeightM, powerW, gainDbi].join('|');
+            return [callsign, grid, band, confidence, mode, frequency, myHeightM, targetHeightM, powerW, gainDbi, radiusKm].join('|');
         }
         if (!lat || !lon || Number.isNaN(parseFloat(lat)) || Number.isNaN(parseFloat(lon))) {
             throw new Error('Lookup a station or enter a grid/latitude/longitude.');
         }
-        return [callsign, lat, lon, band, confidence, mode, frequency, myHeightM, targetHeightM, powerW, gainDbi].join('|');
+        return [callsign, lat, lon, band, confidence, mode, frequency, myHeightM, targetHeightM, powerW, gainDbi, radiusKm].join('|');
     }
 
     function setWatchedBuilderResult(message, type = '') {
@@ -3172,6 +3556,13 @@
                 mobile_pin: getVal('cfg-web-pin') || '',
                 update_check_enabled: getChk('cfg-web-update-check-enabled'),
                 update_check_interval_hours: parseInt(getVal('cfg-web-update-check-hours')) || 24,
+                visual_propagation_aura: getChk('cfg-visual-propagation-aura'),
+                visual_path_reveal: getChk('cfg-visual-path-reveal'),
+                visual_map_harmony: getChk('cfg-visual-map-harmony'),
+                visual_condition_backdrop: getChk('cfg-visual-condition-backdrop'),
+                visual_home_marker: getChk('cfg-visual-home-marker'),
+                visual_watched_path_flow: getChk('cfg-visual-watched-path-flow'),
+                visual_activity_moments: getChk('cfg-visual-activity-moments'),
             },
             tracking: {
                 max_station_age: (parseInt(getVal('cfg-track-age')) || 0) * 60,
@@ -3329,6 +3720,7 @@
                 clearSettingsDirty();
                 captureSettingsSnapshots();
                 updateFirstRunChecklist();
+                window.pvMap?.setVisualizationConfig?.(body.web || {});
                 window.pvConfigPromise = null;
                 serverConfig = { ...(serverConfig || {}), alerts: { ...body.alerts } };
                 const delay = saveImpact === 'live' ? 5000 : 12000;
@@ -4233,6 +4625,27 @@
     // Live font preview when changed in settings
     document.getElementById('cfg-web-font')?.addEventListener('change', (e) => {
         applyFont(e.target.value || '');
+    });
+    [
+        'cfg-visual-propagation-aura',
+        'cfg-visual-path-reveal',
+        'cfg-visual-map-harmony',
+        'cfg-visual-condition-backdrop',
+        'cfg-visual-home-marker',
+        'cfg-visual-watched-path-flow',
+        'cfg-visual-activity-moments',
+    ].forEach((id) => {
+        document.getElementById(id)?.addEventListener('change', () => {
+            window.pvMap?.setVisualizationConfig?.({
+                visual_propagation_aura: getChk('cfg-visual-propagation-aura'),
+                visual_path_reveal: getChk('cfg-visual-path-reveal'),
+                visual_map_harmony: getChk('cfg-visual-map-harmony'),
+                visual_condition_backdrop: getChk('cfg-visual-condition-backdrop'),
+                visual_home_marker: getChk('cfg-visual-home-marker'),
+                visual_watched_path_flow: getChk('cfg-visual-watched-path-flow'),
+                visual_activity_moments: getChk('cfg-visual-activity-moments'),
+            });
+        });
     });
 
     // Clear packets button

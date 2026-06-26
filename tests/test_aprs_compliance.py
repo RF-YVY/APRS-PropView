@@ -3,6 +3,7 @@ import asyncio
 import json
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import server.analytics as analytics_module
 from server.aprs_is import APRSISClient
@@ -37,9 +38,49 @@ from server.websocket_manager import WebSocketManager
 from server.gps import GPSManager, parse_gpsd_tpv, parse_nmea_position, split_nmea_stream
 from server.status_report import build_dx_status_text, build_mheard_status_text, build_weather_alert_status_text, trim_status_text
 from server.wxnow import build_wxnow_info, build_wxnow_position_info, parse_weather_body_values, parse_wxnow_text
+from main import _apply_env_overrides
 
 
 class SettingsImpactTests(unittest.TestCase):
+    def test_docker_env_overrides_runtime_paths_and_web_bind(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            config = Config()
+
+            with patch.dict(
+                "os.environ",
+                {
+                    "PROPVIEW_HOST": "0.0.0.0",
+                    "PROPVIEW_PORT": "18080",
+                    "PROPVIEW_LAUNCH_BROWSER": "",
+                    "PROPVIEW_UPDATE_CHECKS": "false",
+                    "PROPVIEW_APRS_IS_ENABLED": "false",
+                    "PROPVIEW_KISS_TCP_ENABLED": "true",
+                    "PROPVIEW_KISS_TCP_HOST": "direwolf",
+                    "PROPVIEW_KISS_TCP_PORT": "8001",
+                    "PROPVIEW_CALLSIGN": "K5ABC",
+                    "PROPVIEW_SSID": "7",
+                    "PROPVIEW_LATITUDE": "35.25",
+                    "PROPVIEW_LONGITUDE": "-80.5",
+                },
+                clear=False,
+            ):
+                _apply_env_overrides(config, data_dir)
+
+            self.assertEqual(config.web.host, "0.0.0.0")
+            self.assertEqual(config.web.port, 18080)
+            self.assertEqual(config.web.launch_browser, "")
+            self.assertFalse(config.web.update_check_enabled)
+            self.assertEqual(config.database.path, str(data_dir / "propview.db"))
+            self.assertFalse(config.aprs_is.enabled)
+            self.assertTrue(config.kiss_tcp.enabled)
+            self.assertEqual(config.kiss_tcp.host, "direwolf")
+            self.assertEqual(config.kiss_tcp.port, 8001)
+            self.assertEqual(config.station.callsign, "K5ABC")
+            self.assertEqual(config.station.ssid, 7)
+            self.assertAlmostEqual(config.station.latitude, 35.25)
+            self.assertAlmostEqual(config.station.longitude, -80.5)
+
     def test_rf_port_signature_only_changes_when_port_settings_change(self):
         original = RFPortConfig(
             name="KISS TCP",
@@ -178,6 +219,20 @@ class APRSParserComplianceTests(unittest.TestCase):
         self.assertEqual(packet.weather["temperature_f"], 98)
         self.assertEqual(packet.weather["humidity"], 36)
         self.assertEqual(packet.weather["pressure_mb"], 1013.9)
+
+    def test_mic_e_position_with_used_digipeaters_keeps_path(self):
+        packet = parse_packet(
+            'WA5LUY-9>S4RX3P,HOTSPR*,WB4KOG-4*,WIDE2*:`y_&mz?k/"4g}',
+            source="rf",
+        )
+
+        self.assertEqual(packet.packet_type, "mic_e")
+        self.assertEqual(packet.from_call, "WA5LUY-9")
+        self.assertEqual(packet.path, "HOTSPR*,WB4KOG-4*,WIDE2*")
+        self.assertAlmostEqual(packet.latitude, 34.471666666666664)
+        self.assertAlmostEqual(packet.longitude, -93.11833333333334)
+        self.assertEqual(packet.symbol_table, "/")
+        self.assertEqual(packet.symbol_code, "k")
 
     def test_malformed_uncompressed_latitude_is_not_decoded_as_compressed(self):
         packet = parse_packet(
@@ -396,6 +451,38 @@ watched_callsigns = ["WB5TZN-1", "KJ4AJP-5"]
             self.assertEqual(reloaded.mqtt.device_id, "k5abc_propview")
             self.assertEqual(reloaded.mqtt.watched_callsigns, ["WB5TZN-1", "KJ4AJP-5"])
 
+    def test_loads_and_saves_visualization_preferences(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text(
+                """
+[web]
+visual_propagation_aura = false
+visual_path_reveal = true
+visual_map_harmony = false
+visual_condition_backdrop = true
+visual_home_marker = false
+visual_watched_path_flow = true
+visual_activity_moments = false
+""".strip(),
+                encoding="utf-8",
+            )
+
+            config = Config.load(path)
+            self.assertFalse(config.web.visual_propagation_aura)
+            self.assertTrue(config.web.visual_path_reveal)
+            self.assertFalse(config.web.visual_map_harmony)
+            self.assertFalse(config.web.visual_home_marker)
+            self.assertFalse(config.web.visual_activity_moments)
+
+            saved_path = Path(tmp) / "saved.toml"
+            config.save(saved_path)
+            reloaded = Config.load(saved_path)
+
+            self.assertFalse(reloaded.web.visual_propagation_aura)
+            self.assertTrue(reloaded.web.visual_condition_backdrop)
+            self.assertTrue(reloaded.web.visual_watched_path_flow)
+
     def test_loads_and_saves_watched_paths(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "config.toml"
@@ -413,6 +500,7 @@ frequency_mhz = 144.2
 min_confidence = "high"
 bearing_tolerance_deg = 25
 min_probe_count = 3
+target_area_radius_km = 80.0
 max_age_minutes = 45
 alert_cooldown_minutes = 20
 my_antenna_height_m = 12.0
@@ -428,6 +516,7 @@ my_antenna_gain_dbi = 6.0
             self.assertEqual(config.watched_paths[0].callsign, "WT1W")
             self.assertEqual(config.watched_paths[0].min_confidence, "high")
             self.assertEqual(config.watched_paths[0].bearing_tolerance_deg, 25)
+            self.assertAlmostEqual(config.watched_paths[0].target_area_radius_km, 80.0)
             self.assertEqual(config.watched_paths[0].grid, "EM85")
             self.assertEqual(config.watched_paths[0].mode, "SSB")
             self.assertAlmostEqual(config.watched_paths[0].frequency_mhz, 144.2)
@@ -439,6 +528,7 @@ my_antenna_gain_dbi = 6.0
             reloaded = Config.load(saved_path)
             self.assertEqual(reloaded.watched_paths[0].band, "2m SSB")
             self.assertEqual(reloaded.watched_paths[0].min_probe_count, 3)
+            self.assertAlmostEqual(reloaded.watched_paths[0].target_area_radius_km, 80.0)
             self.assertEqual(reloaded.watched_paths[0].grid, "EM85")
             self.assertAlmostEqual(reloaded.watched_paths[0].target_antenna_height_m, 18.0)
             self.assertAlmostEqual(reloaded.watched_paths[0].my_tx_power_w, 100.0)
@@ -1353,6 +1443,88 @@ class MessagePersistenceTests(unittest.TestCase):
         self.assertEqual(result["opportunities"][0]["probe_count"], 1)
         self.assertEqual(len(result["alerts"]), 1)
         self.assertEqual(second["alerts"], [])
+
+    def test_watched_path_ignores_station_heard_via_digipeater(self):
+        async def run_test():
+            with tempfile.TemporaryDirectory() as tmp:
+                config = Config()
+                config.station.latitude = 35.0
+                config.station.longitude = -80.0
+                config.watched_paths = [
+                    WatchedPathConfig(
+                        callsign="WT1W-7",
+                        latitude=35.0,
+                        longitude=-77.0,
+                        min_confidence="low",
+                        min_probe_count=1,
+                        bearing_tolerance_deg=35,
+                    )
+                ]
+                db = Database(f"{tmp}/test.db")
+                await db.initialize()
+                try:
+                    ws = WebSocketManager()
+                    tracker = StationTracker(db, config, ws)
+                    packet = parse_packet(
+                        r"WT1W-7>APRS,K4DIGI-1*:!3500.00N/07654.00W-Target relayed",
+                        source="rf",
+                    )
+                    await tracker.track_packet(packet)
+                    result = await tracker.evaluate_watched_paths()
+                finally:
+                    await db.close()
+
+            return result
+
+        result = asyncio.run(run_test())
+
+        opportunity = result["opportunities"][0]
+        self.assertEqual(opportunity["probe_count"], 0)
+        self.assertEqual(opportunity["probes"], [])
+        self.assertEqual(opportunity["confidence"], "none")
+        self.assertEqual(result["alerts"], [])
+
+    def test_watched_path_ignores_direct_probe_outside_target_area(self):
+        async def run_test():
+            with tempfile.TemporaryDirectory() as tmp:
+                config = Config()
+                config.station.latitude = 35.0
+                config.station.longitude = -80.0
+                config.watched_paths = [
+                    WatchedPathConfig(
+                        callsign="WT1W-7",
+                        latitude=35.0,
+                        longitude=-77.0,
+                        min_confidence="low",
+                        min_probe_count=1,
+                        bearing_tolerance_deg=35,
+                        target_area_radius_km=10.0,
+                    )
+                ]
+                db = Database(f"{tmp}/test.db")
+                await db.initialize()
+                try:
+                    ws = WebSocketManager()
+                    tracker = StationTracker(db, config, ws)
+                    packet = parse_packet(
+                        r"K1ABC>APRS:!3500.00N/07712.00W-East but not target-area local",
+                        source="rf",
+                    )
+                    await tracker.track_packet(packet)
+                    result = await tracker.evaluate_watched_paths()
+                finally:
+                    await db.close()
+
+            return result
+
+        result = asyncio.run(run_test())
+
+        opportunity = result["opportunities"][0]
+        self.assertEqual(opportunity["target_area_radius_km"], 10.0)
+        self.assertEqual(opportunity["probe_count"], 0)
+        self.assertEqual(opportunity["probes"], [])
+        self.assertEqual(opportunity["confidence"], "none")
+        self.assertEqual(result["alerts"], [])
 
     def test_watched_path_does_not_alert_for_wrong_direction_evidence(self):
         async def run_test():

@@ -1,0 +1,30 @@
+# TrueNAS SCALE Custom App reference values for APRS PropView.
+# Use these values in Apps -> Discover Apps -> Custom App.
+
+image:
+  repository: ghcr.io/rf-yvy/aprs-propview
+  tag: latest
+  pullPolicy: IfNotPresent
+
+container:
+  port: 14501
+  environment:
+    PROPVIEW_DATA_DIR: /data
+    PROPVIEW_HOST: 0.0.0.0
+    PROPVIEW_PORT: "14501"
+    PROPVIEW_LAUNCH_BROWSER: ""
+
+network:
+  publishPort: 14501
+
+storage:
+  mountPath: /data
+  recommendedHostPath: /mnt/tank/apps/aprs-propview/data
+
+healthcheck:
+  path: /api/health
+  port: 14501
+
+notes:
+  - Prefer a TCP KISS source such as Direwolf for container installs.
+  - If using a USB TNC, pass the serial device through to the app and configure the matching /dev path in PropView.

@@ -76,6 +76,13 @@ expire_after_minutes = 0
 mobile_pin = ""
 update_check_enabled = true
 update_check_interval_hours = 24
+visual_propagation_aura = true
+visual_path_reveal = true
+visual_map_harmony = true
+visual_condition_backdrop = true
+visual_home_marker = true
+visual_watched_path_flow = true
+visual_activity_moments = true
 
 [database]
 path = "propview.db"
@@ -104,6 +111,7 @@ qrz_password = ""
 # min_confidence = "medium"
 # bearing_tolerance_deg = 30
 # min_probe_count = 2
+# target_area_radius_km = 100.0
 # max_age_minutes = 60
 # alert_cooldown_minutes = 30
 
@@ -351,6 +359,13 @@ class WebConfig:
     mobile_pin: str = ""
     update_check_enabled: bool = True
     update_check_interval_hours: int = 24
+    visual_propagation_aura: bool = True
+    visual_path_reveal: bool = True
+    visual_map_harmony: bool = True
+    visual_condition_backdrop: bool = True
+    visual_home_marker: bool = True
+    visual_watched_path_flow: bool = True
+    visual_activity_moments: bool = True
 
 
 @dataclass
@@ -378,6 +393,7 @@ class WatchedPathConfig:
     min_confidence: str = "medium"
     bearing_tolerance_deg: int = 30
     min_probe_count: int = 2
+    target_area_radius_km: float = 100.0
     max_age_minutes: int = 60
     alert_cooldown_minutes: int = 30
     my_antenna_height_m: float = 10.0
@@ -761,6 +777,7 @@ class Config:
                 f'min_confidence = "{esc(item.min_confidence)}"',
                 f"bearing_tolerance_deg = {int(item.bearing_tolerance_deg)}",
                 f"min_probe_count = {int(item.min_probe_count)}",
+                f"target_area_radius_km = {float(item.target_area_radius_km)}",
                 f"max_age_minutes = {int(item.max_age_minutes)}",
                 f"alert_cooldown_minutes = {int(item.alert_cooldown_minutes)}",
                 f"my_antenna_height_m = {float(item.my_antenna_height_m)}",
@@ -785,6 +802,13 @@ class Config:
             f'mobile_pin = "{esc(self.web.mobile_pin)}"',
             f"update_check_enabled = {'true' if self.web.update_check_enabled else 'false'}",
             f"update_check_interval_hours = {int(self.web.update_check_interval_hours)}",
+            f"visual_propagation_aura = {'true' if self.web.visual_propagation_aura else 'false'}",
+            f"visual_path_reveal = {'true' if self.web.visual_path_reveal else 'false'}",
+            f"visual_map_harmony = {'true' if self.web.visual_map_harmony else 'false'}",
+            f"visual_condition_backdrop = {'true' if self.web.visual_condition_backdrop else 'false'}",
+            f"visual_home_marker = {'true' if self.web.visual_home_marker else 'false'}",
+            f"visual_watched_path_flow = {'true' if self.web.visual_watched_path_flow else 'false'}",
+            f"visual_activity_moments = {'true' if self.web.visual_activity_moments else 'false'}",
             "",
             "[database]",
             f'path = "{esc(self.database.path)}"',
