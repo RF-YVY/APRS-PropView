@@ -18,7 +18,31 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 
 if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
-  echo "Missing ${PYTHON_BIN}. Install python3 and python3-venv, then run this script again." >&2
+  echo "Missing ${PYTHON_BIN}. Install Python 3.11+ and the matching venv package, then run this script again." >&2
+  exit 1
+fi
+
+PYTHON_VERSION="$("${PYTHON_BIN}" - <<'PY'
+import sys
+print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
+PY
+)"
+
+if ! "${PYTHON_BIN}" - <<'PY'
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
+PY
+then
+  cat >&2 <<EOF
+${PYTHON_BIN} is Python ${PYTHON_VERSION}, but APRS PropView requires Python 3.11 or newer.
+
+Raspberry Pi OS / Debian 11 (bullseye) commonly provides Python 3.9 as
+python3. Install a newer Python and rerun this installer with:
+
+  sudo PYTHON_BIN=/path/to/python3.11 bash ./scripts/install_linux.sh
+
+Or upgrade to an OS release that provides Python 3.11+.
+EOF
   exit 1
 fi
 
@@ -74,6 +98,22 @@ else
 fi
 
 chown -R "${RUN_USER}:${RUN_USER}" "${INSTALL_DIR}"
+
+if [[ -x "${INSTALL_DIR}/.venv/bin/python" ]]; then
+  VENV_VERSION="$("${INSTALL_DIR}/.venv/bin/python" - <<'PY'
+import sys
+print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
+PY
+)"
+  if ! "${INSTALL_DIR}/.venv/bin/python" - <<'PY'
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
+PY
+  then
+    echo "Existing virtualenv uses Python ${VENV_VERSION}; recreating it with ${PYTHON_BIN}."
+    rm -rf "${INSTALL_DIR}/.venv"
+  fi
+fi
 
 sudo -u "${RUN_USER}" "${PYTHON_BIN}" -m venv "${INSTALL_DIR}/.venv"
 sudo -u "${RUN_USER}" "${INSTALL_DIR}/.venv/bin/python" -m pip install --upgrade pip

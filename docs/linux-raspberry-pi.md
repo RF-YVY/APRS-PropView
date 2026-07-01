@@ -20,6 +20,11 @@ sudo apt update
 sudo apt install -y git python3 python3-venv python3-pip rsync
 ```
 
+APRS PropView requires Python 3.11 or newer. Raspberry Pi OS / Debian 11
+(bullseye) commonly installs Python 3.9 as `python3`; use a newer Python by
+setting `PYTHON_BIN` when running the installer, or upgrade to an OS release
+that provides Python 3.11+.
+
 ## Get The Source
 
 ```bash
@@ -90,6 +95,16 @@ To install for a specific Linux user:
 ```bash
 sudo APRS_PROPVIEW_USER=pi bash ./scripts/install_linux.sh
 ```
+
+To install with a specific Python 3.11+ interpreter:
+
+```bash
+sudo PYTHON_BIN=/path/to/python3.11 bash ./scripts/install_linux.sh
+```
+
+Set `PYTHON_BIN` on the same `sudo` command line as shown above. Running
+`export PYTHON_BIN=/path/to/python3.11` before `sudo bash ...` may not work
+because many systems do not preserve user environment variables through `sudo`.
 
 To choose a different install directory or service name:
 
