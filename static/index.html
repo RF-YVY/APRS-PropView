@@ -1302,6 +1302,14 @@
                                 <input type="checkbox" id="cfg-visual-activity-moments">
                                 <span><strong>Quiet Activity Moments</strong><small>Shows a small fading note when a new direct station is heard.</small></span>
                             </label>
+                            <label class="visualization-setting visualization-setting-select">
+                                <select id="cfg-visual-packet-animation" aria-label="Packet animation level">
+                                    <option value="off">Off</option>
+                                    <option value="basic">Basic</option>
+                                    <option value="enhanced">Enhanced</option>
+                                </select>
+                                <span><strong>Packet Animation</strong><small>Shows station transmit bursts and directional packet flow. Enhanced adds a moving head, contrail, and hop pulses.</small></span>
+                            </label>
                         </div>
                         <p class="settings-note">Each effect is independent. Motion is automatically reduced when your operating system requests reduced motion.</p>
                     </div>
@@ -2025,7 +2033,7 @@
                 <div class="about-panel">
                     <div class="about-header">
                         <h2>APRS PropView</h2>
-                        <span id="about-version" class="about-version">v1.8.0</span>
+                        <span id="about-version" class="about-version">v1.9.0</span>
                     </div>
                     <div class="about-section">
                         <p>A real-time APRS digipeater and IGate focused on VHF propagation, live mapping, APRS messaging, analytics, and weather-aware situational awareness.</p>
@@ -2042,7 +2050,7 @@
                     </div>
                     <div class="about-section">
                         <h3>Build Info</h3>
-                        <p>Version: <span id="about-version-detail">1.8.0</span></p>
+                        <p>Version: <span id="about-version-detail">1.9.0</span></p>
                         <p>Release Date: <span id="about-date">June 26, 2026</span></p>
                         <p>Highlights: Docker/app-registry deployment support, TrueNAS SCALE and Portainer templates, tighter watched-path target-area scoring, clearer digipeater path handling, container health diagnostics, and Windows update reliability fixes.</p>
                     </div>
@@ -2309,7 +2317,7 @@
                     <p><b>Opening Browser</b> &mdash; Choose which browser APRS PropView opens at startup, or choose <b>Do not open automatically</b> for headless Pi/VM/service deployments where browser auto-open is not desired.</p>
                     <p><b>Font</b> — Choose a display font for the entire UI.</p>
                     <p><b>UI Theme</b> — Choose interface brightness, a visual skin, and an accent color independently from the map tile theme. Mission Control, Industrial, Neon Grid, Radio, iVIEW, and HackR alter panel materials and controls. iVIEW uses translucent liquid-glass surfaces; HackR uses a compact intelligence-console layout and night-vision map. Radio uses transceiver-style dual analog propagation meters whose needles follow the current direct and regional scores. Terminal Green Screen replaces the graphical dashboard with a numbered text console: use 1–8 for menus, F1 for help, F3/F12 to close, F5 to refresh, and F9 to switch between text and map views.</p>
-                    <p><b>Visualizations</b> — Independently enable the propagation aura, new-path reveal, map color harmony, condition backdrops, expressive home marker, watched-path flow, and quiet direct-heard activity moments.</p>
+                    <p><b>Visualizations</b> — Independently enable the propagation aura, new-path reveal, map color harmony, condition backdrops, expressive home marker, watched-path flow, quiet direct-heard activity moments, and Off/Basic/Enhanced live packet animation.</p>
                     <p><b>Units</b> — Choose Imperial or Metric for distance, map weather temperature, APRS WX station temperature, wind, and precipitation displays.</p>
                     <p><b>Map Tiles</b> — Use the default online OpenStreetMap tiles or point PropView at a custom XYZ tile URL such as a local MBTiles/XYZ server. Custom URLs must include <code>{z}</code>, <code>{x}</code>, and <code>{y}</code>.</p>
                     <p><b>Ghost After (min)</b> — Stations not heard within this time will fade (pulsing dashed border, reduced opacity). Set to 0 to disable ghosting.</p>

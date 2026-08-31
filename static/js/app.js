@@ -1292,6 +1292,7 @@
         ws.on('packet', (msg) => {
             if (msg.data) {
                 window.pvStations.addPacket(msg.data);
+                window.pvMap?.animatePacketActivity?.(msg.data);
             }
         });
 
@@ -3041,6 +3042,7 @@
             setChk('cfg-visual-home-marker', cfg.web?.visual_home_marker ?? true);
             setChk('cfg-visual-watched-path-flow', cfg.web?.visual_watched_path_flow ?? true);
             setChk('cfg-visual-activity-moments', cfg.web?.visual_activity_moments ?? true);
+            setVal('cfg-visual-packet-animation', cfg.web?.visual_packet_animation || 'basic');
             window.pvMap?.setVisualizationConfig?.(cfg.web || {});
             window._expireMinutes = cfg.web?.expire_after_minutes ?? 0;
 
@@ -3563,6 +3565,7 @@
                 visual_home_marker: getChk('cfg-visual-home-marker'),
                 visual_watched_path_flow: getChk('cfg-visual-watched-path-flow'),
                 visual_activity_moments: getChk('cfg-visual-activity-moments'),
+                visual_packet_animation: getVal('cfg-visual-packet-animation') || 'basic',
             },
             tracking: {
                 max_station_age: (parseInt(getVal('cfg-track-age')) || 0) * 60,
@@ -4644,7 +4647,20 @@
                 visual_home_marker: getChk('cfg-visual-home-marker'),
                 visual_watched_path_flow: getChk('cfg-visual-watched-path-flow'),
                 visual_activity_moments: getChk('cfg-visual-activity-moments'),
+                visual_packet_animation: getVal('cfg-visual-packet-animation') || 'basic',
             });
+        });
+    });
+    document.getElementById('cfg-visual-packet-animation')?.addEventListener('change', () => {
+        window.pvMap?.setVisualizationConfig?.({
+            visual_propagation_aura: getChk('cfg-visual-propagation-aura'),
+            visual_path_reveal: getChk('cfg-visual-path-reveal'),
+            visual_map_harmony: getChk('cfg-visual-map-harmony'),
+            visual_condition_backdrop: getChk('cfg-visual-condition-backdrop'),
+            visual_home_marker: getChk('cfg-visual-home-marker'),
+            visual_watched_path_flow: getChk('cfg-visual-watched-path-flow'),
+            visual_activity_moments: getChk('cfg-visual-activity-moments'),
+            visual_packet_animation: getVal('cfg-visual-packet-animation') || 'basic',
         });
     });
 

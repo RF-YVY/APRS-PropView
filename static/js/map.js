@@ -31,6 +31,11 @@ class PropViewMap {
         this._lastWatchedPaths = null;
         this._visualReadyAt = Date.now() + 4000;
         this._lastActivityMomentAt = 0;
+        this._packetAnimationCanvas = null;
+        this._packetAnimationContext = null;
+        this._packetAnimationFrame = null;
+        this._packetAnimationFlows = [];
+        this._packetAnimationMaxFlows = 20;
         this.visualizations = {
             propagationAura: true,
             pathReveal: true,
@@ -39,6 +44,7 @@ class PropViewMap {
             homeMarker: true,
             watchedPathFlow: true,
             activityMoments: true,
+            packetAnimation: 'basic',
         };
         this.pickMode = false;
         this.objectMode = false;
@@ -116,6 +122,7 @@ class PropViewMap {
         this.map.getPane('ambientPane').style.zIndex = 210;
         this.map.getPane('ambientPane').style.pointerEvents = 'none';
         this.ambientLayer = L.layerGroup([], { pane: 'ambientPane' }).addTo(this.map);
+        this._initPacketAnimationCanvas();
         this.map.createPane('weatherRadarPane');
         this.map.getPane('weatherRadarPane').style.zIndex = 320;
         this.map.getPane('weatherRadarPane').style.pointerEvents = 'none';
@@ -221,6 +228,7 @@ class PropViewMap {
     }
 
     setVisualizationConfig(config = {}) {
+        const packetAnimation = String(config.visual_packet_animation || 'basic').toLowerCase();
         this.visualizations = {
             propagationAura: config.visual_propagation_aura ?? true,
             pathReveal: config.visual_path_reveal ?? true,
@@ -229,7 +237,9 @@ class PropViewMap {
             homeMarker: config.visual_home_marker ?? true,
             watchedPathFlow: config.visual_watched_path_flow ?? true,
             activityMoments: config.visual_activity_moments ?? true,
+            packetAnimation: ['off', 'basic', 'enhanced'].includes(packetAnimation) ? packetAnimation : 'basic',
         };
+        if (this.visualizations.packetAnimation === 'off') this._clearPacketAnimations();
         this._applyVisualizationClasses();
         if (this.myPosition) {
             this.setMyPosition(this.myPosition.lat, this.myPosition.lng, this.myCallsign, this.myStationInfo);
@@ -245,6 +255,293 @@ class PropViewMap {
         panel.classList.toggle('visual-condition-backdrop', !!this.visualizations.conditionBackdrop);
         panel.classList.toggle('visual-home-marker', !!this.visualizations.homeMarker);
         document.documentElement.classList.toggle('visual-condition-backdrop', !!this.visualizations.conditionBackdrop);
+    }
+
+    _prefersReducedMotion() {
+        return typeof window.matchMedia === 'function'
+            && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    }
+
+    _initPacketAnimationCanvas() {
+        if (!this.map || this._packetAnimationCanvas) return;
+        const container = this.map.getContainer();
+        const canvas = document.createElement('canvas');
+        canvas.className = 'packet-animation-canvas';
+        canvas.setAttribute('aria-hidden', 'true');
+        container.appendChild(canvas);
+        this._packetAnimationCanvas = canvas;
+        this._packetAnimationContext = canvas.getContext('2d');
+        this._resizePacketAnimationCanvas();
+        this.map.on('resize move zoom', () => this._resizePacketAnimationCanvas());
+    }
+
+    _resizePacketAnimationCanvas() {
+        const canvas = this._packetAnimationCanvas;
+        const ctx = this._packetAnimationContext;
+        if (!canvas || !ctx || !this.map) return;
+        const size = this.map.getSize();
+        const dpr = Math.min(1.5, Math.max(1, Number(window.devicePixelRatio) || 1));
+        const width = Math.max(1, Math.round(size.x * dpr));
+        const height = Math.max(1, Math.round(size.y * dpr));
+        if (canvas.width !== width || canvas.height !== height) {
+            canvas.width = width;
+            canvas.height = height;
+            canvas.style.width = `${size.x}px`;
+            canvas.style.height = `${size.y}px`;
+        }
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    _clearPacketAnimations() {
+        this._packetAnimationFlows = [];
+        if (this._packetAnimationFrame) {
+            cancelAnimationFrame(this._packetAnimationFrame);
+            this._packetAnimationFrame = null;
+        }
+        const canvas = this._packetAnimationCanvas;
+        const ctx = this._packetAnimationContext;
+        if (canvas && ctx) ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+    }
+
+    _packetAnimationColor(packet) {
+        if (packet?.source === 'aprs_is') return '#58a6ff';
+        if (packet?.source === 'tx') return packet?.digipeated_by_me ? '#d29922' : '#ff7b72';
+        return packet?.digipeated_by_me ? '#d29922' : '#f85149';
+    }
+
+    _packetMarkerForCall(callsign, source = '') {
+        const wanted = String(callsign || '').toUpperCase();
+        if (!wanted) return null;
+        const find = (markers) => {
+            const key = Object.keys(markers || {}).find((call) => call.toUpperCase() === wanted);
+            return key ? markers[key] : null;
+        };
+        if (source === 'rf') return find(this.rfMarkers) || find(this.isMarkers);
+        if (source === 'aprs_is') return find(this.isMarkers) || find(this.rfMarkers);
+        return find(this.rfMarkers) || find(this.isMarkers);
+    }
+
+    _pulsePacketMarker(marker, color, strength = 'basic') {
+        if (!marker || this._prefersReducedMotion()) return;
+        const markerElement = marker.getElement?.();
+        const visual = markerElement?.querySelector('.aprs-emoji-marker');
+        if (!visual) return;
+        visual.classList.remove('packet-origin-burst', 'packet-origin-burst-enhanced');
+        visual.style.setProperty('--packet-burst-color', color || '#f85149');
+        void visual.offsetWidth;
+        visual.classList.add('packet-origin-burst');
+        if (strength === 'enhanced') visual.classList.add('packet-origin-burst-enhanced');
+        setTimeout(() => {
+            visual.classList.remove('packet-origin-burst', 'packet-origin-burst-enhanced');
+        }, strength === 'enhanced' ? 1500 : 1100);
+    }
+
+    _packetRoute(packet) {
+        if (!this.myPosition) return [];
+        const source = packet?.source || '';
+        if (source === 'tx') return [];
+        const sourceMarker = this._packetMarkerForCall(packet?.from_call, source);
+        if (!sourceMarker) return [];
+        const sourceLatLng = sourceMarker.getLatLng();
+        const route = [{ lat: sourceLatLng.lat, lng: sourceLatLng.lng, marker: sourceMarker }];
+
+        if (source === 'rf') {
+            for (const digiCall of this._parseDigiPath(packet?.path || '')) {
+                const marker = this._packetMarkerForCall(digiCall);
+                if (!marker) return [];
+                const ll = marker.getLatLng();
+                route.push({ lat: ll.lat, lng: ll.lng, marker });
+            }
+        }
+        route.push({
+            lat: this.myPosition.lat,
+            lng: this.myPosition.lng,
+            marker: this.myMarker,
+        });
+        return route;
+    }
+
+    animatePacketActivity(packet = {}) {
+        const mode = this.visualizations.packetAnimation || 'basic';
+        if (!this.map || mode === 'off' || this._prefersReducedMotion()) return;
+        if (Date.now() < this._visualReadyAt) return;
+        this._initPacketAnimationCanvas();
+        const color = this._packetAnimationColor(packet);
+
+        if (packet.source === 'tx') {
+            this._pulsePacketMarker(this.myMarker, color, mode);
+            return;
+        }
+
+        const sourceMarker = this._packetMarkerForCall(packet.from_call, packet.source);
+        if (!sourceMarker?.getElement?.()) return;
+        this._pulsePacketMarker(sourceMarker, color, mode);
+        const route = this._packetRoute(packet);
+        if (route.length < 2) return;
+
+        const segmentCount = route.length - 1;
+        const duration = mode === 'enhanced'
+            ? Math.min(5200, 1250 + segmentCount * 900)
+            : Math.min(3000, 1100 + segmentCount * 450);
+        if (this._packetAnimationFlows.length >= this._packetAnimationMaxFlows) {
+            this._packetAnimationFlows.shift();
+        }
+        this._packetAnimationFlows.push({
+            route,
+            color,
+            mode,
+            startedAt: performance.now(),
+            duration,
+            pulsedHops: new Set([0]),
+            internet: packet.source === 'aprs_is',
+        });
+        if (!this._packetAnimationFrame) {
+            this._packetAnimationFrame = requestAnimationFrame((now) => this._renderPacketAnimations(now));
+        }
+    }
+
+    _screenRoute(route) {
+        return route.map((point) => {
+            const screen = this.map.latLngToContainerPoint([point.lat, point.lng]);
+            return { x: screen.x, y: screen.y, marker: point.marker };
+        });
+    }
+
+    _routeMetrics(points) {
+        const lengths = [];
+        let total = 0;
+        for (let i = 0; i < points.length - 1; i++) {
+            const length = Math.hypot(points[i + 1].x - points[i].x, points[i + 1].y - points[i].y);
+            lengths.push(length);
+            total += length;
+        }
+        return { lengths, total };
+    }
+
+    _pointAlongRoute(points, metrics, progress) {
+        if (!points.length) return { x: 0, y: 0 };
+        if (metrics.total <= 0) return { ...points[points.length - 1] };
+        let remaining = Math.max(0, Math.min(1, progress)) * metrics.total;
+        for (let i = 0; i < metrics.lengths.length; i++) {
+            const length = metrics.lengths[i];
+            if (remaining <= length || i === metrics.lengths.length - 1) {
+                const t = length > 0 ? Math.min(1, remaining / length) : 1;
+                return {
+                    x: points[i].x + (points[i + 1].x - points[i].x) * t,
+                    y: points[i].y + (points[i + 1].y - points[i].y) * t,
+                };
+            }
+            remaining -= length;
+        }
+        return { ...points[points.length - 1] };
+    }
+
+    _drawPacketRouteBase(ctx, points, flow, opacity) {
+        if (points.length < 2) return;
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, points[0].y);
+        points.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
+        ctx.strokeStyle = flow.color;
+        ctx.globalAlpha = opacity;
+        ctx.lineWidth = flow.mode === 'enhanced' ? 2.2 : 1.8;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        if (flow.internet) ctx.setLineDash([3, 9]);
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    _drawBasicPacketFlow(ctx, points, flow, progress) {
+        const fade = Math.min(1, (1 - progress) * 3);
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, points[0].y);
+        points.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
+        ctx.strokeStyle = flow.color;
+        ctx.globalAlpha = 0.85 * fade;
+        ctx.lineWidth = 2.6;
+        ctx.lineCap = 'round';
+        ctx.setLineDash(flow.internet ? [2, 12] : [7, 13]);
+        ctx.lineDashOffset = -progress * 150;
+        ctx.shadowColor = flow.color;
+        ctx.shadowBlur = 5;
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    _drawEnhancedPacketFlow(ctx, points, metrics, flow, progress) {
+        const trailStart = Math.max(0, progress - 0.22);
+        const samples = 18;
+        const trail = [];
+        for (let i = 0; i <= samples; i++) {
+            trail.push(this._pointAlongRoute(points, metrics, trailStart + (progress - trailStart) * (i / samples)));
+        }
+        const head = trail[trail.length - 1];
+        const tail = trail[0];
+        const gradient = ctx.createLinearGradient(tail.x, tail.y, head.x, head.y);
+        gradient.addColorStop(0, 'rgba(255,255,255,0)');
+        gradient.addColorStop(0.35, flow.color);
+        gradient.addColorStop(1, '#ffffff');
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(trail[0].x, trail[0].y);
+        trail.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
+        ctx.strokeStyle = gradient;
+        ctx.globalAlpha = Math.min(1, (1 - progress) * 6);
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.shadowColor = flow.color;
+        ctx.shadowBlur = 10;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(head.x, head.y, 4.5, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowBlur = 14;
+        ctx.fill();
+        ctx.restore();
+    }
+
+    _pulseReachedHops(flow, points, metrics, progress) {
+        if (flow.mode !== 'enhanced' || metrics.total <= 0) return;
+        let traversed = 0;
+        for (let i = 1; i < points.length; i++) {
+            traversed += metrics.lengths[i - 1] || 0;
+            if (progress >= traversed / metrics.total && !flow.pulsedHops.has(i)) {
+                flow.pulsedHops.add(i);
+                this._pulsePacketMarker(flow.route[i]?.marker, flow.color, 'enhanced');
+            }
+        }
+    }
+
+    _renderPacketAnimations(now) {
+        this._packetAnimationFrame = null;
+        const canvas = this._packetAnimationCanvas;
+        const ctx = this._packetAnimationContext;
+        if (!canvas || !ctx || !this.map || this.visualizations.packetAnimation === 'off') return;
+        this._resizePacketAnimationCanvas();
+        ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+        const active = [];
+        for (const flow of this._packetAnimationFlows) {
+            const progress = Math.max(0, Math.min(1, (now - flow.startedAt) / flow.duration));
+            const points = this._screenRoute(flow.route);
+            const metrics = this._routeMetrics(points);
+            this._drawPacketRouteBase(ctx, points, flow, flow.mode === 'enhanced' ? 0.2 : 0.12);
+            if (flow.mode === 'enhanced') {
+                this._drawEnhancedPacketFlow(ctx, points, metrics, flow, progress);
+            } else {
+                this._drawBasicPacketFlow(ctx, points, flow, progress);
+            }
+            this._pulseReachedHops(flow, points, metrics, progress);
+            if (progress < 1) active.push(flow);
+        }
+        this._packetAnimationFlows = active;
+        if (active.length) {
+            this._packetAnimationFrame = requestAnimationFrame((nextNow) => this._renderPacketAnimations(nextNow));
+        } else {
+            ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+        }
     }
 
     setPropagationVisuals(data = {}) {

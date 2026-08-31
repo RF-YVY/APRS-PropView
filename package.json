@@ -1,6 +1,6 @@
 {
   "name": "aprs-propview-node-red",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "description": "Node-RED project metadata for the APRS PropView dashboard flow.",
   "private": true,
   "license": "GPL-3.0-or-later",

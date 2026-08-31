@@ -770,6 +770,54 @@ html.visual-condition-backdrop .prop-gauge.ambient-excellent {
     filter: drop-shadow(0 0 3px rgba(231, 251, 255, 0.55));
 }
 
+.packet-animation-canvas {
+    position: absolute;
+    inset: 0;
+    z-index: 450;
+    pointer-events: none;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    margin: 0;
+}
+
+.aprs-emoji-marker {
+    position: relative;
+}
+
+.aprs-emoji-marker.packet-origin-burst::before,
+.aprs-emoji-marker.packet-origin-burst::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 100%;
+    height: 100%;
+    border: 2px solid var(--packet-burst-color, #f85149);
+    border-radius: 50%;
+    pointer-events: none;
+    transform: translate(-50%, -50%) scale(0.7);
+    opacity: 0;
+    animation: packetOriginBurst 1.05s ease-out both;
+    filter: drop-shadow(0 0 4px var(--packet-burst-color, #f85149));
+}
+
+.aprs-emoji-marker.packet-origin-burst::after {
+    animation-delay: 0.18s;
+}
+
+.aprs-emoji-marker.packet-origin-burst-enhanced::before,
+.aprs-emoji-marker.packet-origin-burst-enhanced::after {
+    animation-duration: 1.4s;
+    border-width: 2.5px;
+}
+
+@keyframes packetOriginBurst {
+    0% { transform: translate(-50%, -50%) scale(0.65); opacity: 0.95; }
+    70% { opacity: 0.42; }
+    100% { transform: translate(-50%, -50%) scale(3.1); opacity: 0; }
+}
+
 @keyframes watchedPathFlow {
     to { stroke-dashoffset: -64; }
 }
@@ -3010,6 +3058,12 @@ canvas {
     accent-color: var(--accent-blue);
 }
 
+.visualization-setting-select select {
+    width: 92px;
+    margin-top: 1px;
+    flex: 0 0 auto;
+}
+
 .visualization-setting span,
 .visualization-setting strong,
 .visualization-setting small {
@@ -3039,9 +3093,15 @@ canvas {
     .visual-home-marker .my-station-ring.ring-two,
     .rf-path-reveal,
     .watched-path-flow,
+    .aprs-emoji-marker.packet-origin-burst::before,
+    .aprs-emoji-marker.packet-origin-burst::after,
     .map-activity-moment,
     .map-activity-moment.leaving {
         animation: none !important;
+    }
+
+    .packet-animation-canvas {
+        display: none !important;
     }
 }
 

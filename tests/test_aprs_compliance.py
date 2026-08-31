@@ -495,6 +495,7 @@ visual_condition_backdrop = true
 visual_home_marker = false
 visual_watched_path_flow = true
 visual_activity_moments = false
+visual_packet_animation = "enhanced"
 """.strip(),
                 encoding="utf-8",
             )
@@ -505,6 +506,7 @@ visual_activity_moments = false
             self.assertFalse(config.web.visual_map_harmony)
             self.assertFalse(config.web.visual_home_marker)
             self.assertFalse(config.web.visual_activity_moments)
+            self.assertEqual(config.web.visual_packet_animation, "enhanced")
 
             saved_path = Path(tmp) / "saved.toml"
             config.save(saved_path)
@@ -513,6 +515,19 @@ visual_activity_moments = false
             self.assertFalse(reloaded.web.visual_propagation_aura)
             self.assertTrue(reloaded.web.visual_condition_backdrop)
             self.assertTrue(reloaded.web.visual_watched_path_flow)
+            self.assertEqual(reloaded.web.visual_packet_animation, "enhanced")
+
+    def test_invalid_packet_animation_mode_falls_back_to_basic(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text(
+                '[web]\nvisual_packet_animation = "maximum"\n',
+                encoding="utf-8",
+            )
+
+            config = Config.load(path)
+
+            self.assertEqual(config.web.visual_packet_animation, "basic")
 
     def test_loads_and_saves_watched_paths(self):
         with tempfile.TemporaryDirectory() as tmp:

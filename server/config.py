@@ -83,6 +83,7 @@ visual_condition_backdrop = true
 visual_home_marker = true
 visual_watched_path_flow = true
 visual_activity_moments = true
+visual_packet_animation = "basic"
 
 [database]
 path = "propview.db"
@@ -366,6 +367,7 @@ class WebConfig:
     visual_home_marker: bool = True
     visual_watched_path_flow: bool = True
     visual_activity_moments: bool = True
+    visual_packet_animation: str = "basic"
 
 
 @dataclass
@@ -665,6 +667,9 @@ class Config:
                     paths.append(WatchedPathConfig(**{k: v for k, v in item.items() if k in allowed}))
             config.watched_paths = paths
 
+        packet_animation = str(config.web.visual_packet_animation or "basic").strip().lower()
+        config.web.visual_packet_animation = packet_animation if packet_animation in {"off", "basic", "enhanced"} else "basic"
+
         return config
 
     @staticmethod
@@ -809,6 +814,7 @@ class Config:
             f"visual_home_marker = {'true' if self.web.visual_home_marker else 'false'}",
             f"visual_watched_path_flow = {'true' if self.web.visual_watched_path_flow else 'false'}",
             f"visual_activity_moments = {'true' if self.web.visual_activity_moments else 'false'}",
+            f'visual_packet_animation = "{esc(self.web.visual_packet_animation)}"',
             "",
             "[database]",
             f'path = "{esc(self.database.path)}"',

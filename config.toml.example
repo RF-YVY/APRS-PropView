@@ -106,6 +106,9 @@ visual_condition_backdrop = true
 visual_home_marker = true
 visual_watched_path_flow = true
 visual_activity_moments = true
+# "off" keeps static paths, "basic" adds station bursts and flowing dashes,
+# and "enhanced" adds a moving packet head, contrail, and hop pulses.
+visual_packet_animation = "basic"
 
 [database]
 path = "propview.db"

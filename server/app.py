@@ -2301,6 +2301,7 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 "visual_home_marker": config.web.visual_home_marker,
                 "visual_watched_path_flow": config.web.visual_watched_path_flow,
                 "visual_activity_moments": config.web.visual_activity_moments,
+                "visual_packet_animation": config.web.visual_packet_animation,
             },
             "database": {
                 "path": config.database.path,
@@ -2777,6 +2778,8 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 config.web.visual_home_marker = bool(w.get("visual_home_marker", config.web.visual_home_marker))
                 config.web.visual_watched_path_flow = bool(w.get("visual_watched_path_flow", config.web.visual_watched_path_flow))
                 config.web.visual_activity_moments = bool(w.get("visual_activity_moments", config.web.visual_activity_moments))
+                packet_animation = str(w.get("visual_packet_animation", config.web.visual_packet_animation) or "basic").strip().lower()
+                config.web.visual_packet_animation = packet_animation if packet_animation in {"off", "basic", "enhanced"} else "basic"
                 if update_checker:
                     update_checker.configure(
                         config.web.update_check_enabled,

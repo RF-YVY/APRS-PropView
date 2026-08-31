@@ -35,7 +35,7 @@ cd APRS-PropView
 If you already have the source on the Pi, run the installer from the repository
 root.
 
-## Update To v1.8.0
+## Update To v1.9.0
 
 For an existing Linux or Raspberry Pi service install, update the repository,
 rerun the installer so `/opt/aprs-propview` receives the new application files,
@@ -47,11 +47,11 @@ sudo bash ./scripts/install_linux.sh
 sudo systemctl restart aprs-propview
 ```
 
-Version 1.8.0 adds Docker/app-registry deployment support, TrueNAS SCALE and
-Portainer templates, tighter watched-path target-area scoring, clearer
-digipeater path handling, container health diagnostics, and Windows update
-reliability fixes. Existing `config.toml`, `propview.db`, cached map tiles, and
-user audio files are preserved by the installer.
+Version 1.9.0 adds live packet-flow animation to the APRS map, including
+station transmit bursts, directional movement, digipeater hop visualization,
+and selectable Off, Basic, and Enhanced modes. Existing `config.toml`,
+`propview.db`, cached map tiles, and user audio files are preserved by the
+installer.
 
 If you run the app as a headless Pi service and do not want browser launch
 attempts, set `[web].launch_browser = "none"` in `config.toml` or choose
