@@ -1,6 +1,7 @@
 """Analytics engine — longest path, heatmap, reliability, best time-of-day,
 anomaly detection, bearing-sector analysis, historical comparison, sporadic-E."""
 
+from server.rf_analytics import RFHistoryAnalytics
 import math
 import time
 import logging
@@ -11,7 +12,7 @@ from datetime import datetime
 logger = logging.getLogger("propview.analytics")
 
 
-class AnalyticsEngine:
+class AnalyticsEngine(RFHistoryAnalytics):
     """Provides advanced analytics computed from the station database."""
 
     def __init__(self, db):
@@ -226,35 +227,6 @@ class AnalyticsEngine:
 
     # ── Longest Path Today ──────────────────────────────────────
 
-    async def get_longest_paths(self, hours: int = 24, limit: int = 25) -> List[Dict[str, Any]]:
-        """Return top N longest-distance RF contacts within the time window."""
-        cutoff = time.time() - (hours * 3600)
-
-        cursor = await self.db.db.execute(
-            """SELECT callsign, latitude, longitude, distance_km, heading,
-                      last_heard, first_heard, packet_count,
-                      symbol_table, symbol_code, last_comment
-               FROM stations
-               WHERE source = 'rf'
-                 AND distance_km IS NOT NULL
-                 AND distance_km > 0
-                 AND last_heard >= ?
-               ORDER BY distance_km DESC
-               LIMIT ?""",
-            (cutoff, limit),
-        )
-        rows = await cursor.fetchall()
-
-        results = []
-        for rank, row in enumerate(rows, 1):
-            r = dict(row)
-            r["rank"] = rank
-            r["distance_mi"] = round(r["distance_km"] * 0.621371, 1)
-            results.append(r)
-
-        return results
-
-    # ── Propagation Heatmap Over Time ───────────────────────────
 
     async def get_propagation_heatmap(self, hours: int = 24) -> Dict[str, Any]:
         """Build a heatmap grid: hours-of-day x metric values.
@@ -277,13 +249,8 @@ class AnalyticsEngine:
 
         # Also get individual station packets bucketed by hour
         cursor2 = await self.db.db.execute(
-            """SELECT p.timestamp, s.distance_km
-               FROM packets p
-               INNER JOIN stations s ON p.from_call = s.callsign AND s.source = 'rf'
-               WHERE p.source = 'rf'
-                 AND p.timestamp >= ?
-                 AND s.distance_km IS NOT NULL
-                 AND s.distance_km > 0""",
+            """SELECT timestamp, distance_km FROM path_history
+               WHERE timestamp >= ? AND is_direct=1 AND distance_km > 0""",
             (cutoff,),
         )
         try:
@@ -640,72 +607,6 @@ class AnalyticsEngine:
 
     # ── Bearing-Sector Analysis ─────────────────────────────────
 
-    async def get_bearing_sectors(self, hours: int = 24) -> Dict[str, Any]:
-        """Analyze propagation by compass bearing sector.
-
-        Divides the compass into 8 sectors (N, NE, E, SE, S, SW, W, NW)
-        and aggregates RF station count, max distance, and avg distance per sector.
-        """
-        cutoff = time.time() - (hours * 3600)
-
-        cursor = await self.db.db.execute(
-            """SELECT callsign, distance_km, heading, latitude, longitude,
-                      last_heard, packet_count
-               FROM stations
-               WHERE source = 'rf'
-                 AND distance_km IS NOT NULL
-                 AND distance_km > 0
-                 AND heading IS NOT NULL
-                 AND last_heard >= ?
-               ORDER BY heading ASC""",
-            (cutoff,),
-        )
-        rows = await cursor.fetchall()
-
-        sector_names = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
-        sectors = {name: {"stations": [], "distances": [], "max_distance": 0} for name in sector_names}
-
-        for row in rows:
-            heading = row["heading"]
-            # Map heading to sector index (each sector = 45°, centered)
-            idx = int(((heading + 22.5) % 360) / 45)
-            sector_name = sector_names[idx]
-            s = sectors[sector_name]
-            s["stations"].append(dict(row))
-            dist = row["distance_km"]
-            s["distances"].append(dist)
-            if dist > s["max_distance"]:
-                s["max_distance"] = dist
-
-        result_sectors = []
-        for name in sector_names:
-            s = sectors[name]
-            dists = s["distances"]
-            result_sectors.append({
-                "sector": name,
-                "station_count": len(s["stations"]),
-                "max_distance_km": round(s["max_distance"], 1),
-                "avg_distance_km": round(sum(dists) / len(dists), 1) if dists else 0,
-                "total_packets": sum(st["packet_count"] for st in s["stations"]),
-                "stations": [
-                    {"callsign": st["callsign"], "distance_km": round(st["distance_km"], 1), "heading": round(st["heading"], 1)}
-                    for st in sorted(s["stations"], key=lambda x: x["distance_km"], reverse=True)[:5]
-                ],
-            })
-
-        # Find dominant sector(s)
-        max_count = max((s["station_count"] for s in result_sectors), default=0)
-        max_dist = max((s["max_distance_km"] for s in result_sectors), default=0)
-        dominant_by_count = [s["sector"] for s in result_sectors if s["station_count"] == max_count and max_count > 0]
-        dominant_by_dist = [s["sector"] for s in result_sectors if s["max_distance_km"] == max_dist and max_dist > 0]
-
-        return {
-            "sectors": result_sectors,
-            "dominant_count": dominant_by_count,
-            "dominant_distance": dominant_by_dist,
-            "total_stations": len(rows),
-            "hours": hours,
-        }
 
     # ── Historical Propagation Comparison ───────────────────────
 
@@ -792,263 +693,5 @@ class AnalyticsEngine:
 
     # ── Sporadic-E Detection ────────────────────────────────────
 
-    async def detect_sporadic_e(self, hours: int = 6) -> Dict[str, Any]:
-        """Detect possible sporadic-E events by looking for sudden long-distance contacts.
-
-        Indicators:
-        - Contacts at 500+ km on 2m (or 800+ km general VHF)
-        - Sudden appearance of distant, never-before-seen stations
-        - Time of year (May-August in Northern Hemisphere)
-        - Time of day (late morning and early evening peaks)
-        """
-        hours = max(1, min(168, int(hours or 6)))
-        cutoff = time.time() - (hours * 3600)
-        min_distance_km = 300.0
-        min_candidate_score = 25.0
-
-        stats_cursor = await self.db.db.execute(
-            """SELECT COUNT(*) AS rf_station_count,
-                      MAX(distance_km) AS max_distance_km,
-                      AVG(distance_km) AS avg_distance_km
-               FROM stations
-               WHERE source = 'rf'
-                 AND last_heard >= ?
-                 AND distance_km IS NOT NULL""",
-            (cutoff,),
-        )
-        stats_row = await stats_cursor.fetchone()
-        rf_station_count = int(stats_row["rf_station_count"] or 0) if stats_row else 0
-        max_observed_distance_km = float(stats_row["max_distance_km"] or 0) if stats_row else 0.0
-        avg_observed_distance_km = float(stats_row["avg_distance_km"] or 0) if stats_row else 0.0
-
-        top_cursor = await self.db.db.execute(
-            """SELECT callsign, distance_km, heading, last_heard, packet_count
-               FROM stations
-               WHERE source = 'rf'
-                 AND last_heard >= ?
-                 AND distance_km IS NOT NULL
-               ORDER BY distance_km DESC
-               LIMIT 5""",
-            (cutoff,),
-        )
-        strongest_stations = [
-            {
-                "callsign": row["callsign"],
-                "distance_km": round(row["distance_km"], 1) if row["distance_km"] is not None else None,
-                "heading": round(row["heading"], 1) if row["heading"] is not None else None,
-                "last_heard": row["last_heard"],
-                "packet_count": row["packet_count"],
-            }
-            for row in await top_cursor.fetchall()
-        ]
-
-        # Get RF stations with large distances and weight them by path quality.
-        # APRS-IS is excluded entirely; direct RF remains the gold-standard Es
-        # signal while RF relay paths can contribute with reduced confidence.
-        cursor = await self.db.db.execute(
-            """SELECT s.callsign, s.distance_km, s.heading, s.latitude, s.longitude,
-                      s.first_heard, s.last_heard, s.packet_count,
-                      CASE
-                          WHEN MAX(ph.is_direct) = 1 THEN 1.0
-                          WHEN MIN(ph.hop_count) <= 1 THEN 0.6
-                          ELSE 0.3
-                      END AS path_confidence,
-                      CASE
-                          WHEN MAX(ph.is_direct) = 1 THEN 'direct_rf'
-                          WHEN MIN(ph.hop_count) <= 1 THEN 'single_hop_rf'
-                          ELSE 'multi_hop_rf'
-                      END AS path_tier,
-                      MIN(ph.hop_count) AS min_hop_count
-               FROM stations s
-               INNER JOIN path_history ph ON ph.callsign = s.callsign
-               WHERE s.source = 'rf'
-                 AND s.distance_km IS NOT NULL
-                 AND s.distance_km >= ?
-                 AND s.last_heard >= ?
-                 AND ph.timestamp >= ?
-               GROUP BY s.callsign, s.source
-               ORDER BY s.distance_km DESC""",
-            (min_distance_km, cutoff, cutoff),
-        )
-        rows = await cursor.fetchall()
-
-        es_candidates = []
-        near_misses = []
-        for row in rows:
-            dist = row["distance_km"]
-            score = 0
-            indicators = []
-
-            # Distance scoring
-            if dist >= 800:
-                score += 40
-                indicators.append(f"Extreme distance ({dist:.0f} km)")
-            elif dist >= 500:
-                score += 30
-                indicators.append(f"Long distance ({dist:.0f} km)")
-            elif dist >= 300:
-                score += 15
-                indicators.append(f"Extended distance ({dist:.0f} km)")
-
-            # Newly heard station (first_heard == last_heard or very recent first)
-            if row["first_heard"] >= cutoff:
-                score += 20
-                indicators.append("Newly heard station")
-
-            # Low packet count (transient contact typical of Es)
-            if row["packet_count"] <= 3:
-                score += 10
-                indicators.append("Transient contact")
-
-            # Seasonal check (May-August in Northern Hemisphere)
-            month = datetime.now().month
-            if 5 <= month <= 8:
-                score += 10
-                indicators.append("Peak Es season")
-            elif month in (4, 9):
-                score += 5
-                indicators.append("Shoulder Es season")
-
-            # Time of day check (10-14 UTC and 17-21 UTC peaks)
-            hour_utc = datetime.utcnow().hour
-            if 10 <= hour_utc <= 14 or 17 <= hour_utc <= 21:
-                score += 10
-                indicators.append("Peak Es time of day")
-
-            path_confidence = float(row["path_confidence"] or 0)
-            weighted_score = score * path_confidence
-            item = {
-                "callsign": row["callsign"],
-                "distance_km": round(dist, 1),
-                "heading": round(row["heading"], 1) if row["heading"] else None,
-                "latitude": row["latitude"],
-                "longitude": row["longitude"],
-                "first_heard": row["first_heard"],
-                "last_heard": row["last_heard"],
-                "packet_count": row["packet_count"],
-                "raw_score": min(score, 100),
-                "es_score": min(round(weighted_score, 1), 100),
-                "path_confidence": round(path_confidence, 2),
-                "path_tier": row["path_tier"],
-                "min_hop_count": row["min_hop_count"],
-                "indicators": indicators,
-            }
-
-            if weighted_score >= min_candidate_score:
-                es_candidates.append(item)
-            else:
-                near_misses.append(item)
-
-        es_candidates.sort(key=lambda c: c["es_score"], reverse=True)
-        near_misses.sort(key=lambda c: c["es_score"], reverse=True)
-
-        # Overall Es probability
-        if es_candidates:
-            max_score = max(c["es_score"] for c in es_candidates)
-            avg_score = sum(c["es_score"] for c in es_candidates) / len(es_candidates)
-        else:
-            max_score = 0
-            avg_score = 0
-
-        if max_score >= 70:
-            es_level = "likely"
-        elif max_score >= 50:
-            es_level = "possible"
-        elif max_score >= 25:
-            es_level = "unlikely"
-        else:
-            es_level = "none"
-
-        return {
-            "es_level": es_level,
-            "es_score": round(max_score, 1),
-            "max_score": round(max_score, 1),
-            "avg_score": round(avg_score, 1),
-            "candidate_count": len(es_candidates),
-            "candidates": es_candidates[:20],  # Top 20
-            "hours_analyzed": hours,
-            "rf_station_count": rf_station_count,
-            "qualifying_distance_count": len(rows),
-            "max_observed_distance_km": round(max_observed_distance_km, 1),
-            "avg_observed_distance_km": round(avg_observed_distance_km, 1),
-            "min_distance_km": min_distance_km,
-            "min_candidate_score": min_candidate_score,
-            "strongest_stations": strongest_stations,
-            "near_misses": near_misses[:5],
-        }
 
     # ── Dynamic Range Data (actual coverage footprint) ──────────
-
-    async def get_observed_range(self, hours: int = 168) -> Dict[str, Any]:
-        """Compute actual observed max-distance by bearing sector from historical data.
-
-        Returns the real coverage footprint (not theoretical circles) based on
-        actually-received stations over the given time window.
-        """
-        cutoff = time.time() - (hours * 3600)
-
-        cursor = await self.db.db.execute(
-            """SELECT distance_km, heading
-               FROM stations
-               WHERE source = 'rf'
-                 AND distance_km IS NOT NULL
-                 AND distance_km > 0
-                 AND heading IS NOT NULL
-                 AND last_heard >= ?""",
-            (cutoff,),
-        )
-        rows = await cursor.fetchall()
-
-        # 16-sector resolution for smoother ring
-        num_sectors = 16
-        sector_size = 360.0 / num_sectors
-        sector_labels = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
-                         "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
-        sectors = {i: {"max": 0, "avg_dists": [], "count": 0} for i in range(num_sectors)}
-
-        for row in rows:
-            heading = row["heading"]
-            dist = row["distance_km"]
-            idx = int(((heading + sector_size / 2) % 360) / sector_size)
-            s = sectors[idx]
-            s["count"] += 1
-            s["avg_dists"].append(dist)
-            if dist > s["max"]:
-                s["max"] = dist
-
-        # Also compute current range (last 24h only)
-        cutoff_24h = time.time() - 86400
-        cursor2 = await self.db.db.execute(
-            """SELECT distance_km, heading
-               FROM stations
-               WHERE source = 'rf'
-                 AND distance_km IS NOT NULL
-                 AND distance_km > 0
-                 AND heading IS NOT NULL
-                 AND last_heard >= ?""",
-            (cutoff_24h,),
-        )
-        rows_24h = await cursor2.fetchall()
-        current_sectors = {i: 0 for i in range(num_sectors)}
-        for row in rows_24h:
-            idx = int(((row["heading"] + sector_size / 2) % 360) / sector_size)
-            if row["distance_km"] > current_sectors[idx]:
-                current_sectors[idx] = row["distance_km"]
-
-        ring_data = []
-        for i in range(num_sectors):
-            s = sectors[i]
-            ring_data.append({
-                "sector": sector_labels[i],
-                "bearing": i * sector_size,
-                "historical_max_km": round(s["max"], 1),
-                "current_max_km": round(current_sectors[i], 1),
-                "avg_km": round(sum(s["avg_dists"]) / len(s["avg_dists"]), 1) if s["avg_dists"] else 0,
-                "station_count": s["count"],
-            })
-
-        return {
-            "ring": ring_data,
-            "hours_historical": hours,
-            "total_stations": len(rows),
-        }

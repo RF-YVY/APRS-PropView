@@ -31,8 +31,18 @@
             });
         });
 
+        for (const [id, key, fallback] of [['history-path-type','pvHistoryPath','direct'], ['history-port','pvHistoryPort','']]) {
+            const input = document.getElementById(id);
+            if (!input) continue;
+            input.value = localStorage.getItem(key) || fallback;
+            input.addEventListener('change', () => {
+                localStorage.setItem(key, input.value.trim());
+                loadBearingSectors(); loadLeaderboard(); if (window.pvMap) { window.pvMap._observedRangeFetchedAt = 0; window.pvMap.updateObservedRange(); }
+            });
+        }
         // Filter change handlers
         document.getElementById('leaderboard-hours')?.addEventListener('change', () => loadLeaderboard());
+        document.getElementById('leaderboard-include-suspect')?.addEventListener('change', () => loadLeaderboard());
         document.getElementById('heatmap-hours')?.addEventListener('change', () => loadHeatmap());
         document.getElementById('reliability-hours')?.addEventListener('change', () => loadReliability());
         document.getElementById('besttime-days')?.addEventListener('change', () => loadBestTimes());
@@ -86,12 +96,21 @@
 
     async function loadLeaderboard() {
         const hours = document.getElementById('leaderboard-hours')?.value || 24;
+        const includeSuspect = document.getElementById('leaderboard-include-suspect')?.checked || false;
         const container = document.getElementById('leaderboard-list');
         if (!container) return;
 
         try {
-            const resp = await fetch(`/api/analytics/longest-paths?hours=${hours}&limit=25`);
+            const resp = await fetch(`/api/analytics/longest-paths?hours=${hours}&limit=25&include_suspect=${includeSuspect}&${window.pvHistoryQuery()}`);
             const data = await resp.json();
+
+            const note = document.getElementById('leaderboard-quality-note');
+            if (note) {
+                const excluded = Number(data.excluded_count || 0);
+                note.textContent = excluded && !includeSuspect
+                    ? `${excluded} station${excluded === 1 ? '' : 's'} held out as unconfirmed. Direct RF paths are not limited by the map range.`
+                    : 'Direct RF paths are not limited by the map range. Very long paths need a confirming reception.';
+            }
 
             if (!data.paths || data.paths.length === 0) {
                 container.innerHTML = '<div class="analytics-empty">No RF stations with distance data in this time window.</div>';
@@ -107,9 +126,11 @@
                 const distKm = p.distance_km.toFixed(1);
                 const distMi = p.distance_mi.toFixed(1);
 
-                html += `<div class="lb-row${p.rank <= 3 ? ' lb-top' : ''}">`;
+                const suspect = p.quality_status === 'suspect';
+                const reason = suspect ? ` title="${_esc(p.quality_reason || 'Unconfirmed position')}"` : '';
+                html += `<div class="lb-row${p.rank <= 3 ? ' lb-top' : ''}${suspect ? ' lb-suspect' : ''}"${reason}>`;
                 html += `<span class="lb-rank">${medal}</span>`;
-                html += `<span class="lb-call">${_esc(p.callsign)}</span>`;
+                html += `<span class="lb-call">${_esc(p.callsign)}${suspect ? ' <small>unconfirmed</small>' : ''}</span>`;
                 html += `<span class="lb-dist">${window.formatDist(p.distance_km)}</span>`;
                 html += `<span class="lb-time">${time}</span>`;
                 html += `</div>`;
@@ -484,7 +505,7 @@
         if (!container) return;
 
         try {
-            const resp = await fetch(`/api/analytics/bearing-sectors?hours=${hours}`);
+            const resp = await fetch(`/api/analytics/bearing-sectors?hours=${hours}&${window.pvHistoryQuery()}`);
             const data = await resp.json();
 
             if (!data.sectors || data.sectors.length === 0) {
@@ -696,7 +717,7 @@
         ctx.restore();
     }
 
-    // ── Sporadic-E Detection ──────────────────────────────────────
+    // ── Sporadic-E hypothesis ──────────────────────────────────────
 
     async function loadSporadicE() {
         const statusEl = document.getElementById('es-status');
@@ -725,7 +746,8 @@
 
             let html = `<div class="es-card" style="border-left: 4px solid ${cfg.color};">`;
             html += `<div class="es-level" style="color:${cfg.color};">${cfg.icon} ${level.toUpperCase()}</div>`;
-            html += `<div class="es-score">Score: ${score}/100</div>`;
+            html += `<div class="es-score">Heuristic score: ${score}/100</div>`;
+            html += `<p>${_esc(data.interpretation || "Unconfirmed propagation hypothesis")}</p>`;
             html += `<div class="es-score">Analyzed ${rfCount} RF station${rfCount === 1 ? '' : 's'} over ${data.hours_analyzed || hours}h &middot; strongest ${window.formatDist(maxObserved)} &middot; Es gate ${window.formatDist(minDistance)}</div>`;
             if (rfCount === 0) {
                 html += '<div class="es-detail">No RF stations with distance data were heard in this window.</div>';

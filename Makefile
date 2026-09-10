@@ -13,7 +13,7 @@ run:
 	$(PYTHON) main.py
 
 test:
-	$(PYTHON) -m unittest discover
+	$(PYTHON) scripts/run_tests.py
 
 install-linux:
 	sudo bash ./scripts/install_linux.sh

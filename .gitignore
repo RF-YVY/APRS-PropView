@@ -33,3 +33,8 @@ env/
 Thumbs.db
 .vscode/
 .idea/
+
+# SQLite WAL state and local config backup
+*.db-wal
+*.db-shm
+config.toml.bak

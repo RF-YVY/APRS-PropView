@@ -112,6 +112,8 @@ visual_packet_animation = "basic"
 
 [database]
 path = "propview.db"
+packet_retention_days = 7
+history_retention_days = 30
 
 [tracking]
 # Maximum age for station records in seconds (default 24h)

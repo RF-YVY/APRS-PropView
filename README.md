@@ -1,6 +1,6 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.9.0** | August 31, 2026
+**Version 1.10.0** | September 10, 2026
 
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/RF-YVY/APRS-PropView/total)
@@ -21,7 +21,7 @@
 
 A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
 
-Version 1.9.0 adds live packet-flow animation to the APRS map, including station transmit bursts, directional movement, digipeater hop visualization, and selectable Off, Basic, and Enhanced modes.
+Version 1.9.0 added live packet-flow animation to the APRS map, including station transmit bursts, directional movement, digipeater hop visualization, and selectable Off, Basic, and Enhanced modes.
 
 **PLUS** several new Themes to select from in Settings->Map & Display. Choose your desire console color or choose from fantastic themes.
 
@@ -30,6 +30,27 @@ Version 1.9.0 adds live packet-flow animation to the APRS map, including station
 
 Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs/linux-raspberry-pi.md).
 Docker, TrueNAS SCALE, Portainer, and app-registry installs are covered in [docs/docker.md](docs/docker.md).
+
+## 1.10.0
+
+- Added a six-step illustrated first-run guide covering station setup, receive sources, map interpretation, propagation evidence, Maidenhead watched paths, and safe startup checks. It remains available from About/Help after dismissal.
+- Added a zoom-dependent Maidenhead grid overlay. Grid clicks populate the existing watched-path builder with the selected locator and cell center.
+- Changed public project-support wording to “Give Thanks” or “Support” and aligned the package metadata with the repository's Apache-2.0 license.
+
+Version 1.10.0 preserves direct RF observations independently of later
+relays, makes Regional propagation include all RF, and bases historical coverage
+on reception-time evidence. Click a propagation meter to see freshness, receiver
+status, and baseline context. Analytics bearing controls select direct, relayed,
+or all RF observations and a receiver port for coverage and longest-path views.
+
+Settings / Tracking includes raw packet retention (7 days by default) and detailed
+history retention (30 days). Expired RF observations become daily summaries;
+first-heard identities survive cleanup. Settings saves are atomic and retain a
+last-known-good `config.toml.bak`. Stop the application before restoring that file.
+
+Sporadic-E results are explicitly unconfirmed hypotheses. Existing history without
+reception coordinates is retained, but is not assigned a later station position.
+The mobile PIN/access model is unchanged in this release.
 
 ## Features
 
@@ -40,6 +61,7 @@ Docker, TrueNAS SCALE, Portainer, and app-registry installs are covered in [docs
 - **RF Station Tracking** — Separate list of stations heard directly on RF
 - **APRS-IS Station Tracking** — Separate list of stations received from APRS-IS
 - **Propagation Map** — Interactive Leaflet map with APRS sprite icons, adjustable marker size, directional arrowed path lines, map-created APRS objects, and light/dark theme toggle
+- **Maidenhead Grid Overlay** — Zoom-aware field, square, and subsquare labels with click-to-select support for the watched-path builder
 - **Custom/Offline Map Tiles** — Point the map at a local XYZ tile server or use the map **Cache** control to store the visible map area in `map_tile_cache/` for offline/field use
 - **Dual Propagation Meters** — Header gauges: "VHF Propagation My Station" (direct-heard RF only) and "Regional VHF Propagation" (all RF including via digipeater), each with configurable scoring thresholds
 - **Configurable Path Lines** — Directional station-to-station lines support distance or custom coloring, weight, opacity, solid/dashed/dotted patterns, and offset arrows for bidirectional paths
@@ -124,7 +146,14 @@ Docker, TrueNAS SCALE, Portainer, and app-registry installs are covered in [docs
 - **Unsaved Change Guidance** — Modified sections pulse yellow, appear in navigation, and clear only after a successful save
 - **Precise Save Impact** — Save confirmation distinguishes settings applied immediately, browser refresh requirements, and full application restart requirements
 - **Section Reset And Validation Routing** — Restore one section to its last saved values and automatically open the category containing an invalid field
-- **First-Run Checklist** — Guided setup reminders for callsign, location, APRS-IS passcode/filter, RF port, beacon path, save, and test transmit
+- **Actionable Setup Checklist** — Callsign, location, receive-source, APRS-IS, and save checks link directly to the setting that needs attention
+- **Operating Mode Presets** — Stage receive-only RF, RF plus APRS-IS, receive-only IGate, digipeater, bidirectional IGate, or mobile settings for review before saving
+- **Basic and Advanced Views** — Keep routine station, receiver, map, propagation, watched-path, and alert controls visible while optional transmit and integration features stay one click away
+- **Configuration Readiness** — Flag missing identity/location/source settings, APRS-IS login/filter issues, and transmit-capable choices before operation
+- **Clickable Connection Diagnostics** — Select the RF, APRS-IS, or WebSocket header indicator for a plain-language status report and direct settings links
+- **Actionable Empty States and Cross-Navigation** — Empty station, analytics, alert, weather, and watched-path views point to the relevant setup page
+- **APRS Terminology Help** — Explain Direct RF, Regional RF, APRS-IS, IGate, digipeating, watched paths, Maidenhead grids, and passcodes inside the application
+- **Alert Setup Assistant** — A short workflow connects baseline collection, threshold recommendations, notification channels, test alerts, and saving
 - **Settings Import/Export** — Back up or restore `config.toml` before experimenting with RF, APRS-IS, host, or port settings
 - **Hot-Reload Settings** — Most settings apply immediately without restarting the server
 - **Preview and Transmit Now** — Preview station, WXnow, status, MHeard, dynamic, and weather-alert beacon text before one-shot transmit
@@ -148,7 +177,8 @@ Docker, TrueNAS SCALE, Portainer, and app-registry installs are covered in [docs
 - **Help & User Guide** — In-app help modal covering every feature, control, and setting
 - **Installer-Based Updates** - Windows setup installs can detect GitHub setup assets, download the newer installer from the About tab, close APRS PropView cleanly, and launch setup while keeping user settings and data intact
 - **Update Checker** - Automatically checks the latest GitHub release, supports disabling checks entirely, hides Windows-only installer actions on Linux/macOS, and lets you control the periodic recheck interval for long-running installs
-- **Persistent UI State** — Map toggles, zoom, position, theme, line time filter, station type filters, callsign labels, and auto-fit are saved to the browser and restored on next launch
+- **Persistent UI State** — Map toggles, zoom, position, theme, line time filter, station type filters, callsign labels, auto-fit, and settings complexity are saved to the browser and restored on next launch
+- **Mobile Packet Motion** — The mobile map can show the same Off, Basic, or Enhanced live packet setting as desktop, with a local Motion toggle and reduced-motion support
 - **Linux/Pi Friendly Configuration** — Example config and install guide include multi-port RF, AGWPE TCP, private APRS-IS feeds, scheduled packets, and smart beaconing notes
 - **Station Cleanup** — Automatic pruning of stale stations from memory with real-time UI removal
 - **Station Blocklist** — Ignore one callsign/SSID or every SSID belonging to a base callsign before packets enter station, message, propagation, or history data
@@ -263,7 +293,7 @@ the current `APRSPropView.exe`.
 Installer upgrades replace the application executable and bundled files only.
 User data such as `config.toml`, `propview.db`, `map_tile_cache/`, and
 `user_audio/` is left in place. Publish both `APRSPropView.exe` and the setup
-asset on GitHub releases; assets named like `APRSPropViewSetup-1.9.0.exe` are
+asset on GitHub releases; assets named like `APRSPropViewSetup-1.10.0.exe` are
 detected by the in-app update checker so users can click **Install Update** in
 the About tab. On Linux, Raspberry Pi, and macOS, users still see release
 notices but installer-based update buttons are hidden because those platforms
@@ -445,9 +475,9 @@ aprs-propview/
 ## Support
 
 If APRS PropView is useful to you, you can support continued development through
-the official donation link:
+the official project support link:
 
-- [Donate via PayPal](https://www.paypal.com/ncp/payment/2TZHQAECTSDGC)
+- [Support via PayPal](https://www.paypal.com/ncp/payment/2TZHQAECTSDGC)
 
 ## License
 
@@ -458,7 +488,7 @@ This project is licensed under the Apache License, Version 2.0. See
 
 APRS PropView was created by **Brett Wicker - K5YVY** with the assistance of an **AI agent**.
 
-Official project support: [Donate via PayPal](https://www.paypal.com/ncp/payment/2TZHQAECTSDGC)
+Official project support: [Give Thanks via PayPal](https://www.paypal.com/ncp/payment/2TZHQAECTSDGC)
 
 **Wicker Made, LLC**\
 Contact: [k5yvy.radio@gmail.com](mailto:k5yvy.radio@gmail.com)

@@ -1,73 +1,98 @@
-"""WebSocket manager for real-time browser updates."""
-
+"""Bounded browser delivery; radio work never waits for a slow socket."""
 import asyncio
 import json
-import logging
-import time
-from typing import Set, Dict, Any
-
-from fastapi import WebSocket
-
-logger = logging.getLogger("propview.websocket")
 
 
 class WebSocketManager:
-    """Manages WebSocket connections and broadcasts updates to all clients."""
-
     MAX_CONNECTIONS = 20
+    QUEUE_LIMIT = 256
+    SEND_TIMEOUT = 5
+    REPLACEABLE = {'status', 'stats', 'propagation', 'station_update'}
 
     def __init__(self):
-        self.active_connections: Set[WebSocket] = set()
-        self._message_queue: asyncio.Queue = asyncio.Queue()
+        self.active_connections = set()
+        self._queues = {}
+        self._senders = {}
+        self._tasks = set()
 
-    async def connect(self, websocket: WebSocket) -> bool:
-        """Accept a new WebSocket connection if under the limit."""
+    async def connect(self, websocket):
         if len(self.active_connections) >= self.MAX_CONNECTIONS:
-            await websocket.close(code=1013, reason="Too many connections")
-            logger.warning(f"WebSocket rejected: at {self.MAX_CONNECTIONS} connection limit")
+            await websocket.close(code=1013, reason='Too many connections')
             return False
         await websocket.accept()
         self.active_connections.add(websocket)
-        logger.info(f"WebSocket client connected ({len(self.active_connections)} total)")
+        queue = asyncio.Queue(maxsize=self.QUEUE_LIMIT)
+        self._queues[websocket] = queue
+        task = asyncio.create_task(self._send_loop(websocket, queue))
+        self._senders[websocket] = task
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
         return True
 
-    def disconnect(self, websocket: WebSocket):
-        """Remove a disconnected WebSocket."""
+    def disconnect(self, websocket):
+        connected = websocket in self.active_connections
         self.active_connections.discard(websocket)
-        logger.info(f"WebSocket client disconnected ({len(self.active_connections)} total)")
+        self._queues.pop(websocket, None)
+        task = self._senders.pop(websocket, None)
+        if task and task is not asyncio.current_task():
+            task.cancel()
+        if connected:
+            closer = asyncio.create_task(self._close_socket(websocket))
+            self._tasks.add(closer)
+            closer.add_done_callback(self._tasks.discard)
 
-    async def broadcast(self, message: Dict[str, Any]):
-        """Send a message to all connected WebSocket clients."""
-        if not self.active_connections:
-            return
-
-        # Serialize once
+    async def _close_socket(self, websocket):
         try:
-            data = json.dumps(message, default=str)
-        except (TypeError, ValueError) as e:
-            logger.error(f"Failed to serialize WebSocket message: {e}")
-            return
+            await asyncio.wait_for(websocket.close(code=1013), 1)
+        except Exception:
+            pass
 
-        # Send to all clients, removing dead connections
-        dead = set()
-        for ws in self.active_connections:
-            try:
-                await ws.send_text(data)
-            except Exception:
-                dead.add(ws)
-
-        for ws in dead:
-            self.active_connections.discard(ws)
-
-    async def send_to(self, websocket: WebSocket, message: Dict[str, Any]):
-        """Send a message to a specific WebSocket client."""
+    async def _send_loop(self, websocket, queue):
         try:
-            data = json.dumps(message, default=str)
-            await websocket.send_text(data)
-        except Exception as e:
-            logger.error(f"Failed to send to WebSocket: {e}")
-            self.active_connections.discard(websocket)
+            while True:
+                _, data = await queue.get()
+                await asyncio.wait_for(websocket.send_text(data), self.SEND_TIMEOUT)
+        except (Exception, asyncio.CancelledError):
+            pass
+        finally:
+            self.disconnect(websocket)
+
+    def _enqueue(self, websocket, message, data):
+        queue = self._queues.get(websocket)
+        if queue is None:
+            return
+        kind = message.get('type')
+        key = None
+        if kind in self.REPLACEABLE:
+            station = message.get('station', {})
+            key = (kind, station.get('source'), station.get('callsign'))
+        pending = []
+        while not queue.empty():
+            item = queue.get_nowait()
+            if key is None or item[0] != key:
+                pending.append(item)
+        if len(pending) >= self.QUEUE_LIMIT:
+            # Overflow is explicit: disconnect; reconnect retrieves persisted state.
+            self.disconnect(websocket)
+            return
+        for item in pending:
+            queue.put_nowait(item)
+        queue.put_nowait((key, data))
+
+    async def broadcast(self, message):
+        data = json.dumps(message, default=str)
+        for websocket in tuple(self.active_connections):
+            self._enqueue(websocket, message, data)
+
+    async def send_to(self, websocket, message):
+        self._enqueue(websocket, message, json.dumps(message, default=str))
+
+    async def close(self):
+        for websocket in tuple(self.active_connections):
+            self.disconnect(websocket)
+        while self._tasks:
+            await asyncio.gather(*list(self._tasks), return_exceptions=True)
 
     @property
-    def client_count(self) -> int:
+    def client_count(self):
         return len(self.active_connections)

@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
 <script defer src="/static/vendor/leaflet/leaflet.js"></script>
 <script defer src="/static/js/icons.js"></script>
+<script src="/static/js/ui-updates.js"></script>
 <script>
 (function applySavedMobileTheme() {
     try {
@@ -373,6 +374,21 @@ html, body {
     border-color: var(--accent-blue);
     color: var(--accent-blue);
 }
+.m-packet-animation-canvas {
+    position: absolute; inset: 0; z-index: 450; pointer-events: none;
+}
+.aprs-emoji-marker.mobile-packet-pulse {
+    animation: mobilePacketPulse .85s ease-out;
+}
+@keyframes mobilePacketPulse {
+    0% { box-shadow: 0 0 0 0 var(--mobile-packet-color, #58a6ff); transform: scale(1); }
+    45% { box-shadow: 0 0 0 11px transparent; transform: scale(1.22); }
+    100% { box-shadow: 0 0 0 0 transparent; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .aprs-emoji-marker.mobile-packet-pulse { animation: none; }
+    .m-packet-animation-canvas { display: none; }
+}
 .m-map-segment {
     display: inline-flex;
     background: rgba(22,27,34,0.92);
@@ -689,6 +705,7 @@ html, body {
                     <button id="m-map-theme-light" type="button">Light</button>
                 </div>
                 <button id="m-map-fit" type="button">Fit</button>
+                <button id="m-map-motion" type="button">Motion</button>
             </div>
             <div id="m-map"></div>
         </div>
@@ -841,6 +858,8 @@ const S = {
     messagesLoaded: false, stationsLoaded: false, replyContext: null, selectedConversation: '', msgSearch: '',
     aprsIsConnected: false, aprsIsVerified: false,
     gpsWatchId: null, lastGpsPost: 0, config: null, showLines: true, mapTheme: 'dark',
+    motionEnabled: true, animationMode: 'basic', animationCanvas: null, animationContext: null,
+    animationFlows: [], animationFrame: null,
 };
 
 // ── Helpers ────────────────────────────────────────────────
@@ -1286,6 +1305,7 @@ function initMap() {
     S.lineLayer = L.layerGroup().addTo(S.map);
     S.rfLayer = L.layerGroup().addTo(S.map);
     S.isLayer = L.layerGroup().addTo(S.map);
+    initMobilePacketAnimation();
 
     if (S.myPos) {
         S.myMarker = L.circleMarker(S.myPos, {
@@ -1371,7 +1391,7 @@ function lineColorFor(st) {
 }
 
 function updateStationLine(st) {
-    if (!S.mapReady || !S.lineLayer || !S.showLines || !S.myPos || !st.latitude || !st.longitude) return;
+    if (!S.mapReady || !S.lineLayer || !S.showLines || !S.myPos || !window.pvUI.validPosition(st.latitude, st.longitude)) return;
     if (st.latitude === 0 && st.longitude === 0) return;
     const source = st.source === 'rf' ? 'rf' : 'aprs_is';
     const lines = source === 'rf' ? S.rfLines : S.isLines;
@@ -1409,6 +1429,135 @@ function setLinesVisible(show) {
     redrawAllLines();
 }
 
+function resizeMobileAnimationCanvas() {
+    if (!S.animationCanvas || !S.animationContext || !S.map) return;
+    const size = S.map.getSize();
+    const dpr = Math.min(1.5, Math.max(1, Number(devicePixelRatio) || 1));
+    S.animationCanvas.width = Math.max(1, Math.round(size.x * dpr));
+    S.animationCanvas.height = Math.max(1, Math.round(size.y * dpr));
+    S.animationCanvas.style.width = `${size.x}px`;
+    S.animationCanvas.style.height = `${size.y}px`;
+    S.animationContext.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function initMobilePacketAnimation() {
+    if (!S.map || S.animationCanvas) return;
+    const canvas = document.createElement('canvas');
+    canvas.className = 'm-packet-animation-canvas';
+    canvas.setAttribute('aria-hidden', 'true');
+    S.map.getContainer().appendChild(canvas);
+    S.animationCanvas = canvas;
+    S.animationContext = canvas.getContext('2d');
+    resizeMobileAnimationCanvas();
+    S.map.on('resize move zoom', resizeMobileAnimationCanvas);
+    updateMobileMotionButton();
+}
+
+function updateMobileMotionButton() {
+    const button = $('m-map-motion');
+    if (!button) return;
+    button.classList.toggle('active', S.motionEnabled && S.animationMode !== 'off');
+    button.disabled = S.animationMode === 'off';
+    button.title = S.animationMode === 'off'
+        ? 'Packet animation is disabled in desktop Map & Display settings.'
+        : `${S.animationMode === 'enhanced' ? 'Enhanced' : 'Basic'} live packet motion on this mobile map`;
+}
+
+function pulseMobileMarker(marker, color) {
+    const visual = marker?.getElement()?.querySelector('.aprs-emoji-marker');
+    if (!visual) return;
+    visual.style.setProperty('--mobile-packet-color', color);
+    visual.classList.remove('mobile-packet-pulse');
+    void visual.offsetWidth;
+    visual.classList.add('mobile-packet-pulse');
+    setTimeout(() => visual.classList.remove('mobile-packet-pulse'), 900);
+}
+
+function mobilePacketRoute(packet) {
+    if (!S.myPos) return [];
+    if (packet.source === 'tx') return [L.latLng(S.myPos)];
+    const call = normalizeCall(packet.from_call);
+    const marker = S.rfMarkers[call] || S.isMarkers[call];
+    if (!marker) return [];
+    const route = [marker.getLatLng()];
+    if (S.animationMode === 'enhanced' && packet.source === 'rf') {
+        String(packet.path || '').split(',').map(normalizeCall).forEach((hop) => {
+            const clean = hop.replace(/\*$/, '');
+            const hopMarker = S.rfMarkers[clean] || S.isMarkers[clean];
+            if (hopMarker && clean !== call) route.push(hopMarker.getLatLng());
+        });
+    }
+    route.push(L.latLng(S.myPos));
+    return route;
+}
+
+function pointAlongMobileRoute(points, progress) {
+    if (points.length < 2) return points[0];
+    const lengths = [];
+    let total = 0;
+    for (let i = 1; i < points.length; i++) {
+        const length = points[i - 1].distanceTo(points[i]);
+        lengths.push(length); total += length;
+    }
+    let target = total * progress;
+    for (let i = 0; i < lengths.length; i++) {
+        if (target <= lengths[i]) {
+            const ratio = lengths[i] ? target / lengths[i] : 0;
+            return L.point(points[i].x + (points[i + 1].x - points[i].x) * ratio, points[i].y + (points[i + 1].y - points[i].y) * ratio);
+        }
+        target -= lengths[i];
+    }
+    return points[points.length - 1];
+}
+
+function renderMobilePacketAnimations(now) {
+    S.animationFrame = null;
+    if (!S.animationContext || !S.map) return;
+    resizeMobileAnimationCanvas();
+    const ctx = S.animationContext;
+    const size = S.map.getSize();
+    ctx.clearRect(0, 0, size.x, size.y);
+    const active = [];
+    for (const flow of S.animationFlows) {
+        const progress = Math.min(1, Math.max(0, (now - flow.startedAt) / flow.duration));
+        const points = flow.route.map((latlng) => S.map.latLngToContainerPoint(latlng));
+        if (points.length < 2) continue;
+        ctx.save();
+        ctx.strokeStyle = flow.color;
+        ctx.globalAlpha = .22;
+        ctx.lineWidth = flow.mode === 'enhanced' ? 2.2 : 1.7;
+        if (flow.internet) ctx.setLineDash([3, 8]);
+        ctx.beginPath(); ctx.moveTo(points[0].x, points[0].y); points.slice(1).forEach((point) => ctx.lineTo(point.x, point.y)); ctx.stroke();
+        ctx.setLineDash([]);
+        const head = pointAlongMobileRoute(points, progress);
+        if (flow.mode === 'enhanced') {
+            const tail = pointAlongMobileRoute(points, Math.max(0, progress - .2));
+            const gradient = ctx.createLinearGradient(tail.x, tail.y, head.x, head.y);
+            gradient.addColorStop(0, 'transparent'); gradient.addColorStop(1, flow.color);
+            ctx.globalAlpha = .95; ctx.strokeStyle = gradient; ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.moveTo(tail.x, tail.y); ctx.lineTo(head.x, head.y); ctx.stroke();
+        }
+        ctx.globalAlpha = 1; ctx.fillStyle = flow.color; ctx.shadowColor = flow.color; ctx.shadowBlur = 10;
+        ctx.beginPath(); ctx.arc(head.x, head.y, flow.mode === 'enhanced' ? 4.5 : 3.5, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+        if (progress < 1) active.push(flow);
+    }
+    S.animationFlows = active;
+    if (active.length) S.animationFrame = requestAnimationFrame(renderMobilePacketAnimations);
+}
+
+function animateMobilePacket(packet = {}) {
+    if (!S.motionEnabled || S.animationMode === 'off' || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const route = mobilePacketRoute(packet);
+    const color = packet.source === 'aprs_is' ? '#58a6ff' : (packet.source === 'tx' ? '#ff7b72' : '#f85149');
+    const call = normalizeCall(packet.from_call);
+    pulseMobileMarker(packet.source === 'tx' ? S.myMarker : (S.rfMarkers[call] || S.isMarkers[call]), color);
+    if (route.length < 2) return;
+    if (S.animationFlows.length >= 10) S.animationFlows.shift();
+    S.animationFlows.push({ route, color, mode: S.animationMode, internet: packet.source === 'aprs_is', startedAt: performance.now(), duration: S.animationMode === 'enhanced' ? 1700 : 1200 });
+    if (!S.animationFrame) S.animationFrame = requestAnimationFrame(renderMobilePacketAnimations);
+}
+
 function startMessageTo(call, source = '') {
     const dest = normalizeCall(call);
     if (!dest) return;
@@ -1424,7 +1573,7 @@ window.startMessageTo = startMessageTo;
 function showStationOnMap(call, source = '') {
     const normalized = normalizeCall(call);
     const station = source === 'rf' ? S.rfStations[normalized] : S.isStations[normalized];
-    if (!station?.latitude || !station?.longitude) return;
+    if (!window.pvUI.validPosition(station?.latitude, station?.longitude)) return;
     activateTab('mtab-map');
     if (!S.mapReady) initMap();
     setTimeout(() => {
@@ -1446,7 +1595,7 @@ document.addEventListener('click', e => {
 });
 
 function addMapMarker(st) {
-    if (!st.latitude || !st.longitude) return;
+    if (!window.pvUI.validPosition(st.latitude, st.longitude)) return;
     if (st.latitude === 0 && st.longitude === 0) return;
 
     const source = st.source;
@@ -1563,10 +1712,10 @@ function fitMobileMap() {
     const points = [];
     if (S.myPos) points.push(S.myPos);
     Object.values(S.rfStations).forEach(st => {
-        if (st.latitude && st.longitude && !(st.latitude === 0 && st.longitude === 0)) points.push([st.latitude, st.longitude]);
+        if (window.pvUI.validPosition(st.latitude, st.longitude)) points.push([st.latitude, st.longitude]);
     });
     Object.values(S.isStations).forEach(st => {
-        if (st.latitude && st.longitude && !(st.latitude === 0 && st.longitude === 0)) points.push([st.latitude, st.longitude]);
+        if (window.pvUI.validPosition(st.latitude, st.longitude)) points.push([st.latitude, st.longitude]);
     });
     if (points.length >= 2) {
         S.map.fitBounds(L.latLngBounds(points), { padding: [28, 28], maxZoom: 11 });
@@ -1582,15 +1731,17 @@ function updatePropDisplay(data) {
     const rf = data.rf_stations_1h || 0;
     const maxD = data.max_distance_km || 0;
 
-    let level = 'LOW', color = 'var(--text-muted)';
-    if (rf >= 10 && maxD >= 200) { level = 'HIGH'; color = 'var(--accent-green)'; }
-    else if (rf >= 5 && maxD >= 100) { level = 'MED'; color = 'var(--accent-orange)'; }
-    else if (rf >= 2) { level = 'LOW'; color = 'var(--accent-blue)'; }
+    const state = data.evidence?.state;
+    let level = (data.level || 'none').toUpperCase();
+    const color = 'var(--accent-blue)';
+    if (state === 'awaiting_live') level = 'HISTORY';
+    if (state === 'no_data') level = 'NO DATA';
+    if (state === 'stale') level = 'STALE';
 
     const el = $('m-prop-level');
     if (el) { el.textContent = level; el.style.color = color; }
     const lbl = $('m-prop-label');
-    if (lbl) lbl.textContent = `${rf} RF stations in 1h \u00b7 ${fmtDist(maxD)} max`;
+    if (lbl) lbl.textContent = `${data.my_stations_1h || 0} direct / ${data.regional_stations_1h || 0} all RF in 1h \u00b7 ${fmtDist(maxD)} max`;
 
     const rft = $('m-rf-total'); if (rft) rft.textContent = rf;
     const md = $('m-max-dist'); if (md) md.textContent = fmtDist(maxD);
@@ -1706,6 +1857,10 @@ function connectWS() {
                     if (S.mapReady) addMapMarker(st);
                     renderStations();
                 }
+                break;
+
+            case 'packet':
+                if (msg.data && S.mapReady) animateMobilePacket(msg.data);
                 break;
 
             case 'station_removed':
@@ -1892,6 +2047,9 @@ async function init() {
         const d = await r.json();
         S.config = d;
         S.ghostMinutes = d.web?.ghost_after_minutes ?? 60;
+        S.animationMode = ['off', 'basic', 'enhanced'].includes(d.web?.visual_packet_animation) ? d.web.visual_packet_animation : 'basic';
+        S.motionEnabled = S.animationMode !== 'off';
+        updateMobileMotionButton();
     } catch { /* silent */ }
     activateTab(S.activeTab);
     renderMessages();
@@ -1931,6 +2089,20 @@ $('m-map-lines')?.addEventListener('click', () => setLinesVisible(!S.showLines))
 $('m-map-theme-dark')?.addEventListener('click', () => setMobileMapTheme('dark'));
 $('m-map-theme-light')?.addEventListener('click', () => setMobileMapTheme('light'));
 $('m-map-fit')?.addEventListener('click', fitMobileMap);
+$('m-map-motion')?.addEventListener('click', () => {
+    if (S.animationMode === 'off') return;
+    S.motionEnabled = !S.motionEnabled;
+    if (!S.motionEnabled) {
+        S.animationFlows = [];
+        if (S.animationFrame) cancelAnimationFrame(S.animationFrame);
+        S.animationFrame = null;
+        if (S.animationContext && S.map) {
+            const size = S.map.getSize();
+            S.animationContext.clearRect(0, 0, size.x, size.y);
+        }
+    }
+    updateMobileMotionButton();
+});
 
 window.addEventListener('storage', event => {
     if (event.key === DESKTOP_UI_STATE_KEY) applySavedUITheme();

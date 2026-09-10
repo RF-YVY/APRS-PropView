@@ -25,6 +25,7 @@ class PropViewMap {
         this.rangeCircles = null;
         this.observedRangeLayer = null;
         this.watchedPathLayer = null;
+        this.maidenheadGrid = null;
         this.ambientLayer = null;
         this.propagationAura = null;
         this._lastPropagationData = null;
@@ -118,6 +119,7 @@ class PropViewMap {
         this.isLayer = L.layerGroup().addTo(this.map);
         this.spiderLayer = L.layerGroup().addTo(this.map);
         this.watchedPathLayer = L.layerGroup().addTo(this.map);
+        this.maidenheadGrid = new window.MaidenheadGrid(this.map);
         this.map.createPane('ambientPane');
         this.map.getPane('ambientPane').style.zIndex = 210;
         this.map.getPane('ambientPane').style.pointerEvents = 'none';
@@ -739,7 +741,7 @@ class PropViewMap {
         if (this._observedRangeRequest) return this._observedRangeRequest;
 
         this._observedRangeRequest = (async () => {
-            const resp = await fetch('/api/analytics/observed-range?hours=24');
+            const resp = await fetch(`/api/analytics/observed-range?hours=168&${window.pvHistoryQuery()}`);
             const data = await resp.json();
 
             // Remove old observed range layer
@@ -858,7 +860,7 @@ class PropViewMap {
     }
 
     addOrUpdateStation(station, options = {}) {
-        if (!station.latitude || !station.longitude) return;
+        if (!window.pvUI.validPosition(station.latitude, station.longitude)) return;
         if (station.latitude === 0 && station.longitude === 0) return;
 
         const source = station.source;
@@ -896,7 +898,7 @@ class PropViewMap {
         const aprsFiUrl = `https://aprs.fi/info/a/${encodeURIComponent(call || '')}`;
 
         // Determine direct-heard vs via-digi for RF stations
-        const isDirect = source === 'rf' ? this._isDirectPath(station.last_path) : null;
+        const isDirect = source === 'rf' ? (station.is_direct ?? this._isDirectPath(station.last_path)) : null;
         // Store metadata for type and path filtering
         this.stationMeta[call] = { source, symbol_table: symTable, symbol_code: symCode, category, last_heard: station.last_heard || 0, is_direct: isDirect, station: { ...station } };
 
@@ -1400,19 +1402,7 @@ class PropViewMap {
     /**
      * Determine if an RF station was heard directly (no used digi callsign hops).
      */
-    _isDirectPath(path) {
-        if (!path) return true;
-        const aliasRe = /^(WIDE|RELAY|TRACE|TCPIP|qA[A-Z])\d?(-\d)?$/i;
-        for (const part of path.split(',')) {
-            const hop = part.trim();
-            if (!hop) continue;
-            if (hop.endsWith('*')) {
-                const call = hop.slice(0, -1);
-                if (!aliasRe.test(call)) return false;
-            }
-        }
-        return true;
-    }
+    _isDirectPath(path) { return window.pvUI.directPath(path); }
 
     _formatBearing(heading) {
         if (heading == null || Number.isNaN(Number(heading))) return '';
@@ -2129,6 +2119,12 @@ class PropViewMap {
         document.getElementById('btn-toggle-direct-rf')?.addEventListener('click', (e) => {
             const active = this.toggleDirectRFOnly();
             e.target.classList.toggle('active', active);
+        });
+
+        document.getElementById('btn-toggle-maidenhead')?.addEventListener('click', (e) => {
+            const active = this.maidenheadGrid?.toggle() || false;
+            e.currentTarget.classList.toggle('active', active);
+            e.currentTarget.textContent = active ? 'Pick Grid' : 'Grid';
         });
 
         document.getElementById('line-time-filter')?.addEventListener('change', (e) => {

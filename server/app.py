@@ -1,6 +1,10 @@
 """FastAPI web application — serves UI and WebSocket endpoints."""
 
 import asyncio
+from copy import deepcopy
+from server.config_io import apply_config, atomic_write
+from server.config import tomllib
+from server.analytics_routes import register_analytics_routes
 import base64
 import binascii
 import hashlib
@@ -695,6 +699,13 @@ def _validate_config(body: Dict[str, Any]) -> Optional[str]:
 
     if "database" in body:
         db_cfg = body["database"]
+        for key in ("packet_retention_days", "history_retention_days"):
+            if key in db_cfg:
+                try:
+                    if not 1 <= int(db_cfg[key]) <= 3650:
+                        return "History retention must be between 1 and 3650 days."
+                except (TypeError, ValueError):
+                    return "History retention must be a whole number of days."
         dbpath = db_cfg.get("path", "")
         if dbpath and not _SAFE_PATH_RE.match(dbpath):
             return "Database path must be a simple filename (alphanumeric, dots, hyphens, underscores only)."
@@ -1061,6 +1072,16 @@ def create_app(
 
     # ── REST API ────────────────────────────────────────────────────
 
+    @app.get("/api/storage")
+    async def get_storage():
+        return {**await db.storage_status(),
+                "packet_retention_days": config.database.packet_retention_days,
+                "history_retention_days": config.database.history_retention_days}
+
+    @app.on_event("shutdown")
+    async def close_browser_senders():
+        await ws_manager.close()
+
     @app.get("/api/version")
     async def get_version():
         return {"version": app_version}
@@ -1220,6 +1241,7 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
     @app.get("/api/diagnostics")
     async def get_diagnostics():
         mqtt_publisher = mqtt_state.get("publisher")
+        connection_status = handler.get_status()
         audio_files = {}
         for alert_key, attr in ALERT_AUDIO_KEYS.items():
             filename = getattr(config.alerts, attr, "") or ""
@@ -1237,6 +1259,19 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
             "version": app_version,
             "station": config.station.full_callsign,
             "websocket_connections": len(getattr(ws_manager, "active_connections", []) or []),
+            "rf": {
+                "configured": sum(1 for port in config.rf_ports if port.enabled),
+                "connected": sum(1 for item in connection_status.get("rf_interfaces", []) if item.get("connected")),
+            },
+            "aprs_is": {
+                "enabled": bool(config.aprs_is.enabled),
+                "server": config.aprs_is.server,
+                "port": config.aprs_is.port,
+                "filter_configured": bool((config.aprs_is.filter or "").strip()),
+                "passcode_configured": bool(config.aprs_is.passcode and config.aprs_is.passcode != "-1"),
+                "connected": bool(connection_status.get("aprs_is_connected")),
+                "verified": bool(connection_status.get("aprs_is_verified")),
+            },
             "mqtt": {
                 "enabled": bool(config.mqtt.enabled),
                 "broker": config.mqtt.broker,
@@ -1258,7 +1293,7 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 "audio_output_device_configured": bool(config.alerts.audio_output_device_id),
                 "audio_files": audio_files,
             },
-            "connections": handler.get_status(),
+            "connections": connection_status,
         }
 
     @app.post("/api/gps/location")
@@ -1755,137 +1790,7 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
             logger.warning("APRS object create failed: %s", e)
             return JSONResponse(status_code=400, content={"success": False, "message": "Could not create APRS object."})
 
-    @app.get("/api/analytics/longest-paths")
-    async def get_longest_paths(
-        hours: int = Query(24, ge=1, le=168),
-        limit: int = Query(25, ge=1, le=100),
-    ):
-        if not analytics:
-            return {"paths": [], "count": 0}
-        paths = await analytics.get_longest_paths(hours=hours, limit=limit)
-        return {"paths": paths, "count": len(paths)}
-
-    @app.get("/api/analytics/heatmap")
-    async def get_heatmap(
-        hours: int = Query(24, ge=1, le=168),
-    ):
-        if not analytics:
-            return {"grid": [], "timeline": [], "hours_covered": 0}
-        return await analytics.get_propagation_heatmap(hours=hours)
-
-    @app.get("/api/analytics/reliability")
-    async def get_reliability(
-        hours: int = Query(24, ge=1, le=168),
-    ):
-        if not analytics:
-            return {"stations": [], "count": 0}
-        stations = await analytics.get_station_reliability(hours=hours)
-        return {"stations": stations, "count": len(stations)}
-
-    @app.get("/api/analytics/best-times")
-    async def get_best_times(
-        days: int = Query(7, ge=1, le=30),
-    ):
-        if not analytics:
-            return {"hours": [], "best_hours": [], "days_analyzed": 0, "total_samples": 0, "day_of_week": []}
-        return await analytics.get_best_times(days=days)
-
-    @app.get("/api/analytics/anomaly")
-    async def get_anomaly():
-        if not analytics:
-            return {"anomaly_score": 0, "anomaly_level": "normal"}
-        return await analytics.get_anomaly_status()
-
-    @app.get("/api/analytics/bearing-sectors")
-    async def get_bearing_sectors(
-        hours: int = Query(24, ge=1, le=168),
-    ):
-        if not analytics:
-            return {"sectors": [], "dominant": None}
-        return await analytics.get_bearing_sectors(hours=hours)
-
-    @app.get("/api/analytics/historical")
-    async def get_historical_comparison():
-        if not analytics:
-            return {"today": [], "yesterday": [], "week_avg": [], "avg_7d": []}
-        return await analytics.get_historical_comparison()
-
-    @app.get("/api/analytics/sporadic-e")
-    async def get_sporadic_e(hours: int = Query(6, ge=1, le=168)):
-        if not analytics:
-            return {"es_level": "none", "es_score": 0, "candidates": []}
-        return await analytics.detect_sporadic_e(hours=hours)
-
-    @app.get("/api/analytics/observed-range")
-    async def get_observed_range(
-        hours: int = Query(24, ge=1, le=168),
-    ):
-        if not analytics:
-            return {"sectors": [], "max_range_km": 0}
-        return await analytics.get_observed_range(hours=hours)
-
-    @app.get("/api/analytics/weather")
-    async def get_weather_analytics(hours: int = Query(24, ge=1, le=168)):
-        cutoff = time.time() - hours * 3600
-        samples = []
-        if weather_manager:
-            current = await weather_manager.get_current_weather()
-            if current:
-                samples.append({
-                    "timestamp": time.time(),
-                    "source": current.get("location_name") or current.get("location_code") or "Current weather",
-                    "temperature_f": current.get("temperature_f"),
-                    "humidity": current.get("humidity"),
-                    "pressure_mb": current.get("pressure_mb"),
-                    "wind_speed_mph": current.get("wind_speed_mph"),
-                    "wind_gust_mph": current.get("wind_gusts_mph"),
-                    "rain_1h_in": current.get("precipitation_in"),
-                })
-        cursor = await db.db.execute(
-            """SELECT timestamp, source, from_call, raw
-               FROM packets
-               WHERE timestamp >= ?
-                 AND packet_type = 'weather'
-               ORDER BY timestamp ASC
-               LIMIT 1000""",
-            (cutoff,),
-        )
-        rows = await cursor.fetchall()
-        for row in rows:
-            pkt = parse_packet(row["raw"], source=row["source"])
-            if not pkt.weather:
-                continue
-            samples.append({
-                "timestamp": row["timestamp"],
-                "source": row["from_call"],
-                **pkt.weather,
-            })
-        samples.sort(key=lambda item: item.get("timestamp") or 0)
-        return {"samples": samples, "count": len(samples), "hours": hours}
-
-    @app.get("/api/analytics/path-quality/{callsign}")
-    async def get_path_quality(callsign: str):
-        history = await db.get_path_history(callsign.upper())
-        return {"callsign": callsign.upper(), "history": history, "count": len(history)}
-
-    @app.get("/api/first-heard")
-    async def get_first_heard(
-        hours: int = Query(24, ge=1, le=168),
-        direct_only: bool = Query(False),
-    ):
-        log = await db.get_first_heard_log(hours=hours, direct_only=direct_only)
-        return {"log": log, "count": len(log)}
-
-    @app.get("/api/ducting")
-    async def get_ducting():
-        if not weather_manager:
-            return {"enabled": False}
-        try:
-            ducting = await weather_manager.get_ducting()
-            return ducting or {"enabled": True, "available": False}
-        except Exception as e:
-            logger.error(f"Ducting fetch error: {e}")
-            return {"enabled": True, "error": str(e)}
+    register_analytics_routes(app, db, analytics, weather_manager)
 
     @app.get("/api/export/stations")
     async def export_stations(
@@ -2305,6 +2210,8 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
             },
             "database": {
                 "path": config.database.path,
+                "packet_retention_days": config.database.packet_retention_days,
+                "history_retention_days": config.database.history_retention_days,
             },
             "tracking": {
                 "max_station_age": config.tracking.max_station_age,
@@ -2539,8 +2446,16 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 if temp_name:
                     Path(temp_name).unlink(missing_ok=True)
 
-            config_path.parent.mkdir(parents=True, exist_ok=True)
-            config_path.write_text(content, encoding="utf-8")
+            async with config_save_lock:
+                if config_path.exists():
+                    previous = config_path.read_text(encoding="utf-8")
+                    try:
+                        tomllib.loads(previous)
+                    except Exception:
+                        pass
+                    else:
+                        atomic_write(config_path.with_suffix(config_path.suffix + ".bak"), previous)
+                atomic_write(config_path, content)
             return {
                 "success": True,
                 "needRestart": True,
@@ -2562,9 +2477,18 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
     async def get_browsers():
         return {"browsers": available_browsers()}
 
+    runtime_config = config
+    config_save_lock = asyncio.Lock()
+
     @app.post("/api/config/save")
     async def save_config(request: Request):
-        """Save configuration to config.toml. Hot-reloads most settings live."""
+        async with config_save_lock:
+            return await save_config_candidate(request)
+
+    async def save_config_candidate(request: Request):
+        """Persist a validated candidate before applying runtime changes."""
+        config = deepcopy(runtime_config)
+        persisted = False
         try:
             body: Dict[str, Any] = await request.json()
 
@@ -2601,7 +2525,6 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 config.station.ssid = int(s.get("ssid", config.station.ssid))
                 config.station.latitude = float(s.get("latitude", config.station.latitude))
                 config.station.longitude = float(s.get("longitude", config.station.longitude))
-                tracker.set_my_position(config.station.latitude, config.station.longitude)
                 config.station.symbol_table = s.get("symbol_table", config.station.symbol_table)
                 config.station.symbol_code = s.get("symbol_code", config.station.symbol_code)
                 config.station.phg = (s.get("phg", config.station.phg) or "").strip().upper()
@@ -2651,9 +2574,6 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 config.aprs_is.passcode,
                 config.aprs_is.filter,
             )
-            if new_aprs_is != old_aprs_is and aprs_is:
-                await aprs_is.reconnect()
-                live_applied.append("APRS-IS (reconnecting)")
 
             # Update KISS serial config
             if "kiss_serial" in body:
@@ -2780,13 +2700,6 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 config.web.visual_activity_moments = bool(w.get("visual_activity_moments", config.web.visual_activity_moments))
                 packet_animation = str(w.get("visual_packet_animation", config.web.visual_packet_animation) or "basic").strip().lower()
                 config.web.visual_packet_animation = packet_animation if packet_animation in {"off", "basic", "enhanced"} else "basic"
-                if update_checker:
-                    update_checker.configure(
-                        config.web.update_check_enabled,
-                        config.web.update_check_interval_hours * 3600,
-                    )
-                    await update_checker.stop_periodic_task()
-                    update_checker.start_periodic_task()
                 if config.web.host != old_host or config.web.port != old_port:
                     need_restart.append("web host/port")
                 else:
@@ -2809,12 +2722,15 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 config.gps.gpsd_host = g.get("gpsd_host", config.gps.gpsd_host)
                 config.gps.gpsd_port = int(g.get("gpsd_port", config.gps.gpsd_port))
                 live_applied.append("GPS ingestion")
-                if gps_manager:
-                    await ws_manager.broadcast({"type": "gps_location", "data": gps_manager.get_status()})
 
             # Update database config
             if "database" in body:
                 db_cfg = body["database"]
+                for key, default in (("packet_retention_days", 7), ("history_retention_days", 30)):
+                    value = int(db_cfg.get(key, getattr(config.database, key, default)))
+                    if not 1 <= value <= 3650:
+                        raise ValueError("Retention must be between 1 and 3650 days")
+                    setattr(config.database, key, value)
                 old_database_path = config.database.path
                 config.database.path = db_cfg.get("path", config.database.path)
                 if config.database.path != old_database_path:
@@ -2883,7 +2799,7 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                             }
                     if not isinstance(item, dict):
                         continue
-                    call = (item.get("callsign", "") or "").strip().upper()
+                    call = (item.get("callsign", "") or "").strip().upper()[:24]
                     if not call:
                         continue
                     confidence = (item.get("min_confidence", "medium") or "medium").strip().lower()
@@ -2936,7 +2852,6 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 m = body["messaging"]
                 config.messaging.message_retention_days = max(1, int(m.get("message_retention_days", config.messaging.message_retention_days)))
                 config.messaging.receive_sibling_ssids = bool(m.get("receive_sibling_ssids", config.messaging.receive_sibling_ssids))
-                await handler.cleanup_messages()
                 live_applied.append("messaging")
 
             # Update alerts config
@@ -2974,34 +2889,6 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 config.alerts.sms_gateway_address = al.get("sms_gateway_address", config.alerts.sms_gateway_address)
 
                 # Sync alert_manager config at runtime
-                if alert_manager:
-                    from server.alerts import AlertConfig
-                    alert_manager.config = AlertConfig(
-                        enabled=config.alerts.enabled,
-                        anomaly_alert_enabled=config.alerts.anomaly_alert_enabled,
-                        sporadic_e_alert_enabled=config.alerts.sporadic_e_alert_enabled,
-                        my_min_stations=config.alerts.my_min_stations,
-                        my_min_distance_km=config.alerts.my_min_distance_km,
-                        regional_min_stations=config.alerts.regional_min_stations,
-                        regional_min_distance_km=config.alerts.regional_min_distance_km,
-                        cooldown_seconds=config.alerts.cooldown_seconds,
-                        quiet_start=config.alerts.quiet_start,
-                        quiet_end=config.alerts.quiet_end,
-                        msg_notify_enabled=config.alerts.msg_notify_enabled,
-                        msg_discord_enabled=config.alerts.msg_discord_enabled,
-                        msg_email_enabled=config.alerts.msg_email_enabled,
-                        msg_sms_enabled=config.alerts.msg_sms_enabled,
-                        discord_enabled=config.alerts.discord_enabled,
-                        discord_webhook_url=config.alerts.discord_webhook_url,
-                        email_enabled=config.alerts.email_enabled,
-                        email_smtp_server=config.alerts.email_smtp_server,
-                        email_smtp_port=config.alerts.email_smtp_port,
-                        email_from=config.alerts.email_from,
-                        email_to=config.alerts.email_to,
-                        email_password=config.alerts.email_password,
-                        sms_enabled=config.alerts.sms_enabled,
-                        sms_gateway_address=config.alerts.sms_gateway_address,
-                    )
                 live_applied.append("alerts")
 
             # Update weather config
@@ -3229,6 +3116,55 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 config.mqtt.watched_callsigns = normalized_watched[:40]
 
             config.save(config_path)
+            persisted = True
+            apply_config(runtime_config, config)
+            tracker.set_my_position(config.station.latitude, config.station.longitude)
+            if new_aprs_is != old_aprs_is and aprs_is:
+                await aprs_is.reconnect()
+                live_applied.append("APRS-IS (reconnecting)")
+            if "web" in body:
+                if update_checker:
+                    update_checker.configure(
+                        config.web.update_check_enabled,
+                        config.web.update_check_interval_hours * 3600,
+                    )
+                    await update_checker.stop_periodic_task()
+                    update_checker.start_periodic_task()
+            if "gps" in body:
+                if gps_manager:
+                    await ws_manager.broadcast({"type": "gps_location", "data": gps_manager.get_status()})
+            if "messaging" in body:
+                await handler.cleanup_messages()
+            if "alerts" in body:
+                if alert_manager:
+                    from server.alerts import AlertConfig
+                    alert_manager.config = AlertConfig(
+                        enabled=config.alerts.enabled,
+                        anomaly_alert_enabled=config.alerts.anomaly_alert_enabled,
+                        sporadic_e_alert_enabled=config.alerts.sporadic_e_alert_enabled,
+                        my_min_stations=config.alerts.my_min_stations,
+                        my_min_distance_km=config.alerts.my_min_distance_km,
+                        regional_min_stations=config.alerts.regional_min_stations,
+                        regional_min_distance_km=config.alerts.regional_min_distance_km,
+                        cooldown_seconds=config.alerts.cooldown_seconds,
+                        quiet_start=config.alerts.quiet_start,
+                        quiet_end=config.alerts.quiet_end,
+                        msg_notify_enabled=config.alerts.msg_notify_enabled,
+                        msg_discord_enabled=config.alerts.msg_discord_enabled,
+                        msg_email_enabled=config.alerts.msg_email_enabled,
+                        msg_sms_enabled=config.alerts.msg_sms_enabled,
+                        discord_enabled=config.alerts.discord_enabled,
+                        discord_webhook_url=config.alerts.discord_webhook_url,
+                        email_enabled=config.alerts.email_enabled,
+                        email_smtp_server=config.alerts.email_smtp_server,
+                        email_smtp_port=config.alerts.email_smtp_port,
+                        email_from=config.alerts.email_from,
+                        email_to=config.alerts.email_to,
+                        email_password=config.alerts.email_password,
+                        sms_enabled=config.alerts.sms_enabled,
+                        sms_gateway_address=config.alerts.sms_gateway_address,
+                    )
+
             if mqtt_save_requested:
                 if _mqtt_snapshot() != old_mqtt or (config.mqtt.enabled and not mqtt_state.get("publisher")):
                     live_applied.append(await _apply_mqtt_runtime())
@@ -3276,6 +3212,11 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
             }
 
         except Exception as e:
+            if persisted:
+                logger.exception("Settings saved, but a runtime service could not apply them")
+                return {"success": True, "message": "Settings saved. A runtime service could not apply them; restart the application.",
+                        "needRestart": True, "applicationRestartRequired": True,
+                        "applicationRestartReasons": ["Runtime apply failed"], "browserRefreshRequired": False}
             logger.error(f"Failed to save config: {e}")
             return JSONResponse(
                 status_code=500,

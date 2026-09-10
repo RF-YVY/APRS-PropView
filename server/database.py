@@ -4,6 +4,7 @@ import aiosqlite
 import time
 import json
 import logging
+from server.rf_evidence import classify_station
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
@@ -119,7 +120,7 @@ CREATE INDEX IF NOT EXISTS idx_stations_source ON stations(source);
 CREATE INDEX IF NOT EXISTS idx_stations_last_heard ON stations(last_heard);
 CREATE INDEX IF NOT EXISTS idx_packets_timestamp ON packets(timestamp);
 CREATE INDEX IF NOT EXISTS idx_packets_source ON packets(source);
-CREATE INDEX IF NOT EXISTS idx_packets_port_timestamp ON packets(port_name, timestamp);
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_dedupe ON messages(dedupe_key) WHERE dedupe_key != '';
 CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
 CREATE INDEX IF NOT EXISTS idx_messages_contact ON messages(from_call, to_call);
@@ -142,8 +143,13 @@ class Database:
         """Create database and tables."""
         self.db = await aiosqlite.connect(self.db_path)
         self.db.row_factory = aiosqlite.Row
+        await self.db.execute("PRAGMA journal_mode=WAL")
+        await self.db.execute("PRAGMA busy_timeout=5000")
         await self.db.executescript(SCHEMA)
         await self._migrate_schema()
+        await self.db.execute("CREATE INDEX IF NOT EXISTS idx_packets_port_timestamp ON packets(port_name, timestamp)")
+        await self.db.execute("CREATE INDEX IF NOT EXISTS idx_path_call_time ON path_history(callsign, timestamp DESC)")
+        await self.db.execute("CREATE INDEX IF NOT EXISTS idx_path_port_time ON path_history(port_name, timestamp DESC)")
         await self.db.commit()
         logger.info(f"Database initialized at {self.db_path}")
 
@@ -169,6 +175,8 @@ class Database:
                 "digipeated_by_me": "ALTER TABLE packets ADD COLUMN digipeated_by_me INTEGER DEFAULT 0",
             },
             "path_history": {
+                "latitude": "ALTER TABLE path_history ADD COLUMN latitude REAL",
+                "longitude": "ALTER TABLE path_history ADD COLUMN longitude REAL",
                 "port_name": "ALTER TABLE path_history ADD COLUMN port_name TEXT DEFAULT ''",
             },
         }.items():
@@ -217,62 +225,29 @@ class Database:
     ) -> Dict[str, Any]:
         """Insert or update a station record. Returns the station dict."""
         now = time.time()
-        existing = await self.db.execute(
-            "SELECT * FROM stations WHERE callsign = ? AND source = ?",
-            (callsign, source),
-        )
-        row = await existing.fetchone()
-
-        if row:
-            update_fields = {
-                "last_heard": now,
-                "packet_count": row["packet_count"] + 1,
-                "last_path": path,
-                "last_port_name": port_name,
-                "last_raw": raw,
-                "last_comment": comment or row["last_comment"],
-            }
-            if latitude is not None:
-                update_fields["latitude"] = latitude
-                update_fields["longitude"] = longitude
-                # Always update symbol when position is present (parser extracted it)
-                update_fields["symbol_table"] = symbol_table
-                update_fields["symbol_code"] = symbol_code
-            if distance_km is not None:
-                update_fields["distance_km"] = distance_km
-                update_fields["heading"] = heading
-
-            set_clause = ", ".join(f"{k} = ?" for k in update_fields)
-            values = list(update_fields.values()) + [callsign, source]
-            await self.db.execute(
-                f"UPDATE stations SET {set_clause} WHERE callsign = ? AND source = ?",
-                values,
-            )
-        else:
-            await self.db.execute(
-                """INSERT INTO stations
-                   (callsign, source, first_heard, last_heard, packet_count,
-                    latitude, longitude, symbol_table, symbol_code,
-                    last_comment, last_path, last_port_name, last_raw, distance_km, heading)
-                   VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    callsign, source, now, now,
-                    latitude, longitude,
-                    symbol_table, symbol_code,
-                    comment, path, port_name, raw,
-                    distance_km, heading,
-                ),
-            )
+        cursor = await self.db.execute(
+            """INSERT INTO stations
+            (callsign, source, first_heard, last_heard, packet_count, latitude, longitude,
+             symbol_table, symbol_code, last_comment, last_path, last_port_name, last_raw, distance_km, heading)
+            VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(callsign, source) DO UPDATE SET
+              last_heard=excluded.last_heard, packet_count=stations.packet_count+1,
+              latitude=COALESCE(excluded.latitude, stations.latitude),
+              longitude=COALESCE(excluded.longitude, stations.longitude),
+              symbol_table=CASE WHEN excluded.latitude IS NOT NULL THEN excluded.symbol_table ELSE stations.symbol_table END,
+              symbol_code=CASE WHEN excluded.latitude IS NOT NULL THEN excluded.symbol_code ELSE stations.symbol_code END,
+              last_comment=CASE WHEN excluded.last_comment!='' THEN excluded.last_comment ELSE stations.last_comment END,
+              last_path=excluded.last_path, last_port_name=excluded.last_port_name, last_raw=excluded.last_raw,
+              distance_km=COALESCE(excluded.distance_km, stations.distance_km),
+              heading=COALESCE(excluded.heading, stations.heading)
+            RETURNING *""",
+            (callsign, source, now, now, latitude, longitude, symbol_table, symbol_code,
+             comment, path, port_name, raw, distance_km, heading))
+        row = await cursor.fetchone()
+        await cursor.close()
         if commit:
             await self.db.commit()
-
-        # Return current station data
-        result = await self.db.execute(
-            "SELECT * FROM stations WHERE callsign = ? AND source = ?",
-            (callsign, source),
-        )
-        row = await result.fetchone()
-        return dict(row) if row else {}
+        return classify_station(dict(row)) if row else {}
 
     async def get_stations(
         self,
@@ -298,7 +273,7 @@ class Database:
 
         cursor = await self.db.execute(query, params)
         rows = await cursor.fetchall()
-        return [dict(r) for r in rows]
+        return [classify_station(dict(r)) for r in rows]
 
     async def get_station(self, callsign: str, source: str) -> Optional[Dict[str, Any]]:
         cursor = await self.db.execute(
@@ -306,7 +281,7 @@ class Database:
             (callsign, source),
         )
         row = await cursor.fetchone()
-        return dict(row) if row else None
+        return classify_station(dict(row)) if row else None
 
     async def delete_old_stations(self, max_age: float):
         """Remove stations not heard within max_age seconds."""
@@ -643,13 +618,15 @@ class Database:
         hop_count: int = 0,
         is_direct: bool = False,
         commit: bool = True,
+        latitude: Optional[float] = None,
+        longitude: Optional[float] = None,
     ):
         now = time.time()
         await self.db.execute(
             """INSERT INTO path_history
-               (timestamp, callsign, distance_km, heading, path, port_name, hop_count, is_direct)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (now, callsign, distance_km, heading, path, port_name, hop_count, 1 if is_direct else 0),
+               (timestamp, callsign, distance_km, heading, path, port_name, hop_count, is_direct, latitude, longitude)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (now, callsign, distance_km, heading, path, port_name, hop_count, 1 if is_direct else 0, latitude, longitude),
         )
         if commit:
             await self.db.commit()
@@ -773,3 +750,51 @@ class Database:
 
     async def export_propagation(self, hours: int = 24) -> List[Dict[str, Any]]:
         return await self.get_propagation_history(hours)
+
+    async def rf_observations(self, hours=24, path_type="all", port="", latest=False):
+        """RF evidence with time, path and position taken from the same reception."""
+        clauses = ["timestamp >= ?"]
+        params = [time.time() - hours * 3600]
+        if path_type in ("direct", "relayed"):
+            clauses.append("is_direct = ?")
+            params.append(1 if path_type == "direct" else 0)
+        if port:
+            clauses.append("port_name = ?")
+            params.append(port)
+        where = " AND ".join(clauses)
+        if latest:
+            sql = f"""SELECT * FROM (SELECT *, ROW_NUMBER() OVER
+                (PARTITION BY callsign ORDER BY (distance_km IS NOT NULL) DESC, timestamp DESC, id DESC) AS rn
+                FROM path_history WHERE {where}) WHERE rn=1"""
+        else:
+            sql = f"SELECT * FROM path_history WHERE {where} ORDER BY timestamp, id"
+        cursor = await self.db.execute(sql, params)
+        return [dict(row) | {"source": "rf", "last_heard": row["timestamp"],
+                "last_path": row["path"], "last_port_name": row["port_name"]}
+                for row in await cursor.fetchall()]
+
+    async def maintain_history(self, packet_days=7, history_days=30):
+        """Roll up expired detail before deletion; station identity is retained."""
+        cutoff = time.time() - history_days * 86400
+        await self.db.execute("""CREATE TABLE IF NOT EXISTS rf_daily_summary (
+            day TEXT, port_name TEXT, is_direct INTEGER, packet_count INTEGER,
+            max_distance_km REAL, PRIMARY KEY(day, port_name, is_direct))""")
+        await self.db.execute("""INSERT INTO rf_daily_summary
+            SELECT date(timestamp,'unixepoch'), port_name, is_direct, COUNT(*), MAX(distance_km)
+            FROM path_history WHERE timestamp < ? GROUP BY 1,2,3
+            ON CONFLICT(day,port_name,is_direct) DO UPDATE SET
+            packet_count=rf_daily_summary.packet_count+excluded.packet_count,
+            max_distance_km=MAX(COALESCE(rf_daily_summary.max_distance_km,0),COALESCE(excluded.max_distance_km,0))""", (cutoff,))
+        await self.db.execute("DELETE FROM packets WHERE timestamp < ?", (time.time()-packet_days*86400,))
+        for table in ('path_history', 'propagation_log', 'ducting_log'):
+            await self.db.execute(f"DELETE FROM {table} WHERE timestamp < ?", (cutoff,))
+        await self.db.commit()
+        await self.db.execute("PRAGMA optimize")
+
+    async def storage_status(self):
+        page_count = (await (await self.db.execute('PRAGMA page_count')).fetchone())[0]
+        page_size = (await (await self.db.execute('PRAGMA page_size')).fetchone())[0]
+        free = (await (await self.db.execute('PRAGMA freelist_count')).fetchone())[0]
+        row = await (await self.db.execute('SELECT MIN(timestamp), MAX(timestamp) FROM path_history')).fetchone()
+        return {"size_bytes": page_count*page_size, "reusable_bytes": free*page_size,
+                "oldest_observation": row[0], "latest_observation": row[1]}

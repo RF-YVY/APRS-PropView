@@ -1,6 +1,7 @@
 """Configuration management using TOML format."""
 
 import sys
+from server.config_io import atomic_write
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List
@@ -87,6 +88,8 @@ visual_packet_animation = "basic"
 
 [database]
 path = "propview.db"
+packet_retention_days = 7
+history_retention_days = 30
 
 [tracking]
 max_station_age = 86400
@@ -373,6 +376,8 @@ class WebConfig:
 @dataclass
 class DatabaseConfig:
     path: str = "propview.db"
+    packet_retention_days: int = 7
+    history_retention_days: int = 30
 
 
 @dataclass
@@ -818,6 +823,8 @@ class Config:
             "",
             "[database]",
             f'path = "{esc(self.database.path)}"',
+            f"packet_retention_days = {self.database.packet_retention_days}",
+            f"history_retention_days = {self.database.history_retention_days}",
             "",
             "[tracking]",
             f"max_station_age = {int(self.tracking.max_station_age)}",
@@ -1009,4 +1016,15 @@ class Config:
             f'device_id = "{esc(self.mqtt.device_id)}"',
             'watched_callsigns = [' + ', '.join('"' + esc(str(call).strip().upper()) + '"' for call in self.mqtt.watched_callsigns if str(call).strip()) + ']',
         ])
-        path.write_text("\n".join(lines) + "\n")
+        content = "\n".join(lines) + "\n"
+        tomllib.loads(content)  # Refuse to replace a working file with invalid TOML.
+        path = Path(path)
+        if path.exists():
+            previous = path.read_text(encoding="utf-8")
+            try:
+                tomllib.loads(previous)
+            except Exception:
+                pass  # Keep the existing last-known-good backup.
+            else:
+                atomic_write(path.with_suffix(path.suffix + ".bak"), previous)
+        atomic_write(path, content)

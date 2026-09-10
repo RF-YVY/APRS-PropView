@@ -10,14 +10,19 @@ class PropViewWebSocket {
         this.maxReconnectDelay = 30000;
         this.currentDelay = this.reconnectDelay;
         this.isConnected = false;
+        this.reconnectTimer = null;
     }
 
     connect() {
+        if (this.ws && [WebSocket.OPEN, WebSocket.CONNECTING].includes(this.ws.readyState)) return;
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const url = `${protocol}//${window.location.host}/ws`;
 
         try {
             this.ws = new WebSocket(url);
+            const socket = this.ws;
 
             this.ws.onopen = () => {
                 console.log('WebSocket connected');
@@ -37,6 +42,7 @@ class PropViewWebSocket {
             };
 
             this.ws.onclose = () => {
+                if (this.ws !== socket) return;
                 console.log('WebSocket disconnected');
                 this.isConnected = false;
                 this._updateStatus(false);
@@ -46,7 +52,7 @@ class PropViewWebSocket {
 
             this.ws.onerror = (err) => {
                 console.error('WebSocket error:', err);
-                this.ws.close();
+                socket.close();
             };
         } catch (e) {
             console.error('WebSocket connection failed:', e);
@@ -75,11 +81,13 @@ class PropViewWebSocket {
     }
 
     _reconnect() {
-        setTimeout(() => {
-            console.log(`Reconnecting in ${this.currentDelay}ms...`);
+        if (this.reconnectTimer) return;
+        const delay = this.currentDelay;
+        this.currentDelay = Math.min(this.currentDelay * 2, this.maxReconnectDelay);
+        this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null;
             this.connect();
-            this.currentDelay = Math.min(this.currentDelay * 2, this.maxReconnectDelay);
-        }, this.currentDelay);
+        }, delay);
     }
 
     _updateStatus(connected) {

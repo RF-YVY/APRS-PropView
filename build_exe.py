@@ -202,12 +202,8 @@ def build():
     check_pyinstaller()
     check_runtime_dependencies()
 
-    # Clean previous builds
-    for d in ["build", "dist"]:
-        p = PROJECT_ROOT / d
-        if p.exists():
-            shutil.rmtree(p)
-            print(f"  Cleaned {d}/")
+    # PyInstaller --clean clears its cache. Preserve dist: it may contain
+    # local configurations, databases, and installers kept for rollback.
 
     # Build args
     args = [

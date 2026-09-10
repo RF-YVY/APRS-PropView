@@ -26,6 +26,8 @@ class StationManager {
 
     init() {
         this._bindFilters();
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) { this.render(); this._rerenderPackets(); } });
+        document.querySelectorAll('.tab-content').forEach(panel => new MutationObserver(() => { this.render(); this._rerenderPackets(); }).observe(panel, {attributes: true, attributeFilter: ['class']}));
         this._populateTypeDropdowns();
         this._bindListClicks();
         this.loadRecentPackets();
@@ -46,16 +48,7 @@ class StationManager {
     }
 
     loadInitialStations(rfList, isList) {
-        this.hasLoadedInitialStations = true;
-        rfList.forEach((s) => {
-            this.rfStations[s.callsign] = s;
-        });
-        isList.forEach((s) => {
-            this.isStations[s.callsign] = s;
-        });
-        this._rebuildMapStations();
-        this._renderStationList('rf');
-        this._renderStationList('aprs_is');
+        this.syncStations(rfList || [], isList || []);
     }
 
     syncStations(rfList, isList) {
@@ -134,7 +127,7 @@ class StationManager {
         const listEl = document.getElementById(isRF ? 'rf-station-list' : 'is-station-list');
         const countEl = document.getElementById(isRF ? 'rf-filter-count' : 'is-filter-count');
 
-        if (!listEl) return;
+        if (!listEl || document.hidden || !listEl.getClientRects().length) return;
 
         const now = Date.now() / 1000;
         const timeFilter = isRF ? this.rfTimeFilter : this.isTimeFilter;
@@ -159,7 +152,7 @@ class StationManager {
                     if (cat !== typeFilter) return false;
                 }
                 if (pathFilter) {
-                    const direct = this._isDirectHeard(s.last_path);
+                    const direct = (s.is_direct ?? this._isDirectHeard(s.last_path));
                     if (pathFilter === 'direct' && !direct) return false;
                     if (pathFilter === 'via' && direct) return false;
                 }
@@ -178,7 +171,7 @@ class StationManager {
 
         if (countEl) {
             if (isRF) {
-                const directCount = filtered.filter((s) => this._isDirectHeard(s.last_path)).length;
+                const directCount = filtered.filter((s) => (s.is_direct ?? this._isDirectHeard(s.last_path))).length;
                 const digiCount = filtered.length - directCount;
                 countEl.textContent = `${filtered.length} stn${filtered.length !== 1 ? 's' : ''} (${directCount} direct, ${digiCount} via digi)`;
             } else {
@@ -191,7 +184,7 @@ class StationManager {
             return;
         }
 
-        listEl.innerHTML = filtered.map((s) => this._stationItemHTML(s)).join('');
+        window.pvUI.reconcile(listEl, filtered.map(s => [s.callsign, this._stationItemHTML(s)]));
     }
 
     _stationItemHTML(station) {
@@ -208,7 +201,7 @@ class StationManager {
             : '';
         const icon = this._symbolToEmoji(station.symbol_table, station.symbol_code);
         const escapedCallAttr = this._escapeHTML(station.callsign || '');
-        const direct = source === 'rf' ? this._isDirectHeard(station.last_path) : false;
+        const direct = source === 'rf' ? (station.is_direct ?? this._isDirectHeard(station.last_path)) : false;
         const directBadge = source === 'rf'
             ? `<span class="heard-badge ${direct ? 'direct' : 'via-digi'}">${direct ? 'DIRECT' : 'VIA DIGI'}</span>`
             : '';
@@ -254,7 +247,7 @@ class StationManager {
             <span class="pkt-raw">${this._escapeHTML(pkt.raw || '')}</span>
         `;
 
-        list.appendChild(el);
+        return el.outerHTML;
     }
 
     _bindFilters() {
@@ -323,12 +316,15 @@ class StationManager {
     }
 
     _rerenderPackets() {
-        const list = document.getElementById('packet-list');
-        if (!list) return;
-        list.innerHTML = '';
-        this._filteredSortedPackets()
-            .slice(0, 200)
-            .forEach((pkt) => this._renderPacketItem(pkt));
+        if (this._packetRenderPending) return;
+        this._packetRenderPending = true;
+        setTimeout(() => {
+            this._packetRenderPending = false;
+            const list = document.getElementById('packet-list');
+            if (!list || document.hidden || !list.getClientRects().length) return;
+            window.pvUI.reconcile(list, this._filteredSortedPackets().slice(0, 200)
+                .map(pkt => [this._packetKey(pkt), this._renderPacketItem(pkt)]));
+        }, 100);
     }
 
     _filteredSortedPackets() {
@@ -414,19 +410,7 @@ class StationManager {
         return div.innerHTML;
     }
 
-    _isDirectHeard(path) {
-        if (!path) return true;
-        const aliasRe = /^(WIDE|RELAY|TRACE|TCPIP|qA[A-Z])\d?(-\d)?$/i;
-        for (const part of path.split(',')) {
-            const hop = part.trim();
-            if (!hop) continue;
-            if (hop.endsWith('*')) {
-                const call = hop.replace('*', '');
-                if (!aliasRe.test(call)) return false;
-            }
-        }
-        return true;
-    }
+    _isDirectHeard(path) { return window.pvUI.directPath(path); }
 
     _bindListClicks() {
         if (this._listClickBound) return;
@@ -447,7 +431,7 @@ class StationManager {
                 }
 
                 const station = src === 'rf' ? this.rfStations[call] : this.isStations[call];
-                if (station && station.latitude && station.longitude) {
+                if (station && window.pvUI.validPosition(station.latitude, station.longitude)) {
                     window.pvMap.map.setView([station.latitude, station.longitude], 13);
                     const markers = src === 'rf' ? window.pvMap.rfMarkers : window.pvMap.isMarkers;
                     if (markers[call]) markers[call].openPopup();

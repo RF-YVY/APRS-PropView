@@ -8,6 +8,7 @@ import time
 from typing import Optional, Dict, Any, List
 
 from server.config import Config
+from server.rf_evidence import is_direct_path, valid_position
 from server.database import Database
 from server.aprs_parser import APRSPacket, calculate_distance, calculate_bearing
 from server.websocket_manager import WebSocketManager
@@ -40,6 +41,7 @@ class StationTracker:
         self._gps_manager = None
         self._mqtt_publisher = None
         self._mqtt_max_distance_km: Optional[float] = None
+        self._started_at = time.time()
         self._last_rf_packet_time: float = 0.0
         self._recent_first_heard_until: float = 0.0
         self._watched_path_last_alert: Dict[str, float] = {}
@@ -145,10 +147,10 @@ class StationTracker:
             "alerts": [],
             "timestamp": now,
         }
-        if not targets or self.my_lat == 0.0 or self.my_lon == 0.0:
+        if not targets or not valid_position(self.my_lat, self.my_lon):
             return result
 
-        station_rows = await self.db.get_stations(source="rf", since=now - 6 * 3600)
+        station_rows = await self.db.rf_observations(hours=6, path_type="direct", latest=True)
         for target in targets:
             try:
                 if getattr(target, "grid", "").strip():
@@ -161,7 +163,7 @@ class StationTracker:
                     target_lon = float(target.longitude)
             except (TypeError, ValueError):
                 continue
-            if target_lat == 0.0 and target_lon == 0.0:
+            if not valid_position(target_lat, target_lon):
                 continue
 
             target_call = (target.callsign or "").strip().upper()
@@ -508,8 +510,8 @@ class StationTracker:
         heading = None
         if (
             packet.has_position
-            and self.my_lat != 0.0
-            and self.my_lon != 0.0
+            and valid_position(self.my_lat, self.my_lon)
+            and (self.my_lat, self.my_lon) != (0.0, 0.0)
         ):
             distance_km = calculate_distance(
                 self.my_lat, self.my_lon, packet.latitude, packet.longitude
@@ -572,6 +574,8 @@ class StationTracker:
                 port_name=port_name,
                 hop_count=hop_count,
                 is_direct=is_direct,
+                latitude=packet.latitude,
+                longitude=packet.longitude,
                 commit=False,
             )
 
@@ -727,25 +731,7 @@ class StationTracker:
             })
         return deleted
 
-    @staticmethod
-    def _is_direct_path(path: str) -> bool:
-        """Return True if the APRS path indicates a direct (no digipeater) reception.
-
-        A station is direct-heard if:
-        - The path is empty, OR
-        - None of the path hops have a '*' (used) suffix with a real callsign
-          (i.e. WIDE1-1* alone doesn't count as relayed through another digi)
-        """
-        if not path:
-            return True
-        hops = [h.strip() for h in path.split(",") if h.strip()]
-        for hop in hops:
-            if hop.endswith("*"):
-                base = hop[:-1]
-                # WIDE/RELAY/TRACE aliases with * don't indicate a foreign digi
-                if not any(base.upper().startswith(a) for a in ("WIDE", "RELAY", "TRACE")):
-                    return False
-        return True
+    _is_direct_path = staticmethod(is_direct_path)
 
     @staticmethod
     def _count_hops(path: str) -> int:
@@ -796,13 +782,14 @@ class StationTracker:
         # Get RF stations with distances for the last hour
         own_calls = self._propview_transmit_callsigns()
         rf_1h = [
-            station for station in await self.db.get_stations(source="rf", since=now - 3600)
+            station for station in await self.db.rf_observations(hours=1, latest=True)
             if (station.get("callsign") or "").upper() not in own_calls
         ]
 
         # Split RF stations into direct-heard local and relayed regional groups
         all_distances = [s["distance_km"] for s in rf_1h if s.get("distance_km")]
-        direct_stations = [s for s in rf_1h if self._is_direct_path(s.get("last_path", ""))]
+        direct_stations = [s for s in await self.db.rf_observations(hours=1, path_type="direct", latest=True)
+                           if s["callsign"].upper() not in own_calls]
         direct_distances = [s["distance_km"] for s in direct_stations if s.get("distance_km")]
         near_hop_stations = [
             s for s in rf_1h
@@ -810,19 +797,19 @@ class StationTracker:
             and not self._has_internet_path(s.get("last_path", ""))
             and self._count_hops(s.get("last_path", "")) <= 1
         ]
-        regional_stations = [s for s in rf_1h if not self._is_direct_path(s.get("last_path", ""))]
+        regional_stations = rf_1h  # Regional means all RF, as documented.
         regional_distances = [s["distance_km"] for s in regional_stations if s.get("distance_km")]
 
         rf_6h = [
-            station for station in await self.db.get_stations(source="rf", since=now - 21600)
+            station for station in await self.db.rf_observations(hours=6, latest=True)
             if (station.get("callsign") or "").upper() not in own_calls
         ]
         rf_24h = [
-            station for station in await self.db.get_stations(source="rf", since=now - 86400)
+            station for station in await self.db.rf_observations(hours=24, latest=True)
             if (station.get("callsign") or "").upper() not in own_calls
         ]
-        regional_count_6h = sum(1 for s in rf_6h if not self._is_direct_path(s.get("last_path", "")))
-        regional_count_24h = sum(1 for s in rf_24h if not self._is_direct_path(s.get("last_path", "")))
+        regional_count_6h = len(rf_6h)
+        regional_count_24h = len(rf_24h)
 
         # ── My Station meter (direct-heard only) ────────────
         my_count = len(direct_stations)
@@ -895,6 +882,15 @@ class StationTracker:
 
         result = {
             # My Station meter
+            "evidence": {
+                "window_minutes": 60,
+                "observing_minutes": round((now-self._started_at)/60, 1),
+                "last_rf_packet_age_seconds": round(now-self._last_rf_packet_time) if self._last_rf_packet_time else None,
+                "state": ("awaiting_live" if rf_1h else "no_data") if not self._last_rf_packet_time else ("stale" if now-self._last_rf_packet_time > 900 else ("warming_up" if now-self._started_at < 3600 else "observing")),
+                "direct_stations": my_count,
+                "regional_definition": "All RF observations, including direct and relayed",
+                "score_basis": "50% station count + 50% longest observed distance; not a probability",
+            },
             "my_score": round(my_score, 1),
             "my_level": my_level,
             "my_stations_1h": my_count,
@@ -1058,7 +1054,8 @@ class StationTracker:
                 await asyncio.sleep(self.config.tracking.cleanup_interval)
                 max_age = self.config.tracking.max_station_age
                 await self.db.delete_old_stations(max_age)
-                await self.db.delete_old_packets(max_age * 2)
+                await self.db.maintain_history(self.config.database.packet_retention_days,
+                                               self.config.database.history_retention_days)
 
                 # Prune in-memory caches and notify frontend
                 cutoff = time.time() - max_age

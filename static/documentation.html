@@ -420,6 +420,7 @@
                 <h2>1. Overview</h2>
                 <p>APRS PropView is a local web application for amateur radio APRS operations. It receives packets from RF TNCs and APRS-IS, plots stations on a live Leaflet map, draws propagation paths, scores VHF conditions, supports bidirectional messaging, and can transmit station beacons, weather packets, status reports, bulletins, and APRS objects.</p>
                 <p>The dashboard is meant for both fixed station monitoring and field/mobile operation. RF-only, APRS-IS-only, and combined RF plus APRS-IS deployments are supported.</p>
+                <p>On the first visit from a browser, an illustrated six-step Quick Start explains the safest setup order and the meaning of the main displays. Skip or close it after reviewing; it remains available from About/Help and from the Help &amp; User Guide.</p>
                 <div class="grid">
                     <div class="card">
                         <h3>Core Purpose</h3>
@@ -615,6 +616,7 @@ python main.py</code></pre>
                 </ul>
                 <h3>Analytics</h3>
                 <p>The Analytics tab adds historical views including longest path leaderboard, propagation heatmap, station reliability grades, best time-of-day analysis, selectable-window Sporadic-E diagnostics, and a weather dashboard with gauges, records, charts, forecast, and map context.</p>
+                <p>The longest-path list defaults to direct RF evidence and is independent of the map range. To keep a mistyped or stale station position from dominating the list, an isolated path of 800 km (about 500 mi) or more is held out until another reception places that callsign in the same area. Repeated long paths remain visible. Enable <strong>Show unconfirmed positions</strong> to inspect held-out entries and their reason.</p>
                 <h3>Alert Tuning</h3>
                 <p>The alert tuning helper can analyze recent RF path history and recommend more selective alert thresholds based on your local station baseline.</p>
                 <a class="backtop" href="#top">Back to top</a>
@@ -661,7 +663,7 @@ python main.py</code></pre>
                 <div class="callout warning">
                     <p><b>Security note:</b> Tailscale or a similar private VPN is preferred over public port forwarding. Do not expose APRS PropView directly to the internet unless you have added your own network-layer access controls.</p>
                 </div>
-                <p>The mobile map uses the same APRS station symbols as the desktop view and can draw compact propagation lines from your station to RF and APRS-IS stations. RF paths use distance-based colors, while APRS-IS paths are shown as lighter dashed lines. Use the mobile <b>Lines</b> control to hide or restore path lines, <b>Light/Dark</b> to switch the default mobile base-map theme, and <b>Fit</b> to frame your station plus visible stations.</p>
+                <p>The mobile map uses the same APRS station symbols as the desktop view and can draw compact propagation lines from your station to RF and APRS-IS stations. RF paths use distance-based colors, while APRS-IS paths are shown as lighter dashed lines. Use the mobile <b>Lines</b> control to hide or restore path lines, <b>Light/Dark</b> to switch the default mobile base-map theme, and <b>Fit</b> to frame your station plus visible stations. The <b>Motion</b> control pauses or resumes live packet motion. Its Basic or Enhanced style follows the desktop Map &amp; Display setting, and device reduced-motion preferences turn it off.</p>
                 <p>Tap a station marker to open an information bubble with callsign, source, symbol type, distance, last-heard time, packet count, path/comment details, and a <b>Send Message</b> button that opens the selected station conversation.</p>
                 <p>Mobile messages are grouped by conversation/station. The conversation strip shows recent contacts and previews, while the selected thread below shows only that station's message history with sent/received bubbles, route labels, and ACK/reject state for outgoing messages.</p>
                 <a class="backtop" href="#top">Back to top</a>
@@ -712,7 +714,8 @@ python main.py</code></pre>
 
             <section id="settings">
                 <h2>13. Options Reference</h2>
-                <p>Settings are organized into workflow categories with search, direct category links, collapsible sections, per-section reset, and a sticky Save Configuration action. Modified sections pulse yellow and remain listed in navigation until saved.</p>
+                <p>Settings are organized into workflow categories with search, direct category links, collapsible sections, per-section reset, and a sticky Save Configuration action. Modified sections pulse yellow and remain listed in navigation until saved. Basic view shows the controls needed for normal receiving, mapping, propagation, watched paths, and alerts; Show Advanced reveals transmit features and optional integrations.</p>
+                <p>The Overview category includes an actionable setup checklist, a configuration-readiness report, and operating-mode presets. Presets only stage changes in the form so you can review them before Save Configuration. Clicking the RF, APRS-IS, or browser live-link status in the header opens connection diagnostics and links to the related settings.</p>
                 <p>After every save, PropView states whether changes were applied immediately, require only a browser refresh, or require a full application restart. Restart-class settings are reported only when their values actually changed.</p>
                 <figure class="doc-figure">
                     <img src="/static/img/docs/desktop-settings.png" alt="APRS PropView settings tab with configuration sections and save controls" loading="lazy">
@@ -749,7 +752,7 @@ python main.py</code></pre>
                 <h3>Backup And Restore</h3>
                 <p>Use settings export before experimenting with RF, APRS-IS, host, port, or tile settings. Imported settings require an application restart before the full configuration is loaded.</p>
                 <h3>Watched VHF Paths</h3>
-                <p>Enter a target callsign and use Lookup to populate a license/callbook location, then choose band, mode, frequency, confidence, and target-area radius. Coordinates or Maidenhead grid can be corrected manually for portable or remote station sites. Antenna height, transmit power, and antenna gain provide radio-horizon and capability context but do not create an opportunity without matching direct-heard RF propagation evidence near the target area. Stations heard through another digipeater are excluded.</p>
+                <p>Enter a target callsign and use Lookup to populate a license/callbook location, then choose band, mode, frequency, confidence, and target-area radius. You may instead enter a short target label and supply coordinates or a Maidenhead grid manually. The map's Grid control draws zoom-dependent Maidenhead labels; while it says Pick Grid, clicking a square fills its locator and center coordinates, highlights the required Target station / label field, and moves keyboard focus there. Antenna height, transmit power, and antenna gain provide radio-horizon and capability context but do not create an opportunity without matching direct-heard RF propagation evidence near the target area. Stations heard through another digipeater are excluded.</p>
                 <h3>Visualizations</h3>
                 <p>The Map &amp; Display category includes independent controls for the propagation aura, new-path reveal, map color harmony, condition backdrops, expressive home marker, watched-path flow, quiet direct-heard activity moments, and live packet animation. Packet animation can be Off, Basic (station bursts and flowing dashes), or Enhanced (moving packet head, contrail, and hop pulses). Effects apply live after saving, and operating-system reduced-motion preferences are respected.</p>
                 <h3>Station Blocklist</h3>

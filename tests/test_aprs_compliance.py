@@ -1917,6 +1917,8 @@ class SporadicEDetectionTests(unittest.TestCase):
                         heading=180,
                     )
 
+                    await db.log_path_event("LOCAL", 125, 180, is_direct=True)
+
                     result = await AnalyticsEngine(db).detect_sporadic_e(hours=24)
                 finally:
                     await db.close()

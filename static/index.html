@@ -222,6 +222,7 @@
                 <button id="btn-toggle-rf" title="Toggle RF stations" class="active">🔴</button>
                 <button id="btn-toggle-is" title="Toggle APRS-IS stations" class="active">🔵</button>
                 <button id="btn-toggle-direct-rf" class="map-wide-control" title="Show only RF stations heard directly, excluding digipeaters and APRS-IS">Direct RF</button>
+                <button id="btn-toggle-maidenhead" class="map-wide-control" title="Show Maidenhead grid; click a square to use it in the watched-path builder">Grid</button>
                 <div class="map-control-divider"></div>
                 <button id="btn-toggle-theme" title="Toggle light/dark map" class="active">🌙</button>
                 <button id="btn-toggle-labels" title="Toggle station callsign labels">🏷️</button>
@@ -555,6 +556,13 @@
                                 <option value="168">7d</option>
                             </select>
                         </div>
+                        <div class="leaderboard-quality-controls">
+                            <label class="analytics-toggle" title="Include isolated long-distance positions that may be caused by incorrect station coordinates">
+                                <input type="checkbox" id="leaderboard-include-suspect">
+                                <span>Show unconfirmed positions</span>
+                            </label>
+                            <span id="leaderboard-quality-note">Direct RF paths are not limited by the map range.</span>
+                        </div>
                         <div id="leaderboard-list" class="leaderboard-list">
                             <div class="analytics-empty">No data yet. Stations will appear as RF packets are received.</div>
                         </div>
@@ -651,6 +659,13 @@
                                 <option value="168">7d</option>
                             </select>
                         </div>
+                        <div class="rf-history-filters">
+                            <label for="history-path-type">RF evidence</label>
+                            <select id="history-path-type"><option value="direct">Direct only</option><option value="relayed">Relayed only</option><option value="all">All RF</option></select>
+                            <label for="history-port">Receiver port</label>
+                            <input id="history-port" placeholder="All ports" aria-label="Receiver port name">
+                        </div>
+                        <p class="analytics-desc">These filters also apply to longest paths and the observed-range map. Relayed distances span station to home, not one measured RF hop.</p>
                         <p class="analytics-desc">Station distribution across 8 compass sectors from your station.</p>
                         <canvas id="bearing-radar-chart" width="300" height="300"></canvas>
                         <div id="bearing-sector-list" class="bearing-sector-list">
@@ -1326,6 +1341,16 @@
                             <input type="number" id="cfg-track-cleanup" min="1" step="1" value="60">
                         </div>
                         <div class="settings-row settings-row-stacked">
+                            <label for="cfg-packet-retention">Raw packet retention (days)</label>
+                            <input type="number" id="cfg-packet-retention" min="1" max="3650" value="7">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-history-retention">Detailed RF / weather history (days)</label>
+                            <input type="number" id="cfg-history-retention" min="1" max="3650" value="30">
+                        </div>
+                        <p id="storage-status" role="status">Loading storage status...</p>
+                        <p class="settings-hint">Expired RF detail becomes daily summaries. First-heard identities are preserved. Freed database pages are reused.</p>
+                        <div class="settings-row">
                             <label for="cfg-track-blocked-callsigns">Station Blocklist</label>
                             <textarea id="cfg-track-blocked-callsigns" rows="4" placeholder="W1AW-1&#10;W1AW"></textarea>
                         </div>
@@ -1345,7 +1370,9 @@
                             </select>
                         </div>
                         <div class="watched-builder">
-                            <div class="watched-builder-grid">
+                            <details class="watched-callbook-advanced">
+                                <summary>Advanced Callbook Setup <span>Optional QRZ / HamQTH credentials</span></summary>
+                                <div class="watched-builder-grid">
                                 <div class="settings-row">
                                     <label for="cfg-callbook-hamqth-user">HamQTH User</label>
                                     <input type="text" id="cfg-callbook-hamqth-user" autocomplete="username">
@@ -1362,15 +1389,18 @@
                                     <label for="cfg-callbook-qrz-pass">QRZ Password</label>
                                     <input type="password" id="cfg-callbook-qrz-pass" autocomplete="current-password">
                                 </div>
-                            </div>
-                            <div class="settings-row watched-builder-search">
-                                <label for="watched-builder-callsign">Station</label>
+                                </div>
+                                <p class="settings-note">Most lookups work without credentials through Callook or HamDB. Add these only if you prefer a signed-in provider.</p>
+                            </details>
+                            <div id="watched-builder-result" class="watched-builder-result">Enter a callsign and lookup its station location.</div>
+                            <div class="settings-row watched-builder-search watched-builder-target" id="watched-builder-target-row">
+                                <label for="watched-builder-callsign">Target station / label <span aria-hidden="true">*</span></label>
                                 <div class="watched-builder-search-controls">
-                                    <input type="text" id="watched-builder-callsign" placeholder="W1AW">
-                                    <button type="button" class="btn-small" id="btn-watched-lookup">Lookup</button>
+                                    <input type="text" id="watched-builder-callsign" maxlength="24" placeholder="W1AW or EM54 AREA" aria-describedby="watched-builder-label-help">
+                                    <button type="button" class="btn-small" id="btn-watched-lookup">Lookup Callsign</button>
+                                    <small id="watched-builder-label-help">Required. Enter a callsign for lookup, or a short name for a grid or area selected on the map.</small>
                                 </div>
                             </div>
-                            <div id="watched-builder-result" class="watched-builder-result">Enter a callsign and lookup its station location.</div>
                             <div class="watched-builder-grid">
                                 <div class="settings-row">
                                     <label for="watched-builder-grid">Grid</label>
@@ -2033,7 +2063,7 @@
                 <div class="about-panel">
                     <div class="about-header">
                         <h2>APRS PropView</h2>
-                        <span id="about-version" class="about-version">v1.9.0</span>
+                        <span id="about-version" class="about-version">v1.10.0</span>
                     </div>
                     <div class="about-section">
                         <p>A real-time APRS digipeater and IGate focused on VHF propagation, live mapping, APRS messaging, analytics, and weather-aware situational awareness.</p>
@@ -2050,7 +2080,7 @@
                     </div>
                     <div class="about-section">
                         <h3>Build Info</h3>
-                        <p>Version: <span id="about-version-detail">1.9.0</span></p>
+                        <p>Version: <span id="about-version-detail">1.10.0</span></p>
                         <p>Release Date: <span id="about-date">June 26, 2026</span></p>
                         <p>Highlights: Docker/app-registry deployment support, TrueNAS SCALE and Portainer templates, tighter watched-path target-area scoring, clearer digipeater path handling, container health diagnostics, and Windows update reliability fixes.</p>
                     </div>
@@ -2076,7 +2106,7 @@
                         <h3>Support APRS PropView</h3>
                         <p>If APRS PropView has been useful to you, you can support continued development here.</p>
                         <form action="https://www.paypal.com/ncp/payment/2TZHQAECTSDGC" method="post" target="_blank" class="about-donate-form">
-                            <input class="about-donate-btn" type="submit" value="Thanks with a DONATE">
+                            <input class="about-donate-btn" type="submit" value="Give Thanks with PayPal">
                             <img src="https://www.paypalobjects.com/images/Debit_Credit_APM.svg" alt="Accepted payment cards" class="about-donate-cards">
                             <section class="about-donate-powered">
                                 Powered by
@@ -2089,6 +2119,7 @@
                         </div>
                     </div>
                     <div id="about-documentation-actions" class="about-section about-doc-actions">
+                        <button id="btn-open-quick-start" class="btn-primary about-doc-btn">🚀 Illustrated Quick Start</button>
                         <a href="/static/documentation.html" target="_blank" rel="noreferrer" class="btn-primary about-doc-btn">Full HTML Documentation</a>
                         <button id="btn-open-help" class="btn-primary about-doc-btn">📖 Help &amp; User Guide</button>
                     </div>
@@ -2182,6 +2213,157 @@
         </div>
     </div>
 
+    <!-- ── Illustrated Quick Start ─────────────────────────────── -->
+    <div id="quick-start-modal" class="modal-overlay quick-start-overlay" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="quick-start-title">
+        <div class="modal-content quick-start-modal">
+            <div class="quick-start-header">
+                <div>
+                    <span class="quick-start-kicker">FIRST-RUN GUIDE</span>
+                    <h2 id="quick-start-title">Welcome to APRS PropView</h2>
+                </div>
+                <button id="quick-start-close" class="modal-close" type="button" aria-label="Close quick-start guide">&times;</button>
+            </div>
+            <div class="quick-start-progress" aria-label="Guide progress">
+                <span id="quick-start-progress-text">Step 1 of 6</span>
+                <div id="quick-start-dots" class="quick-start-dots" aria-hidden="true"></div>
+            </div>
+            <div class="quick-start-pages">
+                <article class="quick-start-page active" data-quick-start-step="0">
+                    <div class="quick-start-illustration">
+                        <svg viewBox="0 0 520 250" role="img" aria-label="APRS PropView map with station paths and monitoring panels">
+                            <rect class="qs-screen" x="25" y="18" width="470" height="214" rx="14"/>
+                            <rect class="qs-map" x="43" y="52" width="286" height="160" rx="8"/>
+                            <path class="qs-road" d="M55 178 C125 115 180 194 315 82"/>
+                            <path class="qs-path qs-direct" d="M112 166 L245 83"/>
+                            <path class="qs-path qs-relay" d="M112 166 L187 119 L292 161"/>
+                            <circle class="qs-home" cx="112" cy="166" r="10"/>
+                            <circle class="qs-station" cx="245" cy="83" r="8"/>
+                            <circle class="qs-station" cx="292" cy="161" r="8"/>
+                            <circle class="qs-hop" cx="187" cy="119" r="6"/>
+                            <rect class="qs-panel" x="346" y="52" width="130" height="42" rx="7"/>
+                            <rect class="qs-panel" x="346" y="104" width="130" height="42" rx="7"/>
+                            <rect class="qs-panel" x="346" y="156" width="130" height="56" rx="7"/>
+                            <text class="qs-label" x="359" y="69">DIRECT RF</text><text class="qs-value" x="359" y="86">Propagation</text>
+                            <text class="qs-label" x="359" y="121">REGIONAL</text><text class="qs-value" x="359" y="138">Activity</text>
+                            <text class="qs-label" x="359" y="175">WATCHED PATH</text><text class="qs-small" x="359" y="195">Evidence near target</text>
+                        </svg>
+                    </div>
+                    <div class="quick-start-copy">
+                        <h3>See what VHF APRS is doing</h3>
+                        <p>PropView shows who your station hears, how packets reached you, and whether recent direct RF paths suggest improving VHF conditions.</p>
+                        <div class="quick-start-callout"><strong>Good starting point:</strong> configure reception first. Transmit features are optional and remain under your control.</div>
+                    </div>
+                </article>
+
+                <article class="quick-start-page" data-quick-start-step="1" hidden>
+                    <div class="quick-start-illustration">
+                        <svg viewBox="0 0 520 250" role="img" aria-label="Station and location settings with callsign and map pin">
+                            <rect class="qs-card" x="45" y="28" width="300" height="194" rx="12"/>
+                            <text class="qs-heading" x="67" y="57">Station &amp; Location</text>
+                            <text class="qs-label" x="67" y="86">CALLSIGN</text><rect class="qs-input" x="67" y="94" width="250" height="30" rx="5"/><text class="qs-input-text" x="80" y="114">K5YVY</text>
+                            <text class="qs-label" x="67" y="146">POSITION</text><rect class="qs-input" x="67" y="154" width="115" height="30" rx="5"/><rect class="qs-input" x="202" y="154" width="115" height="30" rx="5"/>
+                            <text class="qs-small" x="78" y="174">34.5000</text><text class="qs-small" x="213" y="174">-89.0000</text>
+                            <path class="qs-pin" d="M420 63c-31 0-55 24-55 55 0 43 55 103 55 103s55-60 55-103c0-31-24-55-55-55z"/>
+                            <circle class="qs-pin-center" cx="420" cy="117" r="19"/>
+                        </svg>
+                    </div>
+                    <div class="quick-start-copy">
+                        <h3>1. Identify your station</h3>
+                        <p>In <strong>Settings → Station &amp; Location</strong>, enter your callsign and accurate station coordinates. These coordinates anchor distances, bearings, propagation paths, weather, and watched targets.</p>
+                        <ul><li>Use the map picker when you do not know the coordinates.</li><li>Choose Imperial or Metric under Map &amp; Display.</li></ul>
+                    </div>
+                </article>
+
+                <article class="quick-start-page" data-quick-start-step="2" hidden>
+                    <div class="quick-start-illustration">
+                        <svg viewBox="0 0 520 250" role="img" aria-label="Radio TNC and APRS-IS feeding APRS PropView">
+                            <rect class="qs-device" x="25" y="63" width="135" height="74" rx="10"/><text class="qs-heading" x="61" y="93">RADIO / TNC</text><text class="qs-small" x="53" y="116">KISS or TNC2 RX</text>
+                            <rect class="qs-device" x="25" y="158" width="135" height="54" rx="10"/><text class="qs-heading" x="58" y="190">APRS-IS</text>
+                            <path class="qs-arrow" d="M168 100 H253"/><path class="qs-arrow" d="M168 185 H253"/>
+                            <rect class="qs-app" x="265" y="69" width="220" height="136" rx="16"/>
+                            <text class="qs-heading" x="296" y="102">APRS PropView</text>
+                            <rect class="qs-status-ok" x="298" y="122" width="70" height="28" rx="14"/><text class="qs-pill-text" x="315" y="141">RF RX</text>
+                            <rect class="qs-status-info" x="378" y="122" width="76" height="28" rx="14"/><text class="qs-pill-text" x="393" y="141">IS RX</text>
+                            <text class="qs-small" x="297" y="176">Start with receive paths.</text>
+                        </svg>
+                    </div>
+                    <div class="quick-start-copy">
+                        <h3>2. Connect a receive source</h3>
+                        <p>Add a serial or TCP TNC under <strong>Radio &amp; TNC</strong>. APRS-IS can provide regional context, but direct RF reception is the strongest evidence for conditions at your station.</p>
+                        <div class="quick-start-callout warning"><strong>Before enabling transmit:</strong> verify your callsign, RF path, passcode, frequency, and local operating requirements. Use packet previews first.</div>
+                    </div>
+                </article>
+
+                <article class="quick-start-page" data-quick-start-step="3" hidden>
+                    <div class="quick-start-illustration">
+                        <svg viewBox="0 0 520 250" role="img" aria-label="Direct, digipeated, and Internet station paths on the map">
+                            <rect class="qs-map" x="25" y="24" width="470" height="202" rx="12"/>
+                            <circle class="qs-home" cx="100" cy="177" r="11"/><text class="qs-small" x="65" y="205">MY STATION</text>
+                            <circle class="qs-station" cx="259" cy="68" r="9"/><text class="qs-small" x="236" y="49">DIRECT</text>
+                            <path class="qs-path qs-direct" d="M111 168 L249 77"/>
+                            <circle class="qs-hop" cx="245" cy="158" r="7"/><circle class="qs-station" cx="420" cy="95" r="9"/>
+                            <path class="qs-path qs-relay" d="M111 177 L245 158 L411 102"/>
+                            <text class="qs-small" x="218" y="184">DIGI</text><text class="qs-small" x="390" y="77">RELAYED</text>
+                            <circle class="qs-network" cx="413" cy="190" r="9"/><text class="qs-small" x="378" y="215">APRS-IS</text>
+                        </svg>
+                    </div>
+                    <div class="quick-start-copy">
+                        <h3>3. Read the map correctly</h3>
+                        <ul><li><strong>Direct RF</strong> paths run straight from the transmitting station to you.</li><li><strong>Relayed RF</strong> paths pass through known digipeaters.</li><li><strong>APRS-IS</strong> stations provide network context and do not prove that your radio heard them.</li></ul>
+                        <p>Use the Direct RF control when evaluating reception at your own antenna.</p>
+                    </div>
+                </article>
+
+                <article class="quick-start-page" data-quick-start-step="4" hidden>
+                    <div class="quick-start-illustration">
+                        <svg viewBox="0 0 520 250" role="img" aria-label="Propagation meters and Maidenhead watched path selection">
+                            <rect class="qs-card" x="25" y="35" width="218" height="175" rx="12"/>
+                            <text class="qs-heading" x="48" y="67">PROPAGATION</text>
+                            <path class="qs-gauge" d="M61 145 A72 72 0 0 1 205 145"/>
+                            <path class="qs-needle" d="M133 145 L184 98"/><circle class="qs-home" cx="133" cy="145" r="7"/>
+                            <text class="qs-small" x="76" y="181">Fresh direct paths</text>
+                            <rect class="qs-map" x="265" y="35" width="230" height="175" rx="12"/>
+                            <path class="qs-grid" d="M265 93H495M265 151H495M342 35V210M419 35V210"/>
+                            <rect class="qs-grid-selected" x="342" y="93" width="77" height="58" rx="2"/>
+                            <text class="qs-heading" x="361" y="127">EM54</text>
+                            <path class="qs-arrow-short" d="M380 159v34"/>
+                        </svg>
+                    </div>
+                    <div class="quick-start-copy">
+                        <h3>4. Turn observations into decisions</h3>
+                        <p>The two propagation meters separate direct reception at your station from broader regional RF activity. Click a meter to inspect its evidence and freshness.</p>
+                        <p>Enable <strong>Grid</strong> on the map, choose a Maidenhead square, enter a target station or area label, and add it as a watched path.</p>
+                    </div>
+                </article>
+
+                <article class="quick-start-page" data-quick-start-step="5" hidden>
+                    <div class="quick-start-illustration">
+                        <svg viewBox="0 0 520 250" role="img" aria-label="Completion checklist for APRS PropView setup">
+                            <rect class="qs-card" x="70" y="25" width="380" height="205" rx="14"/>
+                            <text class="qs-heading" x="101" y="60">READY CHECK</text>
+                            <circle class="qs-check" cx="112" cy="91" r="13"/><path class="qs-checkmark" d="M105 91l5 5 10-12"/><text class="qs-copy" x="140" y="97">Station identity and location saved</text>
+                            <circle class="qs-check" cx="112" cy="127" r="13"/><path class="qs-checkmark" d="M105 127l5 5 10-12"/><text class="qs-copy" x="140" y="133">At least one receive source connected</text>
+                            <circle class="qs-check" cx="112" cy="163" r="13"/><path class="qs-checkmark" d="M105 163l5 5 10-12"/><text class="qs-copy" x="140" y="169">RF and APRS-IS sources understood</text>
+                            <circle class="qs-check" cx="112" cy="199" r="13"/><path class="qs-checkmark" d="M105 199l5 5 10-12"/><text class="qs-copy" x="140" y="205">Configuration backed up</text>
+                        </svg>
+                    </div>
+                    <div class="quick-start-copy">
+                        <h3>5. You are ready to observe</h3>
+                        <p>Let PropView collect a normal baseline before tuning propagation alerts. The alert helper becomes more useful after about 24 hours of representative RF history.</p>
+                        <p>You can reopen this guide at any time from <strong>About/Help → Illustrated Quick Start</strong> or from the full Help &amp; User Guide.</p>
+                    </div>
+                </article>
+            </div>
+            <div class="quick-start-footer">
+                <button id="quick-start-skip" class="btn-small" type="button">Skip Guide</button>
+                <div class="quick-start-nav">
+                    <button id="quick-start-back" class="btn-small" type="button" disabled>Back</button>
+                    <button id="quick-start-next" class="btn-primary" type="button">Next</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- ── Help Modal ──────────────────────────────────────────── -->
     <div id="help-modal" class="modal-overlay" style="display:none;">
         <div class="modal-content help-modal">
@@ -2194,6 +2376,7 @@
                 <section class="help-section">
                     <h3>Overview</h3>
                     <p>APRS PropView is a real-time APRS digipeater and Internet Gateway (IGate) application focused on visualizing VHF propagation conditions. It decodes APRS packets from RF (via a TNC) and APRS-IS, plots stations on a live map, draws signal paths, scores propagation quality, and adds weather radar plus configurable NWS alert overlays for faster storm awareness.</p>
+                    <p><button id="btn-help-quick-start" class="btn-primary">🚀 Open Illustrated Quick Start</button></p>
                     <p><a href="https://www.youtube.com/watch?v=OyX6RaNevUk&t=76s" target="_blank" class="about-link" rel="noreferrer">Watch the APRS PropView video guide</a></p>
                 </section>
 
@@ -2385,6 +2568,8 @@
     </div>
 
     <script defer src="/static/js/websocket.js?v=__ASSET_VERSION__"></script>
+    <script defer src="/static/js/ui-updates.js?v=__ASSET_VERSION__"></script>
+    <script defer src="/static/js/maidenhead.js?v=__ASSET_VERSION__"></script>
     <script defer src="/static/js/map.js?v=__ASSET_VERSION__"></script>
     <script defer src="/static/js/stations.js?v=__ASSET_VERSION__"></script>
     <script defer src="/static/js/icons.js"></script>
@@ -2392,6 +2577,9 @@
     <script defer src="/static/js/messages.js?v=__ASSET_VERSION__"></script>
     <script defer src="/static/js/weather.js?v=__ASSET_VERSION__"></script>
     <script defer src="/static/js/alert-audio.js?v=__ASSET_VERSION__"></script>
+    <script defer src="/static/js/propagation-evidence.js?v=__ASSET_VERSION__"></script>
+    <script defer src="/static/js/onboarding.js?v=__ASSET_VERSION__"></script>
     <script defer src="/static/js/app.js?v=__ASSET_VERSION__"></script>
+    <script defer src="/static/js/usability.js?v=__ASSET_VERSION__"></script>
 </body>
 </html>

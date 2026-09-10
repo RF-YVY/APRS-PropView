@@ -362,7 +362,7 @@
         }, 30000);
 
         setInterval(() => {
-            refreshLiveData();
+            if (!document.hidden && (!window.pvWebSocket?.isConnected || Date.now() - (window._lastFullSync || 0) > 300000)) refreshLiveData();
         }, 30000);
 
         window.addEventListener('beforeunload', (e) => {
@@ -1374,6 +1374,7 @@
         });
 
         ws.on('connected', () => {
+            window.pvStations?.loadRecentPackets();
             // Fetch propagation history for charts
             fetchPropagationHistory();
             window.pvMessages?.render();
@@ -1399,14 +1400,33 @@
         const clearBtn = document.getElementById('btn-clear-notifications');
         if (!wrap || !btn) return;
 
+        const panel = document.getElementById('notification-panel');
+        if (panel) document.body.appendChild(panel);
+
+        const positionPanel = () => {
+            if (!panel || panel.hidden) return;
+            const rect = btn.getBoundingClientRect();
+            const margin = 8;
+            const width = Math.min(360, window.innerWidth - margin * 2);
+            const left = Math.max(margin, Math.min(rect.right - width, window.innerWidth - width - margin));
+            panel.style.width = `${width}px`;
+            panel.style.left = `${left}px`;
+            panel.style.right = 'auto';
+            panel.style.top = `${Math.min(rect.bottom + 8, window.innerHeight - 120)}px`;
+            const availableHeight = Math.max(110, window.innerHeight - rect.bottom - 20);
+            panel.style.maxHeight = `${availableHeight}px`;
+            panel.querySelector('.notification-list')?.style.setProperty('max-height', `${Math.max(68, availableHeight - 43)}px`);
+        };
+
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             const open = wrap.classList.toggle('open');
             btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-            document.getElementById('notification-panel')?.toggleAttribute('hidden', !open);
+            panel?.toggleAttribute('hidden', !open);
             if (open) {
                 unreadNotifications = 0;
                 renderHeaderNotifications();
+                positionPanel();
             }
         });
         clearBtn?.addEventListener('click', (e) => {
@@ -1416,11 +1436,13 @@
             renderHeaderNotifications();
         });
         document.addEventListener('click', (e) => {
-            if (wrap.contains(e.target)) return;
+            if (wrap.contains(e.target) || panel?.contains(e.target)) return;
             wrap.classList.remove('open');
             btn.setAttribute('aria-expanded', 'false');
-            document.getElementById('notification-panel')?.setAttribute('hidden', '');
+            panel?.setAttribute('hidden', '');
         });
+        window.addEventListener('resize', positionPanel);
+        window.addEventListener('scroll', positionPanel, true);
         renderHeaderNotifications();
     }
 
@@ -1704,6 +1726,7 @@
 
         const previousStatus = lastStatus;
         lastStatus = status;
+        window.pvEvidence?.status(status);
         serverConfig = status;
         uptimeStart = Date.now() / 1000 - (status.uptime_seconds || 0);
 
@@ -1772,6 +1795,8 @@
     function updatePropagation(data) {
         if (!data) return;
 
+        window.pvEvidence?.update(data, lastStatus);
+
         // ── My Station meter (direct-heard only) ───────────
         const myScore = data.my_score || 0;
         const myLevel = data.my_level || 'none';
@@ -1780,7 +1805,7 @@
             myBar.style.width = `${Math.min(myScore, 100)}%`;
             myBar.className = `prop-bar ${myLevel}`;
         }
-        setTextById('prop-level-my', myLevel.toUpperCase());
+        setTextById('prop-level-my', data.evidence?.state === 'awaiting_live' ? 'HISTORY' : data.evidence?.state === 'no_data' ? 'NO DATA' : data.evidence?.state === 'stale' ? 'STALE' : myLevel.toUpperCase());
         setTextById('prop-score-my', `Score: ${myScore.toFixed(0)}`);
         document.getElementById('prop-meter-my')?.style.setProperty('--radio-meter-score', Math.min(myScore, 100));
 
@@ -1792,7 +1817,7 @@
             regBar.style.width = `${Math.min(score, 100)}%`;
             regBar.className = `prop-bar ${level}`;
         }
-        setTextById('prop-level-reg', level.toUpperCase());
+        setTextById('prop-level-reg', data.evidence?.state === 'awaiting_live' ? 'HISTORY' : data.evidence?.state === 'no_data' ? 'NO DATA' : data.evidence?.state === 'stale' ? 'STALE' : level.toUpperCase());
         setTextById('prop-score-reg', `Score: ${score.toFixed(0)}`);
         document.getElementById('prop-meter-reg')?.style.setProperty('--radio-meter-score', Math.min(score, 100));
 
@@ -2116,7 +2141,8 @@
     }
 
     async function refreshLiveData() {
-        if (liveSyncPending) return;
+        if (liveSyncPending || document.hidden) return;
+        window._lastFullSync = Date.now();
         liveSyncPending = true;
         try {
             const [statusResp, stationsResp] = await Promise.all([
@@ -2619,22 +2645,23 @@
             (!!aprsIsPasscodeConfigured && pass.includes('*'));
         const aprsFilter = buildFilterString();
         const ports = collectRfPorts();
-        const path = getVal('cfg-beacon-path') || '';
-        const historyItems = Array.from(document.querySelectorAll('.transmit-history-item'));
+        const aprsEnabled = !!document.getElementById('cfg-is-enabled')?.checked;
         const items = [
-            ['callsign', !!call && !['N0CALL', 'NOCALL', 'MYCALL', 'TEST'].includes(call), 'Callsign set'],
-            ['location', Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0), 'Station location set'],
-            ['passcode', passcodeConfigured, 'APRS-IS passcode set for transmitting'],
-            ['filter', !!aprsFilter, 'APRS-IS server filter set, for example r/35/-79/80 or r/35.5/-79.8/80'],
-            ['rf', ports.some((port) => port.enabled), 'At least one RF port configured'],
-            ['path', path !== undefined, `Beacon path chosen (${path || 'DIRECT'})`],
-            ['save', !settingsDirty, 'Settings saved'],
-            ['test', historyItems.length > 0, 'Preview or test transmit completed'],
+            ['station', !!call && !['N0CALL', 'NOCALL', 'MYCALL', 'TEST'].includes(call), 'Set your callsign'],
+            ['station', Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0), 'Set the station location'],
+            ['radio', ports.some((port) => port.enabled) || aprsEnabled, 'Enable at least one receive source'],
+            ['radio', !aprsEnabled || !!aprsFilter, 'Set an APRS-IS range filter'],
+            ['radio', !aprsEnabled || passcodeConfigured, 'Set the APRS-IS passcode when transmitting'],
+            ['overview', !settingsDirty, 'Save the current settings'],
         ];
-        list.innerHTML = items.map(([, done, label]) => (
-            `<div class="first-run-item ${done ? 'done' : ''}">${escapeHtml(label)}</div>`
+        list.innerHTML = items.map(([category, done, label]) => (
+            `<button type="button" class="first-run-item ${done ? 'done' : ''}" data-settings-jump="${category}">
+                <span class="first-run-state" aria-hidden="true">${done ? '✓' : '→'}</span>
+                <span>${escapeHtml(label)}</span>
+            </button>`
         )).join('');
     }
+    window.pvUpdateFirstRunChecklist = updateFirstRunChecklist;
 
     function defaultRfPort(type) {
         const normalized = type === 'tcp' ? 'tcp' : 'serial';
@@ -3047,6 +3074,9 @@
             window._expireMinutes = cfg.web?.expire_after_minutes ?? 0;
 
             // Tracking
+            setVal('cfg-packet-retention', cfg.database?.packet_retention_days || 7);
+            setVal('cfg-history-retention', cfg.database?.history_retention_days || 30);
+            fetch('/api/storage').then(r => r.json()).then(s => { const el = document.getElementById('storage-status'); if (el) el.textContent = `Database: ${(s.size_bytes/1048576).toFixed(1)} MB; ${(s.reusable_bytes/1048576).toFixed(1)} MB reusable. Detailed history: ${s.history_retention_days} days.`; }).catch(() => {});
             setVal('cfg-track-age', Math.round((cfg.tracking?.max_station_age || 0) / 60));
             setVal('cfg-track-cleanup', Math.round((cfg.tracking?.cleanup_interval || 0) / 60));
             setVal('cfg-track-blocked-callsigns', (cfg.tracking?.blocked_callsigns || []).join('\n'));
@@ -3371,8 +3401,8 @@
         const powerW = Math.max(0.1, parseFloat(getVal('watched-builder-power-w')) || 50);
         const gainDbi = Math.max(-20, Math.min(30, parseFloat(getVal('watched-builder-gain-dbi')) || 0));
         const radiusKm = Math.max(10, Math.min(500, parseFloat(getVal('watched-builder-radius-km')) || 100));
-        if (!/^[A-Z0-9]{1,9}(-([0-9]|1[0-5]))?$/.test(callsign)) {
-            throw new Error('Enter a valid target callsign.');
+        if (!callsign || callsign.length > 24 || /[|\r\n]/.test(callsign)) {
+            throw new Error('Enter a target station callsign or short area label.');
         }
         if (grid) {
             return [callsign, grid, band, confidence, mode, frequency, myHeightM, targetHeightM, powerW, gainDbi, radiusKm].join('|');
@@ -3471,6 +3501,26 @@
                 lookupWatchedPathCallsign();
             }
         });
+        document.getElementById('watched-builder-callsign')?.addEventListener('input', () => {
+            document.getElementById('watched-builder-target-row')?.classList.remove('needs-label');
+        });
+        window.addEventListener('pvgridselect', (event) => {
+            const selected = event.detail || {};
+            setVal('watched-builder-grid', selected.locator || '');
+            setVal('watched-builder-lat', Number(selected.center?.[0]).toFixed(5));
+            setVal('watched-builder-lon', Number(selected.center?.[1]).toFixed(5));
+            document.querySelector('.tab-btn[data-tab="tab-settings"]')?.click();
+            window.pvActivateSettingsCategory?.('propagation');
+            const section = document.querySelector('[data-settings-key="watched-paths"]');
+            section?.classList.remove('collapsed');
+            section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            const targetRow = document.getElementById('watched-builder-target-row');
+            const targetInput = document.getElementById('watched-builder-callsign');
+            targetRow?.classList.add('needs-label');
+            targetInput?.focus({ preventScroll: true });
+            setWatchedBuilderResult(`${selected.locator} selected. Enter a target station or area label in the highlighted field below, then add the watched path.`, 'success');
+            markSettingsDirty();
+        });
     }
 
     async function saveSettings() {
@@ -3566,6 +3616,10 @@
                 visual_watched_path_flow: getChk('cfg-visual-watched-path-flow'),
                 visual_activity_moments: getChk('cfg-visual-activity-moments'),
                 visual_packet_animation: getVal('cfg-visual-packet-animation') || 'basic',
+            },
+            database: {
+                packet_retention_days: Number(getVal("cfg-packet-retention")),
+                history_retention_days: Number(getVal("cfg-history-retention")),
             },
             tracking: {
                 max_station_age: (parseInt(getVal('cfg-track-age')) || 0) * 60,
