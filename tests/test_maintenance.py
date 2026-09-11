@@ -80,6 +80,17 @@ class EvidenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(accepted), 2)
         self.assertEqual(rejected[0]['quality_reason'], "Position conflicts with this station's repeated location")
 
+    def test_legacy_coordinate_less_row_survives_new_position_cluster(self):
+        rows = [
+            {'callsign': 'W1LEGACY', 'distance_km': 100, 'latitude': None, 'longitude': None},
+            {'callsign': 'W1LEGACY', 'distance_km': 102, 'latitude': 35, 'longitude': -90},
+            {'callsign': 'W1LEGACY', 'distance_km': 103, 'latitude': 35.1, 'longitude': -90.1},
+        ]
+        accepted, rejected = grade_position_observations(rows)
+        self.assertEqual(len(accepted), 3)
+        self.assertEqual(rejected, [])
+        self.assertEqual(accepted[0]['quality_status'], 'plausible')
+
     async def test_es_does_not_join_near_direct_with_distant_relay(self):
         await self.db.log_path_event('W1ABC', 20, 0, is_direct=True)
         await self.db.log_path_event('W1ABC', 900, 90, is_direct=False, hop_count=3)

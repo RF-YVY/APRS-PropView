@@ -120,7 +120,10 @@ def grade_position_observations(rows):
         if row["distance_km"] >= LONG_PATH_CONFIRMATION_KM and support < 2:
             reason = ("Long path has no confirming reception"
                       if has_position else "Long path has no stored coordinates to verify")
-        elif strongest_cluster >= 2 and support < 2:
+        # Pre-1.10 path_history rows have no stored coordinates. They can still
+        # carry a valid distance, but cannot be compared with a newer position
+        # cluster. Only run the geographic conflict check for positioned rows.
+        elif has_position and strongest_cluster >= 2 and support < 2:
             if cluster_rows and min(
                 _surface_distance_km(row["latitude"], row["longitude"],
                                      candidate["latitude"], candidate["longitude"])
