@@ -1,6 +1,6 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.10.1** | September 11, 2026
+**Version 1.10.2** | September 14, 2026
 
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/RF-YVY/APRS-PropView/total)
@@ -30,6 +30,13 @@ Version 1.9.0 added live packet-flow animation to the APRS map, including statio
 
 Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs/linux-raspberry-pi.md).
 Docker, TrueNAS SCALE, Portainer, and app-registry installs are covered in [docs/docker.md](docs/docker.md).
+
+## 1.10.2
+
+- Operating Mode Preset now reports **Custom configuration** when manually selected settings do not exactly match a built-in preset.
+- Added a contextual setup guide for TNC/port, APRS-IS, IGate, digipeater, GPS-source, and station-beacon settings.
+- Added a final review before saving newly enabled transmit capabilities, plus optional transmit-setting protection and saved-configuration reload. Configuration backup remains in the Overview Settings Backup panel.
+- APRS Objects now directs new-object creation through the guided map editor while keeping the saved-record field focused on reviewing, modifying, and removing existing objects.
 
 ## 1.10.1
 
@@ -152,7 +159,9 @@ The mobile PIN/access model is unchanged in this release.
 - **Precise Save Impact** — Save confirmation distinguishes settings applied immediately, browser refresh requirements, and full application restart requirements
 - **Section Reset And Validation Routing** — Restore one section to its last saved values and automatically open the category containing an invalid field
 - **Actionable Setup Checklist** — Callsign, location, receive-source, APRS-IS, and save checks link directly to the setting that needs attention
-- **Operating Mode Presets** — Stage receive-only RF, RF plus APRS-IS, receive-only IGate, digipeater, bidirectional IGate, or mobile settings for review before saving
+- **Operating Mode Presets** — Show the preset matching the current form, identify manually combined settings as a custom configuration, or stage receive-only RF, RF plus APRS-IS, receive-only IGate, digipeater, bidirectional IGate, or mobile settings for review before saving
+- **Contextual Setup Guide** — Summarize the active station topology and link directly to the RF/TNC, APRS-IS, IGate, digipeater, GPS-source, and beacon settings relevant to it
+- **Transmit-Safe Saves** — Review newly enabled transmit capabilities before they become operational, export a configuration backup, optionally protect transmit settings, or reload the last saved configuration
 - **Basic and Advanced Views** — Keep routine station, receiver, map, propagation, watched-path, and alert controls visible while optional transmit and integration features stay one click away
 - **Configuration Readiness** — Flag missing identity/location/source settings, APRS-IS login/filter issues, and transmit-capable choices before operation
 - **Clickable Connection Diagnostics** — Select the RF, APRS-IS, or WebSocket header indicator for a plain-language status report and direct settings links
@@ -298,7 +307,7 @@ the current `APRSPropView.exe`.
 Installer upgrades replace the application executable and bundled files only.
 User data such as `config.toml`, `propview.db`, `map_tile_cache/`, and
 `user_audio/` is left in place. Publish both `APRSPropView.exe` and the setup
-asset on GitHub releases; assets named like `APRSPropViewSetup-1.10.1.exe` are
+asset on GitHub releases; assets named like `APRSPropViewSetup-1.10.2.exe` are
 detected by the in-app update checker so users can click **Install Update** in
 the About tab. On Linux, Raspberry Pi, and macOS, users still see release
 notices but installer-based update buttons are hidden because those platforms

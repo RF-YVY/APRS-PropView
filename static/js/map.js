@@ -2171,6 +2171,13 @@ class PropViewMap {
             e.target.classList.add('active');
         });
 
+        document.getElementById('btn-open-map-object-editor')?.addEventListener('click', () => {
+            if (typeof window.pvCloseSettingsPane === 'function') {
+                window.pvCloseSettingsPane();
+            }
+            document.getElementById('btn-create-object')?.click();
+        });
+
         document.getElementById('btn-toggle-theme')?.addEventListener('click', (e) => {
             const dark = this.toggleTheme();
             e.target.classList.toggle('active', dark);

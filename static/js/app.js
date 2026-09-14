@@ -3243,6 +3243,7 @@
             captureSettingsSnapshots();
             updateFirstRunChecklist();
             loadTransmitHistory();
+            document.dispatchEvent(new CustomEvent('pvsettingsloaded', { detail: { config: serverConfig } }));
             const statusEl = document.getElementById('settings-status');
             if (statusEl && statusEl.classList.contains('dirty')) {
                 statusEl.style.display = 'none';
@@ -3252,6 +3253,7 @@
         // Update icon picker preview with loaded symbol
         window.pvIconPicker.updatePreviewFromConfig();
     }
+    window.pvReloadSavedSettings = loadSettings;
 
     function collectAlertSettings() {
         return {
@@ -3740,6 +3742,17 @@
             },
         };
 
+        let transmitSaveApproved = false;
+        try {
+            transmitSaveApproved = await (window.pvConfirmTransmitSettingsSave?.(body) ?? true);
+        } catch (error) {
+            console.error('Could not complete the transmit-safety review:', error);
+        }
+        if (!transmitSaveApproved) {
+            buttons.forEach((btn) => { btn.disabled = false; });
+            return;
+        }
+
         try {
             const resp = await fetch('/api/config/save', {
                 method: 'POST',
@@ -3777,6 +3790,7 @@
                 clearSettingsDirty();
                 captureSettingsSnapshots();
                 updateFirstRunChecklist();
+                document.dispatchEvent(new CustomEvent('pvsettingssaved', { detail: { config: body } }));
                 window.pvMap?.setVisualizationConfig?.(body.web || {});
                 window.pvConfigPromise = null;
                 serverConfig = { ...(serverConfig || {}), alerts: { ...body.alerts } };

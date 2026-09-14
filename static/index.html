@@ -799,6 +799,10 @@
                                 <button type="button" class="btn-small" id="btn-config-import">Import Settings</button>
                                 <input type="file" id="cfg-config-import-file" accept=".toml,.txt" hidden>
                             </div>
+                            <label class="settings-backup-protect">
+                                <input type="checkbox" id="protect-transmit-settings" data-local-setting>
+                                <span><strong>Protect transmit settings</strong><small>Blocks saves that add transmit capability until deliberately unlocked.</small></span>
+                            </label>
                             <p class="settings-note">Export before experimenting with host, port, APRS-IS, or RF settings. Imported settings require an app restart.</p>
                         </div>
                         <div class="settings-utility-panel">
@@ -1057,16 +1061,23 @@
                                 <option value="WIDE1-1,WIDE2-1">WIDE1-1,WIDE2-1</option>
                             </select>
                         </div>
+                        <div class="object-map-editor-callout full-width" role="note" aria-labelledby="object-map-editor-title">
+                            <div>
+                                <strong id="object-map-editor-title">Create new objects on the map</strong>
+                                <p>Choose the location visually, then use the guided editor for the symbol, scope, status, motion, repeater details, QRU, path, and transmit options.</p>
+                            </div>
+                            <button type="button" class="btn-primary" id="btn-open-map-object-editor">Create Object on Map</button>
+                        </div>
                         <div class="settings-row full-width">
-                            <label for="cfg-objects-items">Objects</label>
-                            <textarea id="cfg-objects-items" rows="7" placeholder="NAME|lat|lon|table|symbol|comment|enabled|active|permanent|scope|speed_mph|course|freq|tone|duplex|qru|path|mode|overlay"></textarea>
+                            <label for="cfg-objects-items">Saved Objects</label>
+                            <textarea id="cfg-objects-items" rows="7" aria-describedby="cfg-objects-items-help" placeholder="Objects created from the map appear here."></textarea>
+                            <p id="cfg-objects-items-help" class="object-records-help"><strong>Review, edit, or remove existing objects here.</strong> Each line is one saved object record. Create new objects with the map editor so all required values are formatted correctly.</p>
                         </div>
                         <div id="cfg-objects-preview" class="status-preview">Not checked</div>
                         <div class="settings-actions">
                             <button type="button" class="btn-small" id="btn-objects-preview">Preview Objects</button>
                             <button type="button" class="btn-small" id="btn-objects-test">Transmit Now</button>
                         </div>
-                        <p class="settings-note">Use the map Obj button for the full editor with symbol, scope, active/killed, permanent item, motion, repeater, QRU, path, and transmit controls.</p>
                     </div>
 
                     <!-- Digipeater -->
@@ -2063,7 +2074,7 @@
                 <div class="about-panel">
                     <div class="about-header">
                         <h2>APRS PropView</h2>
-                        <span id="about-version" class="about-version">v1.10.1</span>
+                        <span id="about-version" class="about-version">v1.10.2</span>
                     </div>
                     <div class="about-section">
                         <p>A real-time APRS digipeater and IGate focused on VHF propagation, live mapping, APRS messaging, analytics, and weather-aware situational awareness.</p>
@@ -2080,9 +2091,9 @@
                     </div>
                     <div class="about-section">
                         <h3>Build Info</h3>
-                        <p>Version: <span id="about-version-detail">1.10.1</span></p>
-                        <p>Release Date: <span id="about-date">September 11, 2026</span></p>
-                        <p>Highlights: Restores the Longest Path leaderboard for upgraded installations whose retained history includes observations recorded before reception coordinates were stored.</p>
+                        <p>Version: <span id="about-version-detail">1.10.2</span></p>
+                        <p>Release Date: <span id="about-date">September 14, 2026</span></p>
+                        <p>Highlights: Adds accurate custom-mode reporting, contextual setup guidance, transmit-safe settings saves, and a clearer map-first APRS object workflow.</p>
                     </div>
                     <div class="about-section">
                         <h3>Video Guide</h3>
