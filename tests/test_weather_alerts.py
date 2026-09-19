@@ -1,6 +1,22 @@
 import unittest
 
 import server.weather as weather_module
+from server.config import Config, WatchedPathConfig
+
+
+class _WeatherAlertManagerStub:
+    def __init__(self):
+        self.recorded = []
+        self.sent = []
+
+    def _is_quiet_time(self):
+        return False
+
+    def record_alert(self, alert):
+        self.recorded.append(alert)
+
+    async def send_alert(self, alert, channels=None):
+        self.sent.append((alert, channels))
 
 
 class WeatherAlertGeometryTests(unittest.IsolatedAsyncioTestCase):
@@ -169,6 +185,57 @@ class WeatherAlertGeometryTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
         self.assertIn("High (1026 mb)", ducting["scoring"][1]["detail"])
+
+    async def test_weather_alert_destinations_are_independent_and_deduplicated(self):
+        config = Config()
+        config.weather.weather_alert_email_enabled = True
+        alert_manager = _WeatherAlertManagerStub()
+        manager = weather_module.WeatherManager(config, alert_manager=alert_manager)
+        active = [{
+            "id": "nws-alert-1",
+            "event": "Severe Thunderstorm Warning",
+            "alert_type": "warning",
+            "severity": "Severe",
+            "area_desc": "Test County",
+            "headline": "Severe storms are moving through the area.",
+        }]
+
+        await manager._notify_new_weather_alerts(active)
+        await manager._notify_new_weather_alerts(active)
+
+        self.assertEqual(len(alert_manager.sent), 1)
+        self.assertEqual(alert_manager.sent[0][0]["type"], "weather_warning")
+        self.assertEqual(alert_manager.sent[0][1], ["email"])
+
+    async def test_watched_site_weather_alert_is_opt_in_and_deduplicated(self):
+        config = Config()
+        config.watched_paths = [WatchedPathConfig(
+            callsign="EVENT SITE",
+            latitude=35.5,
+            longitude=-90.5,
+            watch_weather_enabled=True,
+            watch_discord_enabled=True,
+        )]
+        alert_manager = _WeatherAlertManagerStub()
+        manager = weather_module.WeatherManager(config, alert_manager=alert_manager)
+        original = weather_module.fetch_nws_alerts
+
+        async def fake_alerts(lat, lon, **kwargs):
+            return [{
+                "id": "remote-alert-1", "event": "Tornado Warning", "alert_type": "warning",
+                "severity": "Extreme", "area_desc": "Remote County", "headline": "Take shelter now.",
+            }]
+
+        weather_module.fetch_nws_alerts = fake_alerts
+        try:
+            await manager._poll_watched_weather_alerts()
+            manager._watched_weather_last_fetch.clear()
+            await manager._poll_watched_weather_alerts()
+        finally:
+            weather_module.fetch_nws_alerts = original
+        self.assertEqual(len(alert_manager.sent), 1)
+        self.assertEqual(alert_manager.sent[0][0]["watch_location"], "EVENT SITE")
+        self.assertEqual(alert_manager.sent[0][1], ["discord"])
 
 
 if __name__ == "__main__":

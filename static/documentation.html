@@ -278,6 +278,8 @@
         }
 
         .card {
+            display: flex;
+            flex-direction: column;
             border: 1px solid var(--border);
             border-radius: 8px;
             background: var(--panel-2);
@@ -342,7 +344,12 @@
 
         @media (max-width: 860px) {
             .layout {
-                grid-template-columns: 1fr;
+                grid-template-columns: minmax(0, 1fr);
+            }
+
+            .layout > *,
+            main {
+                min-width: 0;
             }
 
             .toc {
@@ -363,6 +370,35 @@
                 width: 185px;
                 height: 48px;
             }
+        }
+
+        @media (max-width: 640px) {
+            .page {
+                width: min(100% - 20px, 1180px);
+                padding-top: 14px;
+            }
+
+            .topbar-actions {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                width: 100%;
+            }
+
+            .button { width: 100%; text-align: center; }
+            .hero, section { padding: 16px; }
+            .hero h1 { font-size: clamp(26px, 10vw, 38px); }
+            .lede { font-size: 15px; }
+
+            table {
+                display: block;
+                max-width: 100%;
+                overflow-x: auto;
+                white-space: normal;
+                scrollbar-width: thin;
+            }
+
+            th, td { min-width: 130px; }
+            pre { padding: 11px; }
         }
     </style>
 </head>
@@ -477,6 +513,8 @@ python main.py</code></pre>
                 <h2>3. Interface Tour</h2>
                 <h3>Header</h3>
                 <p>The header shows your station callsign, unified RF/APRS-IS/WebSocket status pills, direct and regional propagation gauges, station counts, max distance, UI theme toggle, notification bell, and a manual beacon control with route selection. Connection pills use green for connected, pulsing yellow-green for retrying/reconnecting, and red for disconnected.</p>
+                <p>On tablets and phones, secondary header actions move into the <strong>Status</strong> drawer. Its compact label keeps the current direct and regional propagation condition visible without crowding the map.</p>
+                <p>The header Data control opens a source-health panel for RF, APRS-IS, weather, weather alerts, GOES GLM, radar, and satellite imagery. Network feeds report freshness as live, delayed, stale, waiting, or offline. Browser tile overlays report configured status because the server cannot verify that every client tile rendered.</p>
 
                 <h3>Main Map</h3>
                 <p>The map occupies the primary work area. It displays your station, RF stations, APRS-IS stations, APRS objects, path lines, radar, alert polygons, and weather banners depending on enabled layers.</p>
@@ -508,6 +546,7 @@ python main.py</code></pre>
                 <h2>4. Map And Stations</h2>
                 <p>The propagation map is the main visual surface. Station markers use APRS symbols, station source styling, popups, optional callsign labels, and propagation lines that can be filtered by age.</p>
                 <h3>Map Controls</h3>
+                <p>Map tools are grouped into View, Stations, Layers, and Appearance menus. Opening one menu closes the others so controls remain usable without covering unnecessary map space.</p>
                 <table>
                     <thead>
                     <tr><th>Control</th><th>What It Does</th></tr>
@@ -516,6 +555,7 @@ python main.py</code></pre>
                     <tr><td>Center</td><td>Returns the map to your configured or live GPS station position.</td></tr>
                     <tr><td>Obj</td><td>Creates an APRS object from a clicked map location and saves it into scheduled objects.</td></tr>
                     <tr><td>Lines</td><td>Shows or hides propagation path lines.</td></tr>
+                    <tr><td>Scope</td><td>Centers a local operating view on your QTH with 25, 50, and 100 mile range rings. Watched-path cards can open the same scope at their saved target and add the configured target-area radius.</td></tr>
                     <tr><td>RF / APRS-IS</td><td>Shows or hides RF and internet-heard stations independently.</td></tr>
                     <tr><td>Direct RF</td><td>Displays only RF stations heard directly, excluding APRS-IS and digipeated RF paths.</td></tr>
                     <tr><td>Theme</td><td>Switches between dark and light map tile styling.</td></tr>
@@ -605,6 +645,7 @@ python main.py</code></pre>
             <section id="propagation">
                 <h2>8. Propagation And Analytics</h2>
                 <p>PropView scores propagation with two dashboard gauges: direct-heard RF for your station and regional RF including digipeated paths. Thresholds are configurable in the propagation settings.</p>
+                <p>Click either gauge to inspect the supporting observation window and separate direct/regional evidence-confidence scores. Confidence describes data freshness, sample breadth, and session maturity; it is not a probability or forecast. The Propagation tab tracks a conservative event lifecycle from developing through confirmed/peak and fading conditions using sustained one-minute RF samples.</p>
                 <h3>Propagation Views</h3>
                 <ul>
                     <li>RF station counts over 1 hour, 6 hours, and 24 hours.</li>
@@ -674,7 +715,7 @@ python main.py</code></pre>
                 <h3>Bulletins</h3>
                 <p>Scheduled bulletins transmit APRS <code>BLN</code> packets on an interval. Configure route, interval, and message lines. Keep content short, useful, and appropriate for local APRS audiences.</p>
                 <h3>APRS Objects</h3>
-                <p>Scheduled objects transmit named APRS object packets with position, symbol, scope, route, path, comment, and optional repeater-style metadata. Create new objects with the <b>Obj</b> map control: click the object location, then complete the guided editor. The saved-object text field in Settings is intended for reviewing, modifying, or removing existing records, not for manually creating them.</p>
+                <p>Scheduled objects transmit named APRS object packets with position, symbol, scope, route, path, comment, and optional repeater-style metadata. Create new objects with the <b>Obj</b> map control: click the object location, then complete the guided editor. While object placement is active, weather watch and warning polygons temporarily stop intercepting map clicks, so locations inside an alert area remain selectable. Normal weather-alert popups resume after placement or cancellation. The saved-object text field in Settings is intended for reviewing, modifying, or removing existing records, not for manually creating them.</p>
                 <h3>Status, MHeard, And Dynamic Messages</h3>
                 <p>Status/DX reports can summarize best direct DX, bearings, station counts, propagation level, direct RF MHeard summaries, dynamic preset lines, or weather alert status depending on enabled options.</p>
                 <a class="backtop" href="#top">Back to top</a>
@@ -733,17 +774,17 @@ python main.py</code></pre>
                     <tr><td><code>[[rf_ports]]</code></td><td>Multi-port RF serial/TCP KISS and compatible monitor-style inputs.</td></tr>
                     <tr><td><code>[web]</code></td><td>Bind host, port, browser launch selection, UI font, map tile source, station ghosting, station expiry, and mobile PIN.</td></tr>
                     <tr><td><code>[tracking]</code></td><td>Station age windows, cleanup intervals, and callsign/SSID blocklist. A base callsign blocks every SSID.</td></tr>
-                    <tr><td><code>[[watched_paths]]</code></td><td>Target callsign/grid/coordinates, target-area radius, band/mode/frequency, confidence, antenna heights, power, and antenna gain for VHF path opportunity alerts.</td></tr>
+                    <tr><td><code>[[watched_paths]]</code></td><td>Target callsign/grid/coordinates, target-area radius, band/mode/frequency, confidence, antenna details, plus optional per-location weather/lightning alert radius, cooldown, and destinations.</td></tr>
                     <tr><td><code>[callbook]</code></td><td>Callook, HamDB, QRZ XML, and HamQTH lookup selection and optional credentials.</td></tr>
                     <tr><td><code>[messaging]</code></td><td>APRS message history retention and optional sibling-SSID receive behavior.</td></tr>
                     <tr><td><code>[database]</code></td><td>SQLite database path.</td></tr>
-                    <tr><td><code>[propagation]</code></td><td>Direct and regional propagation scoring thresholds.</td></tr>
+                    <tr><td><code>[propagation]</code></td><td>Direct and regional scoring thresholds plus optional station-specific PSK Reporter VHF/UHF context.</td></tr>
                     <tr><td><code>[status]</code></td><td>Status/DX, dynamic, MHeard, and weather-alert beacon options.</td></tr>
                     <tr><td><code>[smart_beaconing]</code></td><td>GPS-speed-aware beacon interval behavior.</td></tr>
                     <tr><td><code>[bulletins]</code></td><td>Scheduled APRS BLN packet route, interval, and messages.</td></tr>
                     <tr><td><code>[aprs_objects]</code></td><td>Scheduled APRS object route, interval, symbols, coordinates, metadata, and comments.</td></tr>
                     <tr><td><code>[alerts]</code></td><td>Band-opening thresholds, cooldowns, quiet hours, audio, Discord, email, and SMS settings.</td></tr>
-                    <tr><td><code>[weather]</code></td><td>Weather source settings, alerts, radar overlay, NWS scopes, alert categories, and adaptive polling.</td></tr>
+                    <tr><td><code>[weather]</code></td><td>Weather source settings, alerts, radar and satellite overlays, GOES GLM lightning, NOAA space-weather context, alert categories, and adaptive polling.</td></tr>
                     <tr><td><code>[wxnow]</code></td><td>WXnow weather packet transmit settings.</td></tr>
                     <tr><td><code>[gps]</code></td><td>Browser, APRS self-packet, NMEA, and gpsd ingestion settings.</td></tr>
                     <tr><td><code>[mqtt]</code></td><td>Broker, topics, Home Assistant Discovery, device identity, watched callsigns, status snapshots, and publish behavior.</td></tr>
@@ -752,9 +793,14 @@ python main.py</code></pre>
                 <h3>Backup And Restore</h3>
                 <p>Use settings export before experimenting with RF, APRS-IS, host, port, or tile settings. Imported settings require an application restart before the full configuration is loaded.</p>
                 <h3>Watched VHF Paths</h3>
-                <p>Enter a target callsign and use Lookup to populate a license/callbook location, then choose band, mode, frequency, confidence, and target-area radius. You may instead enter a short target label and supply coordinates or a Maidenhead grid manually. The map's Grid control draws zoom-dependent Maidenhead labels; while it says Pick Grid, clicking a square fills its locator and center coordinates, highlights the required Target station / label field, and moves keyboard focus there. Antenna height, transmit power, and antenna gain provide radio-horizon and capability context but do not create an opportunity without matching direct-heard RF propagation evidence near the target area. Stations heard through another digipeater are excluded.</p>
+                <p>Enter a target callsign and use Lookup to populate a license/callbook location, then choose band, mode, frequency, confidence, and target-area radius. You may instead enter a short target label and supply coordinates or a Maidenhead grid manually. Configure weather and nearby-GOES-lightning notifications for saved targets under Settings → Alerts &amp; Weather → Watched Location Alerts; each target has its own radius, cooldown, and destinations. The map's Grid control draws zoom-dependent Maidenhead labels; while it says Pick Grid, clicking a square fills its locator and center coordinates, highlights the required Target station / label field, and moves keyboard focus there. Antenna height, transmit power, and antenna gain provide radio-horizon and capability context but do not create an opportunity without matching direct-heard RF propagation evidence near the target area. Stations heard through another digipeater are excluded.</p>
+                <h3>Environmental Context</h3>
+                <p>The Weather Analytics view includes a local APRS weather mesh that ranks stations by age and measurement completeness and shows short-term trends. The Propagation view also presents current NOAA SWPC Kp and G/R/S scales as context. Space-weather values can help explain unusual northern-path observations, but PropView does not treat them as confirmation or prediction of a VHF opening. Operators may opt into station-specific PSK Reporter observations above 50 MHz; these are fetched no more than once every five minutes and remain independent context rather than APRS RF evidence.</p>
                 <h3>Visualizations</h3>
                 <p>The Map &amp; Display category includes independent controls for the propagation aura, new-path reveal, map color harmony, condition backdrops, expressive home marker, watched-path flow, quiet direct-heard activity moments, and live packet animation. Packet animation can be Off, Basic (station bursts and flowing dashes), or Enhanced (moving packet head, contrail, and hop pulses). Effects apply live after saving, and operating-system reduced-motion preferences are respected.</p>
+                <p>Display Density offers Comfortable, Compact, and Wallboard sizing. Dashboard Visibility independently shows or hides weather, lightning, weather alerts, source health, watched paths, and propagation-context cards. These choices are stored in the browser and do not alter radio or server configuration.</p>
+                <p>Settings also provides task shortcuts for radio setup, APRS-IS, weather and lightning, alerts, club display, and mobile operation. The persistent action bar reports the active category and how many sections have unsaved changes.</p>
+                <p>Club Display opens a read-only <code>/kiosk</code> layout for club rooms, events, and unattended monitors. Live Map uses the full map area; all data scenes switch to full-width, map-free wallboard dashboards. In addition to Propagation, Weather, and RF Activity, users can add APRS-IS activity, packets, longest paths, heatmap, reliability, best times, alerts, anomaly, bearing, history, Sporadic-E, and first-heard panels. Data-heavy dashboards automatically scroll during their scene so all tables and cards can be seen, while charts retain their original proportions on wide displays. Choose the scenes and a 10–300 second rotation interval. The display includes pause, previous, next, fullscreen, and exit controls; keyboard Space and arrow keys provide the same rotation controls.</p>
                 <h3>Station Blocklist</h3>
                 <p>Enter <code>W1AW-7</code> to block one station identifier or <code>W1AW</code> to block all SSIDs for that callsign. Blocked packets are rejected before station, packet, message, and propagation history updates.</p>
                 <a class="backtop" href="#top">Back to top</a>

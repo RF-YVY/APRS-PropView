@@ -57,6 +57,13 @@ def check_runtime_dependencies():
         print("  paho-mqtt not found. Installing...")
         subprocess.check_call([sys.executable, "-m", "pip", "install", "paho-mqtt>=1.6.1"])
         print("  paho-mqtt installed.")
+    try:
+        import netCDF4  # noqa: F401
+        print("  netCDF4 found.")
+    except ImportError:
+        print("  netCDF4 not found. Installing...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "netCDF4>=1.7.0,<2.0"])
+        print("  netCDF4 installed.")
 
 
 def _rebuild_ico_png(ico_path):
@@ -246,6 +253,7 @@ def build():
         "--hidden-import", "pystray",
         "--hidden-import", "pystray._win32",
         "--hidden-import", "certifi",
+        "--hidden-import", "netCDF4",
         "--collect-data", "certifi",
         # Collect all submodules
         "--collect-submodules", "uvicorn",

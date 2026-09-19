@@ -31,6 +31,7 @@ from server.config import (
     Config, StationConfig, DigiConfig, IGateConfig, APRSISConfig,
     KISSSerialConfig, KISSTCPConfig, RFPortConfig, WatchedPathConfig, WebConfig, DatabaseConfig, TrackingConfig,
     MessagingConfig, AlertsConfig, PropagationConfig, WeatherConfig, GPSConfig, MQTTConfig,
+    CLUB_DISPLAY_SCENES,
 )
 from server.callbook import CallbookCredentials, lookup_callsign
 from server.browser_launch import available_browsers, browser_ids
@@ -43,6 +44,10 @@ from server.alerts import AlertConfig, AlertManager
 from server.aprs_is import APRSISClient
 from server.aprs_parser import parse_packet
 from server.weather import WeatherManager
+from server.lightning import LightningManager
+from server.source_health import build_source_health
+from server.space_weather import SpaceWeatherManager
+from server.external_propagation import PskReporterManager
 from server.update_checker import UpdateChecker, _github_ssl_context
 
 logger = logging.getLogger("propview.app")
@@ -463,8 +468,8 @@ def _validate_config(body: Dict[str, Any]) -> Optional[str]:
                 grid_value = item.get("grid", "")
             else:
                 return "Watched path entries must be objects or CALL|lat|lon lines."
-            if call and not re.fullmatch(r"[A-Z0-9]{1,9}(?:-(?:[0-9]|1[0-5]))?", call.upper()):
-                return "Watched path callsigns must look like CALL or CALL-SSID."
+            if call and not re.fullmatch(r"[A-Z0-9][A-Z0-9 ._-]{0,23}", call.upper()):
+                return "Watched path targets must be a callsign or short letters/numbers label."
             if str(grid_value or "").strip() and StationTracker.maidenhead_to_lat_lon(str(grid_value)) is None:
                 return "Watched path grid squares must be valid Maidenhead locators, such as EM85 or EM85AB."
             try:
@@ -751,6 +756,9 @@ def create_app(
     alert_manager: AlertManager = None,
     aprs_is: APRSISClient = None,
     weather_manager: WeatherManager = None,
+    lightning_manager: LightningManager = None,
+    space_weather_manager: SpaceWeatherManager = None,
+    psk_reporter_manager: PskReporterManager = None,
     wxnow_transmitter = None,
     status_transmitter = None,
     scheduled_transmitter = None,
@@ -891,14 +899,33 @@ def create_app(
             })
         return payload
 
-    @app.get("/")
-    async def index():
+    def desktop_asset_version() -> str:
+        """Fingerprint mutable UI assets so development builds cannot reuse stale settings logic."""
+        try:
+            files = [STATIC_DIR / "index.html"]
+            for folder in (STATIC_DIR / "js", STATIC_DIR / "css"):
+                files.extend(path for path in folder.rglob("*") if path.is_file())
+            newest = max(path.stat().st_mtime_ns for path in files)
+            return f"{app_version}-{newest:x}"
+        except (OSError, ValueError):
+            return app_version
+
+    def render_desktop_index():
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         return HTMLResponse(
             html
-            .replace("__ASSET_VERSION__", app_version)
-            .replace("__APP_VERSION__", app_version)
+            .replace("__ASSET_VERSION__", desktop_asset_version())
+            .replace("__APP_VERSION__", app_version),
+            headers={"Cache-Control": "no-store, max-age=0"},
         )
+
+    @app.get("/")
+    async def index():
+        return render_desktop_index()
+
+    @app.get("/kiosk")
+    async def kiosk_page():
+        return render_desktop_index()
 
     @app.get("/mobile")
     async def mobile_page():
@@ -1237,6 +1264,20 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
     @app.get("/api/status")
     async def get_status():
         return handler.get_status()
+
+    @app.get("/api/source-health")
+    async def get_source_health():
+        """Report source connectivity and freshness without triggering external requests."""
+        return build_source_health(
+            config,
+            handler.get_status(),
+            tracker,
+            weather_manager=weather_manager,
+            lightning_manager=lightning_manager,
+            space_weather_manager=space_weather_manager,
+            psk_reporter_manager=psk_reporter_manager,
+            aprs_is=aprs_is,
+        )
 
     @app.get("/api/diagnostics")
     async def get_diagnostics():
@@ -1790,7 +1831,7 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
             logger.warning("APRS object create failed: %s", e)
             return JSONResponse(status_code=400, content={"success": False, "message": "Could not create APRS object."})
 
-    register_analytics_routes(app, db, analytics, weather_manager)
+    register_analytics_routes(app, db, analytics, weather_manager, config=config)
 
     @app.get("/api/export/stations")
     async def export_stations(
@@ -2007,6 +2048,25 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
             logger.error(f"Weather refresh error: {e}")
             return {"enabled": config.weather.enabled, "configured": False, "error": str(e)}
 
+    @app.get("/api/lightning")
+    async def get_lightning():
+        """Return the bounded live GOES GLM lightning window."""
+        if not lightning_manager:
+            return {"enabled": False, "flashes": [], "stale": True, "last_error": "Unavailable"}
+        return lightning_manager.snapshot()
+
+    @app.get("/api/space-weather")
+    async def get_space_weather():
+        if not space_weather_manager:
+            return {"enabled": False, "stale": True, "last_error": "Unavailable"}
+        return space_weather_manager.snapshot()
+
+    @app.get("/api/external-propagation")
+    async def get_external_propagation():
+        if not psk_reporter_manager:
+            return {"enabled": False, "reports": []}
+        return psk_reporter_manager.snapshot()
+
     @app.post("/api/weather/resolve-location")
     async def resolve_weather_location(request: Request):
         """Resolve a US zip code or worldwide ICAO code to lat/lon for weather."""
@@ -2207,6 +2267,8 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 "visual_watched_path_flow": config.web.visual_watched_path_flow,
                 "visual_activity_moments": config.web.visual_activity_moments,
                 "visual_packet_animation": config.web.visual_packet_animation,
+                "club_display_rotation_seconds": config.web.club_display_rotation_seconds,
+                "club_display_scenes": config.web.club_display_scenes,
             },
             "database": {
                 "path": config.database.path,
@@ -2238,6 +2300,13 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                     "target_antenna_height_m": item.target_antenna_height_m,
                     "my_tx_power_w": item.my_tx_power_w,
                     "my_antenna_gain_dbi": item.my_antenna_gain_dbi,
+                    "watch_weather_enabled": item.watch_weather_enabled,
+                    "watch_lightning_enabled": item.watch_lightning_enabled,
+                    "watch_alert_radius_miles": item.watch_alert_radius_miles,
+                    "watch_alert_cooldown_minutes": item.watch_alert_cooldown_minutes,
+                    "watch_discord_enabled": item.watch_discord_enabled,
+                    "watch_email_enabled": item.watch_email_enabled,
+                    "watch_sms_enabled": item.watch_sms_enabled,
                 }
                 for item in config.watched_paths
             ],
@@ -2314,6 +2383,24 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 "radar_custom_api_key": _mask_passcode(config.weather.radar_custom_api_key),
                 "radar_opacity": config.weather.radar_opacity,
                 "radar_animate": config.weather.radar_animate,
+                "satellite_imagery_enabled": config.weather.satellite_imagery_enabled,
+                "satellite_imagery_opacity": config.weather.satellite_imagery_opacity,
+                "weather_info_banner_enabled": config.weather.weather_info_banner_enabled,
+                "weather_alert_discord_enabled": config.weather.weather_alert_discord_enabled,
+                "weather_alert_email_enabled": config.weather.weather_alert_email_enabled,
+                "weather_alert_sms_enabled": config.weather.weather_alert_sms_enabled,
+                "lightning_enabled": config.weather.lightning_enabled,
+                "lightning_satellite": config.weather.lightning_satellite,
+                "lightning_history_minutes": config.weather.lightning_history_minutes,
+                "lightning_opacity": config.weather.lightning_opacity,
+                "lightning_stale_seconds": config.weather.lightning_stale_seconds,
+                "lightning_alert_enabled": config.weather.lightning_alert_enabled,
+                "lightning_alert_radius_miles": config.weather.lightning_alert_radius_miles,
+                "lightning_alert_cooldown_minutes": config.weather.lightning_alert_cooldown_minutes,
+                "lightning_info_card_enabled": config.weather.lightning_info_card_enabled,
+                "lightning_alert_discord_enabled": config.weather.lightning_alert_discord_enabled,
+                "lightning_alert_email_enabled": config.weather.lightning_alert_email_enabled,
+                "lightning_alert_sms_enabled": config.weather.lightning_alert_sms_enabled,
                 "alert_overlay_enabled": config.weather.alert_overlay_enabled,
                 "alert_overlay_range_miles": config.weather.alert_overlay_range_miles,
                 "alert_overlay_groups": config.weather.alert_overlay_groups,
@@ -2324,6 +2411,13 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 "elevated_alert_cooldown_minutes": config.weather.elevated_alert_cooldown_minutes,
                 "elevated_trigger_events": config.weather.elevated_trigger_events,
                 "weather_alert_symbol_enabled": config.weather.weather_alert_symbol_enabled,
+                "space_weather_enabled": config.weather.space_weather_enabled,
+                "space_weather_alert_enabled": config.weather.space_weather_alert_enabled,
+                "space_weather_alert_min_kp": config.weather.space_weather_alert_min_kp,
+                "space_weather_alert_cooldown_minutes": config.weather.space_weather_alert_cooldown_minutes,
+                "space_weather_alert_discord_enabled": config.weather.space_weather_alert_discord_enabled,
+                "space_weather_alert_email_enabled": config.weather.space_weather_alert_email_enabled,
+                "space_weather_alert_sms_enabled": config.weather.space_weather_alert_sms_enabled,
             },
             "wxnow": {
                 "enabled": config.wxnow.enabled,
@@ -2357,6 +2451,8 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 "my_station_full_dist_km": config.propagation.my_station_full_dist_km,
                 "regional_full_count": config.propagation.regional_full_count,
                 "regional_full_dist_km": config.propagation.regional_full_dist_km,
+                "psk_reporter_enabled": config.propagation.psk_reporter_enabled,
+                "psk_reporter_window_minutes": config.propagation.psk_reporter_window_minutes,
             },
             "status": {
                 "enabled": config.status.enabled,
@@ -2700,6 +2796,11 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 config.web.visual_activity_moments = bool(w.get("visual_activity_moments", config.web.visual_activity_moments))
                 packet_animation = str(w.get("visual_packet_animation", config.web.visual_packet_animation) or "basic").strip().lower()
                 config.web.visual_packet_animation = packet_animation if packet_animation in {"off", "basic", "enhanced"} else "basic"
+                config.web.club_display_rotation_seconds = max(10, min(300, int(w.get("club_display_rotation_seconds", config.web.club_display_rotation_seconds))))
+                scenes = w.get("club_display_scenes", config.web.club_display_scenes)
+                if not isinstance(scenes, list):
+                    scenes = config.web.club_display_scenes
+                config.web.club_display_scenes = [str(scene) for scene in scenes if str(scene) in CLUB_DISPLAY_SCENES] or ["map"]
                 if config.web.host != old_host or config.web.port != old_port:
                     need_restart.append("web host/port")
                 else:
@@ -2824,6 +2925,13 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                         target_antenna_height_m=watched_float(item, "target_antenna_height_m", 10.0, 0.0, 610.0),
                         my_tx_power_w=watched_float(item, "my_tx_power_w", 50.0, 0.1, 2000.0),
                         my_antenna_gain_dbi=watched_float(item, "my_antenna_gain_dbi", 0.0, -20.0, 30.0),
+                        watch_weather_enabled=bool(item.get("watch_weather_enabled", False)),
+                        watch_lightning_enabled=bool(item.get("watch_lightning_enabled", False)),
+                        watch_alert_radius_miles=watched_float(item, "watch_alert_radius_miles", 25.0, 1.0, 500.0),
+                        watch_alert_cooldown_minutes=max(1, min(1440, int(item.get("watch_alert_cooldown_minutes", 30) or 30))),
+                        watch_discord_enabled=bool(item.get("watch_discord_enabled", False)),
+                        watch_email_enabled=bool(item.get("watch_email_enabled", False)),
+                        watch_sms_enabled=bool(item.get("watch_sms_enabled", False)),
                     ))
                 config.watched_paths = parsed_paths[:50]
                 live_applied.append("watched paths")
@@ -2924,6 +3032,25 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                     config.weather.radar_custom_api_key = new_radar_key.strip()
                 config.weather.radar_opacity = min(1.0, max(0.1, float(wc.get("radar_opacity", config.weather.radar_opacity))))
                 config.weather.radar_animate = bool(wc.get("radar_animate", config.weather.radar_animate))
+                config.weather.satellite_imagery_enabled = bool(wc.get("satellite_imagery_enabled", config.weather.satellite_imagery_enabled))
+                config.weather.satellite_imagery_opacity = min(0.8, max(0.1, float(wc.get("satellite_imagery_opacity", config.weather.satellite_imagery_opacity))))
+                config.weather.weather_info_banner_enabled = bool(wc.get("weather_info_banner_enabled", config.weather.weather_info_banner_enabled))
+                config.weather.weather_alert_discord_enabled = bool(wc.get("weather_alert_discord_enabled", config.weather.weather_alert_discord_enabled))
+                config.weather.weather_alert_email_enabled = bool(wc.get("weather_alert_email_enabled", config.weather.weather_alert_email_enabled))
+                config.weather.weather_alert_sms_enabled = bool(wc.get("weather_alert_sms_enabled", config.weather.weather_alert_sms_enabled))
+                config.weather.lightning_enabled = bool(wc.get("lightning_enabled", config.weather.lightning_enabled))
+                lightning_satellite = str(wc.get("lightning_satellite", config.weather.lightning_satellite) or "auto").lower()
+                config.weather.lightning_satellite = lightning_satellite if lightning_satellite in {"auto", "goes18", "goes19"} else "auto"
+                config.weather.lightning_history_minutes = max(1, min(60, int(wc.get("lightning_history_minutes", config.weather.lightning_history_minutes))))
+                config.weather.lightning_opacity = max(0.1, min(1.0, float(wc.get("lightning_opacity", config.weather.lightning_opacity))))
+                config.weather.lightning_stale_seconds = max(60, min(600, int(wc.get("lightning_stale_seconds", config.weather.lightning_stale_seconds))))
+                config.weather.lightning_alert_enabled = bool(wc.get("lightning_alert_enabled", config.weather.lightning_alert_enabled))
+                config.weather.lightning_alert_radius_miles = max(1.0, min(500.0, float(wc.get("lightning_alert_radius_miles", config.weather.lightning_alert_radius_miles))))
+                config.weather.lightning_alert_cooldown_minutes = max(1, min(1440, int(wc.get("lightning_alert_cooldown_minutes", config.weather.lightning_alert_cooldown_minutes))))
+                config.weather.lightning_info_card_enabled = bool(wc.get("lightning_info_card_enabled", config.weather.lightning_info_card_enabled))
+                config.weather.lightning_alert_discord_enabled = bool(wc.get("lightning_alert_discord_enabled", config.weather.lightning_alert_discord_enabled))
+                config.weather.lightning_alert_email_enabled = bool(wc.get("lightning_alert_email_enabled", config.weather.lightning_alert_email_enabled))
+                config.weather.lightning_alert_sms_enabled = bool(wc.get("lightning_alert_sms_enabled", config.weather.lightning_alert_sms_enabled))
                 config.weather.alert_overlay_enabled = bool(wc.get("alert_overlay_enabled", config.weather.alert_overlay_enabled))
                 config.weather.alert_overlay_range_miles = max(1, int(wc.get("alert_overlay_range_miles", config.weather.alert_overlay_range_miles)))
                 groups = wc.get("alert_overlay_groups", config.weather.alert_overlay_groups)
@@ -2947,6 +3074,13 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                     "weather_alert_symbol_enabled",
                     config.weather.weather_alert_symbol_enabled,
                 ))
+                config.weather.space_weather_enabled = bool(wc.get("space_weather_enabled", config.weather.space_weather_enabled))
+                config.weather.space_weather_alert_enabled = bool(wc.get("space_weather_alert_enabled", config.weather.space_weather_alert_enabled))
+                config.weather.space_weather_alert_min_kp = max(0.0, min(9.0, float(wc.get("space_weather_alert_min_kp", config.weather.space_weather_alert_min_kp))))
+                config.weather.space_weather_alert_cooldown_minutes = max(5, min(1440, int(wc.get("space_weather_alert_cooldown_minutes", config.weather.space_weather_alert_cooldown_minutes))))
+                config.weather.space_weather_alert_discord_enabled = bool(wc.get("space_weather_alert_discord_enabled", config.weather.space_weather_alert_discord_enabled))
+                config.weather.space_weather_alert_email_enabled = bool(wc.get("space_weather_alert_email_enabled", config.weather.space_weather_alert_email_enabled))
+                config.weather.space_weather_alert_sms_enabled = bool(wc.get("space_weather_alert_sms_enabled", config.weather.space_weather_alert_sms_enabled))
                 live_applied.append("weather")
 
             if "wxnow" in body:
@@ -2971,6 +3105,8 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 config.propagation.my_station_full_dist_km = max(1.0, float(pc.get("my_station_full_dist_km", config.propagation.my_station_full_dist_km)))
                 config.propagation.regional_full_count = max(1, int(pc.get("regional_full_count", config.propagation.regional_full_count)))
                 config.propagation.regional_full_dist_km = max(1.0, float(pc.get("regional_full_dist_km", config.propagation.regional_full_dist_km)))
+                config.propagation.psk_reporter_enabled = bool(pc.get("psk_reporter_enabled", config.propagation.psk_reporter_enabled))
+                config.propagation.psk_reporter_window_minutes = max(5, min(360, int(pc.get("psk_reporter_window_minutes", config.propagation.psk_reporter_window_minutes))))
                 live_applied.append("propagation meters")
 
             if "status" in body:

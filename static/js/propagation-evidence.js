@@ -11,9 +11,13 @@
     function render() {
         if (!latest || !dialog?.open) return;
         const data = latest, e = data.evidence || {};
+        const directConfidence = e.confidence?.direct || {};
+        const regionalConfidence = e.confidence?.regional || {};
         const lines = [
             `Observation state: ${(e.state || 'unknown').replaceAll('_', ' ')}`,
             `Receiver: ${receiverStatus?.rf_connected ? 'connected' : 'disconnected or unavailable'}`,
+            `Direct evidence confidence: ${(directConfidence.level || 'unknown').toUpperCase()} (${directConfidence.score ?? 0}/100, ${directConfidence.sample_count ?? 0} stations). ${directConfidence.reason || ''}`,
+            `Regional evidence confidence: ${(regionalConfidence.level || 'unknown').toUpperCase()} (${regionalConfidence.score ?? 0}/100, ${regionalConfidence.sample_count ?? 0} stations). ${regionalConfidence.reason || ''}`,
             `In the last ${e.window_minutes || 60} minutes: ${data.my_stations_1h || 0} direct stations; ${data.regional_stations_1h || 0} stations across all RF paths.`,
             `Longest direct reception: ${window.formatDist(data.my_max_distance_km || 0)}.`,
             e.last_rf_packet_age_seconds == null ? 'No RF packet received during this session.' : `Last RF packet: ${e.last_rf_packet_age_seconds} seconds before this sample.`,

@@ -903,8 +903,10 @@ def build_open_meteo_risk_alerts(weather: Optional[Dict[str, Any]]) -> List[Dict
 class WeatherManager:
     """Manages weather data fetching with caching to avoid excessive API calls."""
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, alert_manager=None, ws_manager=None):
         self.config = config
+        self.alert_manager = alert_manager
+        self.ws_manager = ws_manager
         self._location: Optional[Dict[str, Any]] = None  # resolved lat/lon/name
         self._current: Optional[Dict[str, Any]] = None
         self._alerts: List[Dict[str, Any]] = []
@@ -919,6 +921,158 @@ class WeatherManager:
         self._location_code_resolved: str = ""  # last code we resolved
         self._alert_scope_info: Optional[Dict[str, Any]] = None
         self._elevated_polling_until: float = 0
+        self._notified_weather_alerts: Dict[str, float] = {}
+        self._watched_weather_last_fetch: Dict[str, float] = {}
+
+    def _weather_notification_channels(self) -> List[str]:
+        cfg = self.config.weather
+        return [
+            channel
+            for channel, enabled in (
+                ("discord", cfg.weather_alert_discord_enabled),
+                ("email", cfg.weather_alert_email_enabled),
+                ("sms", cfg.weather_alert_sms_enabled),
+            )
+            if enabled
+        ]
+
+    @staticmethod
+    def _weather_alert_key(alert: Dict[str, Any]) -> str:
+        alert_id = str(alert.get("id") or "").strip()
+        return alert_id or "|".join(
+            str(alert.get(key) or "").strip()
+            for key in ("event", "headline", "effective", "expires", "area_desc")
+        )
+
+    async def _notify_new_weather_alerts(self, alerts: List[Dict[str, Any]]) -> None:
+        channels = self._weather_notification_channels()
+        if not channels or not self.alert_manager or self.alert_manager._is_quiet_time():
+            return
+
+        now = time.time()
+        self._notified_weather_alerts = {
+            key: seen_at
+            for key, seen_at in self._notified_weather_alerts.items()
+            if now - seen_at < 172800
+        }
+        for weather_alert in alerts or []:
+            key = self._weather_alert_key(weather_alert)
+            if not key or key in self._notified_weather_alerts:
+                continue
+            event = weather_alert.get("event") or "Weather Alert"
+            area = weather_alert.get("area_desc") or self.config.weather.location_code
+            headline = weather_alert.get("headline") or weather_alert.get("description") or event
+            instruction = weather_alert.get("instruction") or ""
+            message = f"{event} for {area}.\n{headline}"
+            if instruction:
+                message += f"\n{instruction}"
+            alert = {
+                "type": "weather_warning" if weather_alert.get("alert_type") == "warning" else "weather_watch",
+                "timestamp": now,
+                "event": event,
+                "severity": weather_alert.get("severity") or "Unknown",
+                "area_desc": area,
+                "expires": weather_alert.get("expires") or "",
+                "message": message,
+            }
+            self._notified_weather_alerts[key] = now
+            self.alert_manager.record_alert(alert)
+            await self.alert_manager.send_alert(alert, channels=channels)
+            if self.ws_manager:
+                await self.ws_manager.broadcast({"type": "alert", "data": alert})
+
+    async def notification_loop(self) -> None:
+        """Poll configured alert feeds and deliver each active alert once."""
+        while True:
+            try:
+                if self.is_configured and self._weather_notification_channels():
+                    if self.config.weather.location_code != self._location_code_resolved:
+                        await self.resolve_and_set_location(self.config.weather.location_code)
+                    await self._notify_new_weather_alerts(await self.get_alerts())
+                await self._poll_watched_weather_alerts()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning("Weather alert notification poll failed: %s", exc)
+            await asyncio.sleep(max(30, self._get_alert_poll_interval_seconds()))
+
+    @staticmethod
+    def _watched_target_coordinates(target) -> Optional[tuple[float, float]]:
+        grid = str(getattr(target, "grid", "") or "").strip()
+        if grid:
+            from server.station_tracker import StationTracker
+            return StationTracker.maidenhead_to_lat_lon(grid)
+        try:
+            lat = float(getattr(target, "latitude", 0))
+            lon = float(getattr(target, "longitude", 0))
+        except (TypeError, ValueError):
+            return None
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            return None
+        return lat, lon
+
+    @staticmethod
+    def _watched_notification_channels(target) -> List[str]:
+        return [
+            channel
+            for channel, enabled in (
+                ("discord", getattr(target, "watch_discord_enabled", False)),
+                ("email", getattr(target, "watch_email_enabled", False)),
+                ("sms", getattr(target, "watch_sms_enabled", False)),
+            )
+            if enabled
+        ]
+
+    async def _poll_watched_weather_alerts(self) -> None:
+        """Deliver point-based severe-weather alerts for opted-in remote sites."""
+        if not self.alert_manager or self.alert_manager._is_quiet_time():
+            return
+        now = time.time()
+        targets = [
+            target for target in (getattr(self.config, "watched_paths", []) or [])
+            if getattr(target, "enabled", True)
+            and getattr(target, "watch_weather_enabled", False)
+            and self._watched_notification_channels(target)
+        ]
+        provider = (getattr(self.config.weather, "alert_provider", "auto") or "auto").strip().lower()
+        if provider == "disabled":
+            return
+        for target in targets[:20]:
+            label = str(getattr(target, "callsign", "WATCH") or "WATCH").strip().upper()
+            last_fetch = self._watched_weather_last_fetch.get(label, 0)
+            if now - last_fetch < max(300, self._get_alert_poll_interval_seconds()):
+                continue
+            coords = self._watched_target_coordinates(target)
+            if not coords:
+                continue
+            self._watched_weather_last_fetch[label] = now
+            lat, lon = coords
+            if provider == "weatherbit":
+                alerts = await fetch_weatherbit_alerts(
+                    lat, lon, getattr(self.config.weather, "weatherbit_api_key", "") or ""
+                )
+            else:
+                alerts = await fetch_nws_alerts(lat, lon, scope_mode="point")
+            channels = self._watched_notification_channels(target)
+            for weather_alert in alerts:
+                key = f"watch:{label}:{self._weather_alert_key(weather_alert)}"
+                if key in self._notified_weather_alerts:
+                    continue
+                event = weather_alert.get("event") or "Weather Alert"
+                alert = {
+                    "type": "weather_warning" if weather_alert.get("alert_type") == "warning" else "weather_watch",
+                    "timestamp": now,
+                    "event": event,
+                    "severity": weather_alert.get("severity") or "Unknown",
+                    "area_desc": weather_alert.get("area_desc") or label,
+                    "watch_location": label,
+                    "message": f"{event} at watched site {label}.\n{weather_alert.get('headline') or weather_alert.get('description') or event}",
+                }
+                self._notified_weather_alerts[key] = now
+                self.alert_manager.record_alert(alert)
+                await self.alert_manager.send_alert(alert, channels=channels)
+                if self.ws_manager:
+                    await self.ws_manager.broadcast({"type": "alert", "data": alert})
 
     @property
     def is_configured(self) -> bool:
@@ -1230,6 +1384,7 @@ class WeatherManager:
         return {
             "enabled": self.config.weather.enabled,
             "configured": self.is_configured,
+            "weather_info_banner_enabled": self.config.weather.weather_info_banner_enabled,
             "refresh_minutes": self.config.weather.refresh_minutes,
             "location": self._location,
             "current_provider": self.config.weather.current_provider,
@@ -1250,6 +1405,8 @@ class WeatherManager:
                 "scope_zone": self.config.weather.alert_scope_zone,
             },
             "map_overlays": {
+                "satellite_imagery_enabled": self.config.weather.satellite_imagery_enabled,
+                "satellite_imagery_opacity": self.config.weather.satellite_imagery_opacity,
                 "radar_enabled": self.config.weather.radar_enabled,
                 "radar_provider": self.config.weather.radar_provider,
                 "radar_custom_url": self.config.weather.radar_custom_url,

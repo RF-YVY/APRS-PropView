@@ -45,6 +45,20 @@ class StationTracker:
         self._last_rf_packet_time: float = 0.0
         self._recent_first_heard_until: float = 0.0
         self._watched_path_last_alert: Dict[str, float] = {}
+        self._propagation_event: Dict[str, Any] = {
+            "state": "normal",
+            "active": False,
+            "started_at": None,
+            "updated_at": self._started_at,
+            "peak_score": 0.0,
+            "current_score": 0.0,
+            "sample_count": 0,
+            "above_count": 0,
+            "below_count": 0,
+            "strongest_scope": "regional",
+            "strongest_bearing": None,
+            "transitions": [],
+        }
 
     def set_alert_manager(self, alert_manager):
         """Inject the AlertManager instance for band-opening detection."""
@@ -302,6 +316,10 @@ class StationTracker:
                 "confidence": confidence,
                 "threshold": self._confidence_threshold(getattr(target, "min_confidence", "medium")),
                 "min_confidence": getattr(target, "min_confidence", "medium"),
+                "watch_weather_enabled": bool(getattr(target, "watch_weather_enabled", False)),
+                "watch_lightning_enabled": bool(getattr(target, "watch_lightning_enabled", False)),
+                "watch_alert_radius_miles": float(getattr(target, "watch_alert_radius_miles", 25.0) or 25.0),
+                "watch_alert_cooldown_minutes": int(getattr(target, "watch_alert_cooldown_minutes", 30) or 30),
                 "probes": qualifying[:5],
             }
             result["opportunities"].append(opportunity)
@@ -773,6 +791,113 @@ class StationTracker:
             digis.append(base)
         return digis
 
+    @staticmethod
+    def _evidence_confidence(
+        station_count: int,
+        last_packet_age_seconds: Optional[float],
+        observing_minutes: float,
+    ) -> Dict[str, Any]:
+        """Describe confidence in an observed score without implying a forecast probability."""
+        if last_packet_age_seconds is None:
+            return {
+                "level": "none",
+                "score": 0,
+                "sample_count": int(station_count),
+                "reason": "No live RF packets have been received during this session.",
+            }
+
+        age = max(0.0, float(last_packet_age_seconds))
+        freshness = 45.0 if age <= 120 else 30.0 if age <= 600 else 12.0 if age <= 900 else 0.0
+        breadth = min(40.0, max(0, int(station_count)) * 8.0)
+        maturity = min(15.0, max(0.0, float(observing_minutes)) / 60.0 * 15.0)
+        score = round(min(100.0, freshness + breadth + maturity))
+        level = "high" if score >= 75 else "medium" if score >= 45 else "low" if score > 0 else "none"
+        if age > 900:
+            reason = "RF evidence is stale; wait for a current packet before relying on the score."
+        elif observing_minutes < 15:
+            reason = "The receiver is still building its live observation window."
+        elif station_count < 2:
+            reason = "The score is based on very few distinct stations."
+        else:
+            reason = "Confidence reflects evidence freshness, station count, and session maturity."
+        return {
+            "level": level,
+            "score": score,
+            "sample_count": int(station_count),
+            "reason": reason,
+        }
+
+    def _update_propagation_event(self, prop_data: Dict[str, Any], now: float) -> None:
+        """Advance a conservative opening lifecycle from once-per-minute RF samples."""
+        event = self._propagation_event
+        direct_score = float(prop_data.get("my_score", 0) or 0)
+        regional_score = float(prop_data.get("score", 0) or 0)
+        scope = "direct" if direct_score >= regional_score else "regional"
+        signal = max(direct_score, regional_score)
+        confidence = prop_data.get("evidence", {}).get("confidence", {}).get(scope, {})
+        confidence_score = float(confidence.get("score", 0) or 0)
+        qualifies = signal >= 50 and confidence_score >= 45
+        clears = signal < 35 or confidence_score < 25
+
+        event["current_score"] = round(signal, 1)
+        event["updated_at"] = now
+        event["strongest_scope"] = scope
+        event["strongest_bearing"] = (
+            prop_data.get("my_top_station", {}).get("heading")
+            if prop_data.get("my_top_station") else None
+        )
+        event["above_count"] = event.get("above_count", 0) + 1 if qualifies else 0
+        event["below_count"] = event.get("below_count", 0) + 1 if clears else 0
+
+        previous = event.get("state", "normal")
+        next_state = previous
+        if previous == "normal" and qualifies:
+            next_state = "developing"
+            event["started_at"] = now
+            event["peak_score"] = signal
+            event["sample_count"] = 1
+        elif previous == "developing":
+            event["sample_count"] += 1
+            event["peak_score"] = max(float(event.get("peak_score", 0)), signal)
+            if event["above_count"] >= 3 or (signal >= 75 and confidence_score >= 60):
+                next_state = "confirmed"
+            elif event["below_count"] >= 2:
+                next_state = "normal"
+        elif previous in {"confirmed", "peak"}:
+            event["sample_count"] += 1
+            old_peak = float(event.get("peak_score", 0))
+            event["peak_score"] = max(old_peak, signal)
+            next_state = "peak" if signal >= old_peak and qualifies else "fading" if clears else "confirmed"
+        elif previous == "fading":
+            event["sample_count"] += 1
+            if qualifies:
+                next_state = "confirmed"
+            elif event["below_count"] >= 3:
+                next_state = "normal"
+
+        if next_state != previous:
+            event["transitions"].append({
+                "state": next_state,
+                "timestamp": now,
+                "score": round(signal, 1),
+                "confidence": round(confidence_score),
+            })
+            event["transitions"] = event["transitions"][-20:]
+        event["state"] = next_state
+        event["active"] = next_state != "normal"
+        if next_state == "normal" and previous != "normal":
+            event["ended_at"] = now
+            event["above_count"] = 0
+            event["below_count"] = 0
+
+    def _propagation_event_snapshot(self) -> Dict[str, Any]:
+        event = self._propagation_event
+        return {
+            key: (list(value) if key == "transitions" else value)
+            for key, value in event.items()
+            if key not in {"above_count", "below_count"}
+        }
+
     async def get_propagation_data(self, log_sample: bool = False) -> Dict[str, Any]:
         """Calculate current propagation metrics for both meters."""
         now = time.time()
@@ -880,16 +1005,22 @@ class StationTracker:
         reg_score = min(reg_count_score + reg_dist_score, 100)
         reg_level = self._score_to_level(reg_score)
 
+        observing_minutes = round((now - self._started_at) / 60, 1)
+        last_packet_age = round(now - self._last_rf_packet_time) if self._last_rf_packet_time else None
         result = {
             # My Station meter
             "evidence": {
                 "window_minutes": 60,
-                "observing_minutes": round((now-self._started_at)/60, 1),
-                "last_rf_packet_age_seconds": round(now-self._last_rf_packet_time) if self._last_rf_packet_time else None,
+                "observing_minutes": observing_minutes,
+                "last_rf_packet_age_seconds": last_packet_age,
                 "state": ("awaiting_live" if rf_1h else "no_data") if not self._last_rf_packet_time else ("stale" if now-self._last_rf_packet_time > 900 else ("warming_up" if now-self._started_at < 3600 else "observing")),
                 "direct_stations": my_count,
                 "regional_definition": "All RF observations, including direct and relayed",
                 "score_basis": "50% station count + 50% longest observed distance; not a probability",
+                "confidence": {
+                    "direct": self._evidence_confidence(my_count, last_packet_age, observing_minutes),
+                    "regional": self._evidence_confidence(reg_count, last_packet_age, observing_minutes),
+                },
             },
             "my_score": round(my_score, 1),
             "my_level": my_level,
@@ -916,6 +1047,10 @@ class StationTracker:
             "regional_distances": sorted(regional_distances),
             "timestamp": now,
         }
+
+        if log_sample:
+            self._update_propagation_event(result, now)
+        result["event"] = self._propagation_event_snapshot()
 
         if log_sample:
             await self.db.log_propagation(

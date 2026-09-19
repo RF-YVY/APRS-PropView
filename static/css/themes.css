@@ -2877,3 +2877,544 @@ textarea,
         box-shadow: inset 0 0 35px #000;
     }
 }
+
+/* ── Unified information architecture and density system ─────────
+   Shared by every visual skin so theme changes never alter usability. */
+:root[data-ui-skin] {
+    --ui-space-1: 4px;
+    --ui-space-2: 8px;
+    --ui-space-3: 12px;
+    --ui-space-4: 16px;
+    --ui-control-height: 34px;
+    --ui-card-pad: 14px;
+    --ui-title-size: 15px;
+    --ui-body-size: 12px;
+    --ui-meta-size: 10px;
+}
+
+:root[data-ui-density="comfortable"] {
+    --ui-space-2: 10px;
+    --ui-space-3: 15px;
+    --ui-space-4: 20px;
+    --ui-control-height: 40px;
+    --ui-card-pad: 18px;
+    --ui-title-size: 17px;
+    --ui-body-size: 13px;
+    --ui-meta-size: 11px;
+}
+
+:root[data-ui-density="wallboard"] {
+    --ui-space-2: 12px;
+    --ui-space-3: 18px;
+    --ui-space-4: 24px;
+    --ui-control-height: 44px;
+    --ui-card-pad: 20px;
+    --ui-title-size: clamp(18px, 1.35vw, 24px);
+    --ui-body-size: clamp(13px, 1vw, 17px);
+    --ui-meta-size: clamp(11px, .8vw, 14px);
+}
+
+:root[data-ui-density="comfortable"] .tab-content,
+:root[data-ui-density="comfortable"] .prop-detail,
+:root[data-ui-density="comfortable"] .analytics-panel,
+:root[data-ui-density="comfortable"] .message-panel,
+:root[data-ui-density="wallboard"] .tab-content,
+:root[data-ui-density="wallboard"] .prop-detail,
+:root[data-ui-density="wallboard"] .analytics-panel,
+:root[data-ui-density="wallboard"] .message-panel {
+    line-height: 1.5;
+}
+
+:root[data-ui-density="wallboard"] .tab-btn,
+:root[data-ui-density="wallboard"] button,
+:root[data-ui-density="wallboard"] select,
+:root[data-ui-density="wallboard"] input {
+    min-height: var(--ui-control-height);
+    font-size: var(--ui-body-size);
+}
+
+.header-secondary-controls {
+    display: contents;
+}
+
+.header-details-toggle {
+    display: none;
+    min-height: 34px;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--chip-bg);
+    color: var(--text-primary);
+    font-size: 11px;
+    font-weight: 750;
+    cursor: pointer;
+}
+.header-details-toggle small {
+    display: none;
+    color: var(--text-muted);
+    font-size: 9px;
+    font-weight: 600;
+}
+
+/* Map controls use four predictable tool groups instead of one long strip. */
+:root[data-ui-skin] #map-controls {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    padding: 6px;
+    overflow: visible;
+}
+
+.map-control-group {
+    position: relative;
+    min-width: 0;
+}
+
+.map-control-group > summary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 32px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--button-bg-muted, var(--bg-secondary));
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 750;
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+}
+
+.map-control-group > summary::-webkit-details-marker { display: none; }
+.map-control-group > summary::after { content: "⌄"; margin-left: 6px; color: var(--text-muted); }
+.map-control-group[open] > summary {
+    border-color: color-mix(in srgb, var(--user-accent) 55%, var(--border));
+    background: color-mix(in srgb, var(--user-accent) 12%, var(--button-bg-muted, var(--bg-secondary)));
+    color: var(--text-primary);
+}
+.map-control-group[open] > summary::after { content: "⌃"; }
+
+.map-control-group-body {
+    position: absolute;
+    z-index: 1200;
+    bottom: calc(100% + 7px);
+    left: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(88px, 1fr));
+    gap: 6px;
+    width: max-content;
+    max-width: min(360px, calc(100vw - 24px));
+    padding: 9px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-secondary);
+    box-shadow: 0 14px 36px rgba(0, 0, 0, .42);
+}
+
+.map-control-group:last-child .map-control-group-body {
+    right: 0;
+    left: auto;
+}
+
+:root[data-ui-skin] .map-control-group-body > button,
+:root[data-ui-skin] .map-control-group-body > select,
+:root[data-ui-skin] .map-control-group-body > div > button {
+    width: 100%;
+    min-width: 0;
+    min-height: 34px;
+}
+
+.map-control-group-body #line-time-filter { grid-column: 1 / -1; }
+.map-control-group-body #map-type-filter-wrap,
+.map-control-group-body #symbol-size-wrap,
+.map-control-group-body #line-style-wrap { position: relative; min-width: 0; }
+
+/* Consistent card hierarchy: one strong perimeter, quieter internal metrics. */
+:root[data-ui-skin] :is(
+    .prop-event-card, .prop-card, .watched-path-card, .weather-mesh-card,
+    .space-weather-card, .external-propagation-card, .anomaly-card,
+    .es-card, .best-hour-card, .dow-card, .weather-overlay-card,
+    .settings-utility-panel, .diagnostic-card
+) {
+    padding: var(--ui-card-pad);
+    border-radius: var(--theme-radius-panel, 10px);
+}
+
+:root[data-ui-skin] :is(
+    .prop-event-card, .prop-card, .watched-path-card, .weather-mesh-card,
+    .space-weather-card, .external-propagation-card, .anomaly-card,
+    .es-card, .best-hour-card, .dow-card, .weather-overlay-card
+) :is(h3, .weather-card-title, .space-weather-heading strong) {
+    font-size: var(--ui-title-size);
+    line-height: 1.25;
+}
+
+:root[data-ui-skin] :is(
+    .prop-event-summary > div, .space-weather-metrics > span,
+    .lightning-card-metrics > span, .weather-dashboard-metric
+) {
+    border: 0;
+    background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+    box-shadow: none;
+}
+
+/* Shared readable table behavior across settings, analytics, and documentation-like panes. */
+:root[data-ui-skin] :is(.analytics-panel, .prop-detail, .settings-panel, .message-panel) table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: var(--ui-body-size);
+}
+
+:root[data-ui-skin] :is(.analytics-panel, .prop-detail, .settings-panel, .message-panel) thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding: 9px 10px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    text-align: left;
+    font-size: var(--ui-meta-size);
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
+:root[data-ui-skin] :is(.analytics-panel, .prop-detail, .settings-panel, .message-panel) tbody td {
+    padding: 9px 10px;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+    vertical-align: middle;
+}
+
+:root[data-ui-skin] :is(.analytics-panel, .prop-detail, .settings-panel, .message-panel) tbody tr:hover {
+    background: color-mix(in srgb, var(--user-accent) 7%, transparent);
+}
+
+.analytics-empty,
+.source-health-empty,
+.notification-empty {
+    min-height: 74px;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    border: 1px dashed color-mix(in srgb, var(--border) 82%, transparent);
+    border-radius: 8px;
+    color: var(--text-muted);
+    text-align: center;
+    line-height: 1.45;
+}
+
+.analytics-empty .empty-state-action {
+    min-height: 30px;
+    margin-top: 8px;
+    padding: 5px 10px;
+    border: 1px solid color-mix(in srgb, var(--user-accent) 45%, var(--border));
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--user-accent) 9%, transparent);
+    color: var(--user-accent);
+    text-decoration: none;
+}
+
+.dashboard-panel-user-hidden { display: none !important; }
+body.weather-panel-user-hidden.lightning-panel-user-hidden #wx-banner { display: none !important; }
+
+.dashboard-panel-settings {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+    grid-column: 1 / -1;
+    margin: 4px 0 10px;
+}
+
+.dashboard-panel-settings > label {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: 9px;
+    min-width: 0;
+    padding: 11px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-input);
+    cursor: pointer;
+}
+
+.dashboard-panel-settings strong,
+.dashboard-panel-settings small { display: block; }
+.dashboard-panel-settings strong { color: var(--text-primary); font-size: 12px; }
+.dashboard-panel-settings small { margin-top: 3px; color: var(--text-muted); font-size: 10px; line-height: 1.35; }
+
+.settings-task-launcher {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+    max-width: 620px;
+}
+
+.settings-task-launcher button {
+    min-height: 30px;
+    padding: 5px 9px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--button-bg-muted);
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.settings-task-launcher button:hover {
+    color: var(--text-primary);
+    border-color: color-mix(in srgb, var(--user-accent) 55%, var(--border));
+}
+
+.settings-action-context {
+    display: grid;
+    min-width: 180px;
+    margin-right: auto;
+    text-align: left;
+}
+.settings-action-context strong { color: var(--text-primary); font-size: 11px; }
+.settings-action-context span { color: var(--text-muted); font-size: 10px; }
+
+/* Unified live-state language always combines color with text. */
+.source-health-copy span,
+.connection-chip .chip-value,
+.alert-badge {
+    font-variant-numeric: tabular-nums;
+}
+.source-health-item.live .source-health-copy span { color: var(--accent-green); }
+.source-health-item.delayed .source-health-copy span,
+.source-health-item.waiting .source-health-copy span { color: var(--accent-orange); }
+.source-health-item.stale .source-health-copy span,
+.source-health-item.offline .source-health-copy span { color: var(--accent-red); }
+
+@media (max-width: 1100px) {
+    :root[data-ui-skin]:not([data-ui-skin="terminal-green"]) .header-right,
+    :root[data-ui-skin]:not([data-ui-skin="radio"]):not([data-ui-skin="terminal-green"]) .header-right {
+        position: relative;
+        display: flex !important;
+        justify-content: flex-end;
+    }
+    :root[data-ui-skin]:not([data-ui-skin="terminal-green"]) .header-details-toggle {
+        display: inline-flex;
+        flex: 0 0 auto;
+        align-items: center;
+        width: auto !important;
+    }
+    :root[data-ui-skin]:not([data-ui-skin="terminal-green"]) .header-secondary-controls {
+        position: absolute;
+        z-index: 2500;
+        top: calc(100% + 7px);
+        right: 0;
+        display: none;
+        grid-template-columns: minmax(230px, 1fr) minmax(300px, 1.25fr) auto;
+        gap: 9px;
+        width: min(760px, calc(100vw - 24px));
+        padding: 10px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--bg-secondary);
+        box-shadow: 0 18px 44px rgba(0, 0, 0, .48);
+    }
+    body.header-details-open .header-secondary-controls { display: grid !important; }
+    .header-secondary-controls .connection-stack { flex-direction: row !important; }
+    .header-secondary-controls .connection-chip { width: auto; min-width: 0; flex: 1; }
+    .header-secondary-controls .header-stats { grid-column: 1 / -1; }
+}
+
+@media (min-width: 1101px) {
+    .header-secondary-controls {
+        display: flex;
+        align-items: stretch;
+        gap: 8px;
+    }
+}
+
+@media (max-width: 768px) {
+    :root[data-ui-skin] #map-controls { flex-wrap: wrap; align-items: center; }
+    .map-control-group { flex: 1 1 calc(50% - 6px); }
+    .map-control-group > summary { width: 100%; }
+    .map-control-group-body { position: absolute; bottom: calc(100% + 7px); width: min(360px, calc(100vw - 24px)); max-width: none; }
+    .map-control-group:nth-child(odd) .map-control-group-body { right: auto !important; left: 0 !important; }
+    .map-control-group:nth-child(even) .map-control-group-body { right: 0 !important; left: auto !important; }
+    .header-secondary-controls { grid-template-columns: 1fr !important; max-height: min(70vh, 520px); overflow-y: auto; }
+    .header-secondary-controls .header-action { display: flex !important; }
+    .header-secondary-controls .connection-stack { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .header-secondary-controls .header-utility-stack { justify-self: stretch; grid-template-columns: 1fr auto auto; grid-template-areas: "theme health bell"; }
+    .settings-category-header { align-items: stretch !important; }
+    .settings-task-launcher { justify-content: flex-start; max-width: none; }
+    .settings-task-launcher button { flex: 1 1 132px; }
+    .dashboard-panel-settings { grid-template-columns: 1fr; }
+    .settings-action-context { min-width: 0; width: 100%; }
+}
+
+@media (max-width: 520px) {
+    .settings-task-launcher { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+    .settings-task-launcher button { width: 100%; }
+    .map-control-group-body { grid-template-columns: 1fr 1fr; }
+    :root[data-ui-skin] :is(.analytics-panel, .prop-detail, .settings-panel, .message-panel) table {
+        display: block;
+        max-width: 100%;
+        overflow-x: auto;
+        scrollbar-width: thin;
+    }
+}
+
+/* Shared responsive geometry. Themes retain their materials while using the
+   same collision-free header and map/sidebar layout. */
+:root[data-ui-skin] .settings-section {
+    margin: 0 0 14px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--theme-radius-panel, 10px);
+    background: var(--bg-card);
+}
+
+:root[data-ui-skin] .settings-section:last-child { margin-bottom: 24px; }
+
+@media (max-width: 1100px) and (min-width: 701px) {
+    :root[data-ui-skin]:not([data-ui-skin="radio"]):not([data-ui-skin="terminal-green"]) #header {
+        display: grid;
+        grid-template-columns: minmax(190px, .65fr) minmax(360px, 1.35fr);
+        grid-template-areas:
+            "identity gauges"
+            "actions actions";
+        align-items: center;
+        gap: 8px 14px;
+        padding: 8px 12px;
+    }
+
+    :root[data-ui-skin]:not([data-ui-skin="radio"]):not([data-ui-skin="terminal-green"]) .header-left { grid-area: identity; }
+    :root[data-ui-skin]:not([data-ui-skin="radio"]):not([data-ui-skin="terminal-green"]) .header-center {
+        grid-area: gauges;
+        width: 100%;
+        max-width: none;
+    }
+    :root[data-ui-skin]:not([data-ui-skin="radio"]):not([data-ui-skin="terminal-green"]) .prop-gauges-row {
+        flex-direction: row;
+        gap: 8px;
+    }
+    :root[data-ui-skin]:not([data-ui-skin="radio"]):not([data-ui-skin="terminal-green"]) .header-right {
+        grid-area: actions;
+        display: grid;
+        grid-template-columns: minmax(240px, 1fr) minmax(330px, auto) auto;
+        align-items: center;
+        width: 100%;
+        gap: 8px;
+    }
+    :root[data-ui-skin]:not([data-ui-skin="radio"]):not([data-ui-skin="terminal-green"]) .connection-stack {
+        flex-direction: row;
+        width: 100%;
+    }
+    :root[data-ui-skin]:not([data-ui-skin="radio"]):not([data-ui-skin="terminal-green"]) .connection-chip {
+        flex: 1 1 0;
+        width: auto;
+        min-width: 0;
+    }
+}
+
+@media (max-width: 900px) {
+    :root[data-ui-skin] #main-content { flex-direction: column; }
+    :root[data-ui-skin] #map-panel { width: 100%; min-height: 220px; }
+    :root[data-ui-skin] #side-panel {
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+        min-height: 220px;
+    }
+}
+
+@media (max-width: 700px) {
+    :root[data-ui-skin]:not([data-ui-skin="radio"]):not([data-ui-skin="terminal-green"]) #header {
+        display: grid;
+        grid-template-columns: 1fr;
+        align-items: center;
+        gap: 7px;
+        padding: 8px;
+    }
+    :root[data-ui-skin]:not([data-ui-skin="radio"]):not([data-ui-skin="terminal-green"]) .header-left {
+        width: 100%;
+        justify-content: space-between;
+    }
+    :root[data-ui-skin]:not([data-ui-skin="radio"]):not([data-ui-skin="terminal-green"]) .header-right {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        width: 100%;
+        gap: 7px;
+    }
+    :root[data-ui-skin]:not([data-ui-skin="radio"]):not([data-ui-skin="terminal-green"]) .header-action {
+        grid-column: 1 / -1;
+    }
+    :root[data-ui-skin]:not([data-ui-skin="radio"]):not([data-ui-skin="terminal-green"]) .connection-stack {
+        flex-direction: row;
+        min-width: 0;
+    }
+    :root[data-ui-skin]:not([data-ui-skin="radio"]):not([data-ui-skin="terminal-green"]) .connection-chip {
+        flex: 1 1 0;
+        width: auto;
+        max-width: none;
+        min-width: 0;
+        padding-inline: 7px;
+    }
+    :root[data-ui-skin]:not([data-ui-skin="radio"]):not([data-ui-skin="terminal-green"]) .header-utility-stack {
+        display: grid;
+    }
+}
+
+@media (max-width: 600px) {
+    :root[data-ui-skin]:not([data-ui-skin="radio"]):not([data-ui-skin="terminal-green"]) .header-action { display: none; }
+    :root[data-ui-skin]:not([data-ui-skin="radio"]):not([data-ui-skin="terminal-green"]) .connection-chip {
+        width: auto;
+        max-width: none;
+        font-size: 10px;
+    }
+    :root[data-ui-skin]:not([data-ui-skin="radio"]):not([data-ui-skin="terminal-green"]) .connection-chip .chip-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+}
+
+/* Final small-screen collision guards live after theme-specific breakpoints. */
+@media (max-width: 520px) {
+    .header-details-toggle {
+        display: grid !important;
+        justify-items: end;
+        gap: 2px;
+        min-height: 42px;
+    }
+    .header-details-toggle small { display: block; }
+}
+
+/* Popover actions use the same compact rounded-rectangle silhouette as the
+   View / Stations / Layers / Appearance group buttons. */
+:root[data-ui-skin] #map-controls .map-control-group-body button,
+:root[data-ui-skin] #map-controls .map-control-group-body .map-wide-control,
+:root[data-ui-skin] #map-controls .map-control-group-body #map-type-filter-btn {
+    width: 100% !important;
+    min-width: 88px;
+    height: auto !important;
+    min-height: 32px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 7px !important;
+    background: var(--button-bg-muted, var(--bg-secondary));
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 750;
+    line-height: 1.15;
+    white-space: nowrap;
+}
+
+:root[data-ui-skin] #map-controls .map-control-group-body button:hover,
+:root[data-ui-skin] #map-controls .map-control-group-body button:focus-visible {
+    border-color: color-mix(in srgb, var(--user-accent) 55%, var(--border));
+    background: color-mix(in srgb, var(--user-accent) 12%, var(--button-bg-muted, var(--bg-secondary)));
+    color: var(--text-primary);
+}
+
+:root[data-ui-skin] #map-controls .map-control-group-body button.active {
+    border-color: var(--user-accent);
+    color: var(--text-primary);
+}

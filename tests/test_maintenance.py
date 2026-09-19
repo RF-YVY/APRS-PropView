@@ -144,12 +144,17 @@ class EvidenceTests(unittest.IsolatedAsyncioTestCase):
             app = create_app(self.config, self.db, self.tracker, self.ws, handler, config_path=path)
             endpoint = next(r.endpoint for r in app.routes if getattr(r,'path','') == '/api/config/save')
             async def receive():
-                return {'type':'http.request','body':b'{"station":{"callsign":"K5ABC","latitude":36,"longitude":-91}}'}
+                return {'type':'http.request','body':json.dumps({
+                    'station': {'callsign':'K5ABC','latitude':36,'longitude':-91},
+                    'web': {'club_display_scenes':['map','heatmap','packets']},
+                }).encode()}
             result = await endpoint(Request({'type':'http','method':'POST','path':'/api/config/save','headers':[]},receive))
             self.assertTrue(result['success'])
             self.assertIs(reference,self.config.station)
             self.assertEqual(reference.latitude,36)
-            self.assertEqual(Config.load(path).station.latitude,36)
+            saved = Config.load(path)
+            self.assertEqual(saved.station.latitude,36)
+            self.assertEqual(saved.web.club_display_scenes,['map','heatmap','packets'])
             self.assertEqual(Config.load(path.with_suffix('.toml.bak')).station.latitude,35)
 
     def test_zero_coordinates_valid_but_nonfinite_invalid(self):

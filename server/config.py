@@ -6,6 +6,12 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List
 
+CLUB_DISPLAY_SCENES = frozenset({
+    "map", "propagation", "weather", "activity", "aprs-is", "packets",
+    "longest-paths", "heatmap", "reliability", "best-times", "alerts",
+    "anomaly", "bearing", "history", "sporadic-e", "first-heard",
+})
+
 if sys.version_info >= (3, 11):
     import tomllib
 else:
@@ -85,6 +91,8 @@ visual_home_marker = true
 visual_watched_path_flow = true
 visual_activity_moments = true
 visual_packet_animation = "basic"
+club_display_rotation_seconds = 20
+club_display_scenes = ["map", "propagation", "weather", "activity"]
 
 [database]
 path = "propview.db"
@@ -118,6 +126,13 @@ qrz_password = ""
 # target_area_radius_km = 100.0
 # max_age_minutes = 60
 # alert_cooldown_minutes = 30
+# watch_weather_enabled = false
+# watch_lightning_enabled = false
+# watch_alert_radius_miles = 25.0
+# watch_alert_cooldown_minutes = 30
+# watch_discord_enabled = false
+# watch_email_enabled = false
+# watch_sms_enabled = false
 
 [messaging]
 message_retention_days = 30
@@ -162,6 +177,8 @@ my_station_full_count = 10
 my_station_full_dist_km = 200.0
 regional_full_count = 10
 regional_full_dist_km = 200.0
+psk_reporter_enabled = false
+psk_reporter_window_minutes = 30
 
 [status]
 enabled = false
@@ -214,6 +231,24 @@ radar_custom_attribution = ""
 radar_custom_api_key = ""
 radar_opacity = 0.55
 radar_animate = true
+satellite_imagery_enabled = false
+satellite_imagery_opacity = 0.35
+weather_info_banner_enabled = true
+weather_alert_discord_enabled = false
+weather_alert_email_enabled = false
+weather_alert_sms_enabled = false
+lightning_enabled = false
+lightning_satellite = "auto"
+lightning_history_minutes = 10
+lightning_opacity = 0.8
+lightning_stale_seconds = 120
+lightning_alert_enabled = false
+lightning_alert_radius_miles = 25.0
+lightning_alert_cooldown_minutes = 30
+lightning_info_card_enabled = true
+lightning_alert_discord_enabled = false
+lightning_alert_email_enabled = false
+lightning_alert_sms_enabled = false
 alert_overlay_enabled = false
 alert_overlay_range_miles = 80
 alert_overlay_groups = ["warnings", "watches", "flood", "winter", "marine", "fire_heat", "other"]
@@ -224,6 +259,13 @@ elevated_alert_polling_seconds = 60
 elevated_alert_cooldown_minutes = 15
 elevated_trigger_events = ["Tornado Watch", "Severe Thunderstorm Watch"]
 weather_alert_symbol_enabled = false
+space_weather_enabled = true
+space_weather_alert_enabled = false
+space_weather_alert_min_kp = 5.0
+space_weather_alert_cooldown_minutes = 60
+space_weather_alert_discord_enabled = false
+space_weather_alert_email_enabled = false
+space_weather_alert_sms_enabled = false
 
 [wxnow]
 enabled = false
@@ -371,6 +413,8 @@ class WebConfig:
     visual_watched_path_flow: bool = True
     visual_activity_moments: bool = True
     visual_packet_animation: str = "basic"
+    club_display_rotation_seconds: int = 20
+    club_display_scenes: List[str] = field(default_factory=lambda: ["map", "propagation", "weather", "activity"])
 
 
 @dataclass
@@ -407,6 +451,13 @@ class WatchedPathConfig:
     target_antenna_height_m: float = 10.0
     my_tx_power_w: float = 50.0
     my_antenna_gain_dbi: float = 0.0
+    watch_weather_enabled: bool = False
+    watch_lightning_enabled: bool = False
+    watch_alert_radius_miles: float = 25.0
+    watch_alert_cooldown_minutes: int = 30
+    watch_discord_enabled: bool = False
+    watch_email_enabled: bool = False
+    watch_sms_enabled: bool = False
 
 
 @dataclass
@@ -467,6 +518,8 @@ class PropagationConfig:
     my_station_full_dist_km: float = 200.0  # Max direct distance for 100% dist score
     regional_full_count: int = 10           # All RF stations for 100% count score
     regional_full_dist_km: float = 200.0    # Max RF distance for 100% dist score
+    psk_reporter_enabled: bool = False       # Optional 50 MHz+ digital-mode corroboration
+    psk_reporter_window_minutes: int = 30
 
 
 @dataclass
@@ -529,6 +582,24 @@ class WeatherConfig:
     radar_custom_api_key: str = ""
     radar_opacity: float = 0.55
     radar_animate: bool = True
+    satellite_imagery_enabled: bool = False
+    satellite_imagery_opacity: float = 0.35
+    weather_info_banner_enabled: bool = True
+    weather_alert_discord_enabled: bool = False
+    weather_alert_email_enabled: bool = False
+    weather_alert_sms_enabled: bool = False
+    lightning_enabled: bool = False
+    lightning_satellite: str = "auto"
+    lightning_history_minutes: int = 10
+    lightning_opacity: float = 0.8
+    lightning_stale_seconds: int = 120
+    lightning_alert_enabled: bool = False
+    lightning_alert_radius_miles: float = 25.0
+    lightning_alert_cooldown_minutes: int = 30
+    lightning_info_card_enabled: bool = True
+    lightning_alert_discord_enabled: bool = False
+    lightning_alert_email_enabled: bool = False
+    lightning_alert_sms_enabled: bool = False
     alert_overlay_enabled: bool = False
     alert_overlay_range_miles: int = 80
     alert_overlay_groups: List[str] = field(default_factory=lambda: [
@@ -543,6 +614,13 @@ class WeatherConfig:
         "Tornado Watch", "Severe Thunderstorm Watch",
     ])
     weather_alert_symbol_enabled: bool = False
+    space_weather_enabled: bool = True
+    space_weather_alert_enabled: bool = False
+    space_weather_alert_min_kp: float = 5.0
+    space_weather_alert_cooldown_minutes: int = 60
+    space_weather_alert_discord_enabled: bool = False
+    space_weather_alert_email_enabled: bool = False
+    space_weather_alert_sms_enabled: bool = False
 
 
 @dataclass
@@ -674,6 +752,11 @@ class Config:
 
         packet_animation = str(config.web.visual_packet_animation or "basic").strip().lower()
         config.web.visual_packet_animation = packet_animation if packet_animation in {"off", "basic", "enhanced"} else "basic"
+        config.web.club_display_rotation_seconds = max(10, min(300, int(config.web.club_display_rotation_seconds or 20)))
+        configured_scenes = config.web.club_display_scenes if isinstance(config.web.club_display_scenes, list) else []
+        config.web.club_display_scenes = [
+            scene for scene in configured_scenes if scene in CLUB_DISPLAY_SCENES
+        ] or ["map", "propagation", "weather", "activity"]
 
         return config
 
@@ -794,6 +877,13 @@ class Config:
                 f"target_antenna_height_m = {float(item.target_antenna_height_m)}",
                 f"my_tx_power_w = {float(item.my_tx_power_w)}",
                 f"my_antenna_gain_dbi = {float(item.my_antenna_gain_dbi)}",
+                f"watch_weather_enabled = {'true' if item.watch_weather_enabled else 'false'}",
+                f"watch_lightning_enabled = {'true' if item.watch_lightning_enabled else 'false'}",
+                f"watch_alert_radius_miles = {float(item.watch_alert_radius_miles)}",
+                f"watch_alert_cooldown_minutes = {int(item.watch_alert_cooldown_minutes)}",
+                f"watch_discord_enabled = {'true' if item.watch_discord_enabled else 'false'}",
+                f"watch_email_enabled = {'true' if item.watch_email_enabled else 'false'}",
+                f"watch_sms_enabled = {'true' if item.watch_sms_enabled else 'false'}",
                 "",
             ])
         lines.extend([
@@ -820,6 +910,8 @@ class Config:
             f"visual_watched_path_flow = {'true' if self.web.visual_watched_path_flow else 'false'}",
             f"visual_activity_moments = {'true' if self.web.visual_activity_moments else 'false'}",
             f'visual_packet_animation = "{esc(self.web.visual_packet_animation)}"',
+            f"club_display_rotation_seconds = {int(self.web.club_display_rotation_seconds)}",
+            'club_display_scenes = [' + ', '.join('"' + esc(scene) + '"' for scene in self.web.club_display_scenes) + ']',
             "",
             "[database]",
             f'path = "{esc(self.database.path)}"',
@@ -882,6 +974,8 @@ class Config:
             f"my_station_full_dist_km = {float(self.propagation.my_station_full_dist_km)}",
             f"regional_full_count = {int(self.propagation.regional_full_count)}",
             f"regional_full_dist_km = {float(self.propagation.regional_full_dist_km)}",
+            f"psk_reporter_enabled = {'true' if self.propagation.psk_reporter_enabled else 'false'}",
+            f"psk_reporter_window_minutes = {int(self.propagation.psk_reporter_window_minutes)}",
             "",
             "[status]",
             f"enabled = {'true' if self.status.enabled else 'false'}",
@@ -965,6 +1059,24 @@ class Config:
             f'radar_custom_api_key = "{esc(self.weather.radar_custom_api_key)}"',
             f"radar_opacity = {float(self.weather.radar_opacity)}",
             f"radar_animate = {'true' if self.weather.radar_animate else 'false'}",
+            f"satellite_imagery_enabled = {'true' if self.weather.satellite_imagery_enabled else 'false'}",
+            f"satellite_imagery_opacity = {float(self.weather.satellite_imagery_opacity)}",
+            f"weather_info_banner_enabled = {'true' if self.weather.weather_info_banner_enabled else 'false'}",
+            f"weather_alert_discord_enabled = {'true' if self.weather.weather_alert_discord_enabled else 'false'}",
+            f"weather_alert_email_enabled = {'true' if self.weather.weather_alert_email_enabled else 'false'}",
+            f"weather_alert_sms_enabled = {'true' if self.weather.weather_alert_sms_enabled else 'false'}",
+            f"lightning_enabled = {'true' if self.weather.lightning_enabled else 'false'}",
+            f'lightning_satellite = "{esc(self.weather.lightning_satellite)}"',
+            f"lightning_history_minutes = {int(self.weather.lightning_history_minutes)}",
+            f"lightning_opacity = {float(self.weather.lightning_opacity)}",
+            f"lightning_stale_seconds = {int(self.weather.lightning_stale_seconds)}",
+            f"lightning_alert_enabled = {'true' if self.weather.lightning_alert_enabled else 'false'}",
+            f"lightning_alert_radius_miles = {float(self.weather.lightning_alert_radius_miles)}",
+            f"lightning_alert_cooldown_minutes = {int(self.weather.lightning_alert_cooldown_minutes)}",
+            f"lightning_info_card_enabled = {'true' if self.weather.lightning_info_card_enabled else 'false'}",
+            f"lightning_alert_discord_enabled = {'true' if self.weather.lightning_alert_discord_enabled else 'false'}",
+            f"lightning_alert_email_enabled = {'true' if self.weather.lightning_alert_email_enabled else 'false'}",
+            f"lightning_alert_sms_enabled = {'true' if self.weather.lightning_alert_sms_enabled else 'false'}",
             f"alert_overlay_enabled = {'true' if self.weather.alert_overlay_enabled else 'false'}",
             f"alert_overlay_range_miles = {int(self.weather.alert_overlay_range_miles)}",
             'alert_overlay_groups = [' + ', '.join('"' + self._toml_escape(v) + '"' for v in self.weather.alert_overlay_groups) + ']',
@@ -975,6 +1087,13 @@ class Config:
             f"elevated_alert_cooldown_minutes = {int(self.weather.elevated_alert_cooldown_minutes)}",
             'elevated_trigger_events = [' + ', '.join('"' + self._toml_escape(v) + '"' for v in self.weather.elevated_trigger_events) + ']',
             f"weather_alert_symbol_enabled = {'true' if self.weather.weather_alert_symbol_enabled else 'false'}",
+            f"space_weather_enabled = {'true' if self.weather.space_weather_enabled else 'false'}",
+            f"space_weather_alert_enabled = {'true' if self.weather.space_weather_alert_enabled else 'false'}",
+            f"space_weather_alert_min_kp = {float(self.weather.space_weather_alert_min_kp)}",
+            f"space_weather_alert_cooldown_minutes = {int(self.weather.space_weather_alert_cooldown_minutes)}",
+            f"space_weather_alert_discord_enabled = {'true' if self.weather.space_weather_alert_discord_enabled else 'false'}",
+            f"space_weather_alert_email_enabled = {'true' if self.weather.space_weather_alert_email_enabled else 'false'}",
+            f"space_weather_alert_sms_enabled = {'true' if self.weather.space_weather_alert_sms_enabled else 'false'}",
             "",
             "[wxnow]",
             f"enabled = {'true' if self.wxnow.enabled else 'false'}",

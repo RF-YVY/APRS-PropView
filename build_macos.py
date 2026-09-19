@@ -188,6 +188,8 @@ def build():
         "pystray._darwin",
         "--hidden-import",
         "certifi",
+        "--hidden-import",
+        "netCDF4",
         "--collect-data",
         "certifi",
         "--collect-submodules",

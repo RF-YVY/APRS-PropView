@@ -339,14 +339,11 @@ class AlertManager:
         await self.send_alert(alert)
         return alert
 
-    async def send_alert(self, alert: Dict[str, Any]):
-        """Send alert via all configured channels."""
-        tasks, missing = self._alert_channel_tasks(alert)
+    async def send_alert(self, alert: Dict[str, Any], channels: Optional[List[str]] = None):
+        """Send an alert through configured channels, optionally narrowed by feature."""
+        tasks, missing = self._alert_channel_tasks(alert, channels)
 
-        logger.info(
-            f"send_alert called — discord={self.config.discord_enabled}, "
-            f"email={self.config.email_enabled}, sms={self.config.sms_enabled}"
-        )
+        logger.info("send_alert called — requested channels=%s", channels or "band-opening defaults")
 
         for channel, message in missing:
             logger.warning("Alert %s channel skipped: %s", channel, message)
@@ -389,23 +386,28 @@ class AlertManager:
             "results": results,
         }
 
-    def _alert_channel_tasks(self, alert: Dict[str, Any]) -> tuple[list[tuple[str, Any]], list[tuple[str, str]]]:
+    def _alert_channel_tasks(
+        self,
+        alert: Dict[str, Any],
+        channels: Optional[List[str]] = None,
+    ) -> tuple[list[tuple[str, Any]], list[tuple[str, str]]]:
         tasks = []
         missing = []
+        selected = {str(channel).strip().lower() for channel in channels} if channels is not None else None
 
-        if self.config.discord_enabled:
+        if (selected is None and self.config.discord_enabled) or (selected is not None and "discord" in selected):
             if self.config.discord_webhook_url:
                 tasks.append(("discord", self._send_discord(alert)))
             else:
                 missing.append(("discord", "Discord webhook URL is required."))
 
-        if self.config.email_enabled:
+        if (selected is None and self.config.email_enabled) or (selected is not None and "email" in selected):
             if self.config.email_smtp_server and self.config.email_from and self.config.email_to:
                 tasks.append(("email", self._send_email(alert)))
             else:
                 missing.append(("email", "SMTP server, from address, and to address are required."))
 
-        if self.config.sms_enabled:
+        if (selected is None and self.config.sms_enabled) or (selected is not None and "sms" in selected):
             if self.config.email_smtp_server and self.config.email_from and self.config.sms_gateway_address:
                 tasks.append(("sms", self._send_sms(alert)))
             else:
@@ -425,6 +427,14 @@ class AlertManager:
             return "\u26a1 Possible Sporadic-E Event"
         if alert_type == "watched_path":
             return "Watched VHF Path Opportunity"
+        if alert_type == "weather_warning":
+            return "\u26a0\ufe0f Weather Warning"
+        if alert_type == "weather_watch":
+            return "\U0001f325\ufe0f Weather Alert"
+        if alert_type == "lightning_proximity":
+            return "\u26a1 Nearby Lightning"
+        if alert_type == "space_weather":
+            return "NOAA Space Weather Context"
         return "\U0001f50d Regional VHF Band Watch"
 
     def _alert_embed_color(self, alert: Dict[str, Any]) -> int:
@@ -439,6 +449,14 @@ class AlertManager:
             return 0xF4A261
         if alert_type == "watched_path":
             return 0x3BA55D
+        if alert_type == "weather_warning":
+            return 0xFF3B30
+        if alert_type == "weather_watch":
+            return 0xFFB347
+        if alert_type == "lightning_proximity":
+            return 0x00D7FF
+        if alert_type == "space_weather":
+            return 0xBC8CFF
         return 0xFFA500
 
     def _alert_embed_fields(self, alert: Dict[str, Any]) -> list[Dict[str, Any]]:
@@ -562,6 +580,10 @@ class AlertManager:
                 "APRS PropView \u2014 MY STATION Band Opening!" if alert.get("type") == "my_station_opening"
                 else "APRS PropView \u2014 Watched VHF Path Opportunity" if alert.get("type") == "watched_path"
                 else "APRS PropView \u2014 Test Alert" if alert.get("type") == "test"
+                else f"APRS PropView \u2014 {alert.get('event', 'Weather Warning')}" if alert.get("type") == "weather_warning"
+                else f"APRS PropView \u2014 {alert.get('event', 'Weather Alert')}" if alert.get("type") == "weather_watch"
+                else "APRS PropView \u2014 Nearby Lightning" if alert.get("type") == "lightning_proximity"
+                else "APRS PropView \u2014 NOAA Space Weather Context" if alert.get("type") == "space_weather"
                 else "APRS PropView \u2014 Regional VHF Band Watch"
             )
             msg = MIMEText(alert["message"])

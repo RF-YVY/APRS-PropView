@@ -2,11 +2,11 @@
 import logging
 import time
 from fastapi import Query
-from server.aprs_parser import parse_packet
+from server.aprs_parser import calculate_distance, parse_packet
 logger = logging.getLogger("propview.analytics")
 
 
-def register_analytics_routes(app, db, analytics, weather_manager):
+def register_analytics_routes(app, db, analytics, weather_manager, config=None):
     @app.get("/api/analytics/longest-paths")
     async def get_longest_paths(
         hours: int = Query(24, ge=1, le=168),
@@ -123,6 +123,87 @@ def register_analytics_routes(app, db, analytics, weather_manager):
             })
         samples.sort(key=lambda item: item.get("timestamp") or 0)
         return {"samples": samples, "count": len(samples), "hours": hours}
+
+    @app.get("/api/analytics/weather-mesh")
+    async def get_weather_mesh(
+        hours: int = Query(6, ge=1, le=48),
+        radius_km: float = Query(200, ge=10, le=1000),
+    ):
+        """Summarize the newest APRS weather report from each nearby station."""
+        cutoff = time.time() - hours * 3600
+        cursor = await db.db.execute(
+            """SELECT p.timestamp, p.source, p.from_call, p.path, p.raw,
+                      COALESCE(p.latitude, s.latitude) AS latitude,
+                      COALESCE(p.longitude, s.longitude) AS longitude
+               FROM packets p
+               LEFT JOIN stations s ON s.callsign = p.from_call AND s.source = p.source
+               WHERE p.timestamp >= ? AND p.packet_type = 'weather'
+               ORDER BY p.timestamp DESC
+               LIMIT 2500""",
+            (cutoff,),
+        )
+        grouped = {}
+        for row in await cursor.fetchall():
+            packet = parse_packet(row["raw"], source=row["source"])
+            if not packet.weather:
+                continue
+            callsign = str(row["from_call"] or "").upper()
+            readings = grouped.setdefault(callsign, [])
+            if len(readings) >= 2:
+                continue
+            readings.append({
+                "timestamp": float(row["timestamp"]),
+                "source": row["source"],
+                "path": row["path"] or "",
+                "latitude": row["latitude"],
+                "longitude": row["longitude"],
+                **packet.weather,
+            })
+
+        station_lat = float(getattr(getattr(config, "station", None), "latitude", 0) or 0)
+        station_lon = float(getattr(getattr(config, "station", None), "longitude", 0) or 0)
+        now = time.time()
+        stations = []
+        for callsign, readings in grouped.items():
+            current = readings[0]
+            lat, lon = current.get("latitude"), current.get("longitude")
+            distance_km = None
+            if lat is not None and lon is not None:
+                distance_km = calculate_distance(station_lat, station_lon, float(lat), float(lon))
+                if distance_km > radius_km:
+                    continue
+            previous = readings[1] if len(readings) > 1 else {}
+            age_seconds = max(0, round(now - current["timestamp"]))
+            fields = ("temperature_f", "humidity", "pressure_mb", "wind_speed_mph", "wind_gust_mph", "rain_1h_in")
+            completeness = sum(current.get(field) is not None for field in fields)
+            freshness = 40 if age_seconds <= 900 else 25 if age_seconds <= 1800 else 10 if age_seconds <= 3600 else 0
+            reliability_score = round(min(100, freshness + completeness / len(fields) * 60))
+
+            def delta(field):
+                if current.get(field) is None or previous.get(field) is None:
+                    return None
+                return round(float(current[field]) - float(previous[field]), 2)
+
+            stations.append({
+                "callsign": callsign,
+                **current,
+                "distance_km": round(distance_km, 1) if distance_km is not None else None,
+                "age_seconds": age_seconds,
+                "stale": age_seconds > 1800,
+                "reliability_score": reliability_score,
+                "sample_count": len(readings),
+                "temperature_trend_f": delta("temperature_f"),
+                "pressure_trend_mb": delta("pressure_mb"),
+                "wind_trend_mph": delta("wind_speed_mph"),
+            })
+        stations.sort(key=lambda item: (item["stale"], item["distance_km"] is None, item["distance_km"] or 0))
+        return {
+            "stations": stations,
+            "count": len(stations),
+            "hours": hours,
+            "radius_km": radius_km,
+            "timestamp": now,
+        }
 
     @app.get("/api/analytics/path-quality/{callsign}")
     async def get_path_quality(callsign: str):

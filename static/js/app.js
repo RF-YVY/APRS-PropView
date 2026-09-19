@@ -15,6 +15,15 @@
     const DEFAULT_UI_MODE = 'dark';
     const DEFAULT_UI_SKIN = 'standard';
     const DEFAULT_UI_ACCENT = 'blue';
+    const DEFAULT_UI_DENSITY = 'compact';
+    const DASHBOARD_PANEL_DEFAULTS = {
+        weather: true,
+        lightning: true,
+        alerts: true,
+        'source-health': true,
+        'watched-paths': true,
+        'space-weather': true,
+    };
     const UI_ACCENT_COLORS = {
         blue: '#58a6ff',
         cyan: '#39d5ff',
@@ -256,6 +265,9 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         initUIThemeControls();
+        initHeaderDetails();
+        initMapControlGroups();
+        initDashboardPanelPreferences();
         loadHeaderBrandVersion();
 
         // Apply saved distance unit to all labels
@@ -281,6 +293,7 @@
         });
         initSettingsOrganizer();
         initSettingsDescriptions();
+        initGuidedEmptyStates();
 
         // Init station manager
         window.pvStations.init();
@@ -311,6 +324,7 @@
         initGpsControls();
         initMapSearch();
         initSettingsImportExport();
+        initClubDisplayControls();
         initBeaconPreviewControls();
         initSettingsDirtyTracking();
         initHeaderNotifications();
@@ -386,6 +400,8 @@
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
         btn.classList.add('active');
         document.getElementById(tabId)?.classList.add('active');
+        document.body.classList.toggle('settings-pane-open', tabId === 'tab-settings');
+        document.body.classList.toggle('messages-pane-open', tabId === 'tab-messages');
 
         if (persist) {
             const uiState = _loadUIState();
@@ -498,9 +514,9 @@
             { key: 'radio', title: 'Radio & TNC', summary: 'RF ports, digi, IGate, APRS-IS', sections: ['rf-ports', 'digipeater', 'igate', 'aprsis'] },
             { key: 'aprs', title: 'APRS', summary: 'Bulletins, objects, status, WXnow', sections: ['bulletins', 'aprs-objects', 'status-dx', 'wxnow'] },
             { key: 'tracking', title: 'Tracking & Callsigns', summary: 'Retention, blocklist, callbook, messages', sections: ['tracking', 'messaging'] },
-            { key: 'propagation', title: 'Propagation', summary: 'Scoring and watched VHF paths', sections: ['propagation', 'watched-paths'] },
-            { key: 'alerts', title: 'Alerts & Weather', summary: 'Notifications, radar, severe weather', sections: ['alerts', 'weather'] },
-            { key: 'display', title: 'Map & Display', summary: 'Map tiles, theme, visualizations, units', sections: ['web', 'visualizations'] },
+            { key: 'propagation', title: 'Propagation', summary: 'Scoring, watched VHF paths, and supporting context', sections: ['propagation', 'watched-paths'] },
+            { key: 'alerts', title: 'Alerts & Weather', summary: 'Weather, lightning, watched-location alerts, and notification delivery', sections: ['weather', 'watched-alerts', 'alerts'] },
+            { key: 'display', title: 'Map & Display', summary: 'Map tiles, theme, visualizations, units, and club display', sections: ['web', 'visualizations', 'club-display'] },
             { key: 'integrations', title: 'Integrations', summary: 'MQTT and Home Assistant', sections: ['mqtt'] },
         ];
         const categoryBySection = new Map();
@@ -540,6 +556,14 @@
             <div>
                 <h2 class="settings-category-heading"></h2>
                 <p class="settings-category-summary"></p>
+            </div>
+            <div class="settings-task-launcher" aria-label="Common setup tasks">
+                <button type="button" data-settings-task="radio">Set Up Radio</button>
+                <button type="button" data-settings-task="aprsis">Connect APRS-IS</button>
+                <button type="button" data-settings-task="weather">Weather &amp; Lightning</button>
+                <button type="button" data-settings-task="alerts">Configure Alerts</button>
+                <button type="button" data-settings-task="club-display">Club Display</button>
+                <button type="button" data-settings-task="station">Mobile Operation</button>
             </div>
         `;
         const contextPanel = document.createElement('aside');
@@ -703,6 +727,7 @@
 
         function activateSettingsCategory(categoryKey, updateUrl = true) {
             const validKey = categories.some((category) => category.key === categoryKey) ? categoryKey : 'overview';
+            const activeCategory = categories.find((category) => category.key === validKey) || categories[0];
             const searching = !!searchInput.value.trim();
             searchInput.value = '';
             noResults.classList.remove('visible');
@@ -719,6 +744,8 @@
             uiState.settingsCategory = validKey;
             _saveUIState(uiState);
             panel.dataset.activeSettingsCategory = validKey;
+            const actionContext = document.getElementById('settings-current-context');
+            if (actionContext) actionContext.textContent = activeCategory.title;
             content.scrollTop = 0;
             updateSettingsContext(validKey);
             if (updateUrl && !searching) {
@@ -729,6 +756,29 @@
         window.pvRefreshSettingsContext = () => {
             updateSettingsContext(panel.dataset.activeSettingsCategory || 'overview');
         };
+
+        categoryHeader.querySelector('.settings-task-launcher')?.addEventListener('click', (event) => {
+            const button = event.target.closest('[data-settings-task]');
+            if (!button) return;
+            const taskTargets = {
+                radio: ['radio', 'rf-ports'],
+                aprsis: ['radio', 'aprsis'],
+                weather: ['alerts', 'weather'],
+                alerts: ['alerts', 'alerts'],
+                'club-display': ['display', 'club-display'],
+                station: ['station', 'station'],
+            };
+            const [categoryKey, sectionKey] = taskTargets[button.dataset.settingsTask] || [];
+            if (!categoryKey) return;
+            activateSettingsCategory(categoryKey);
+            const ref = sectionRefs.find((item) => item.key === sectionKey);
+            if (!ref) return;
+            ref.section.classList.remove('collapsed');
+            _syncSettingsSectionState(ref.section, ref.toggle, collapsed);
+            ref.section.classList.add('usability-focus');
+            ref.section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            setTimeout(() => ref.section.classList.remove('usability-focus'), 1900);
+        });
 
         toolbar.addEventListener('click', (e) => {
             const btn = e.target.closest('[data-settings-action]');
@@ -828,12 +878,14 @@
             'digipeater',
             'web',
             'visualizations',
+            'club-display',
             'smart-beaconing',
             'bulletins',
             'aprs-objects',
             'status-dx',
             'wxnow',
             'weather',
+            'watched-alerts',
             'alerts',
             'propagation',
             'tracking',
@@ -1214,6 +1266,22 @@
         else stopRadioNeedleMotion();
     }
 
+    function applyUIDensity(value, persist = false) {
+        const density = ['comfortable', 'compact', 'wallboard'].includes(value)
+            ? value
+            : DEFAULT_UI_DENSITY;
+        document.documentElement.dataset.uiDensity = density;
+        const select = document.getElementById('cfg-ui-density');
+        if (select) select.value = density;
+        if (persist) {
+            const uiState = _loadUIState();
+            uiState.uiDensity = density;
+            _saveUIState(uiState);
+        }
+        window.dispatchEvent(new CustomEvent('pvuidensitychange', { detail: { density } }));
+        requestAnimationFrame(() => window.pvMap?.map?.invalidateSize?.());
+    }
+
     function setUITheme(updates) {
         const uiState = _loadUIState();
         const current = _normalizeUIThemeState(uiState);
@@ -1234,6 +1302,7 @@
 
     function initUIThemeControls() {
         applyUITheme(getUITheme());
+        applyUIDensity(_loadUIState().uiDensity || DEFAULT_UI_DENSITY);
 
         document.getElementById('btn-toggle-ui-theme')?.addEventListener('click', toggleUITheme);
         document.getElementById('cfg-ui-mode')?.addEventListener('change', (e) => {
@@ -1248,8 +1317,116 @@
         document.getElementById('cfg-ui-accent-custom')?.addEventListener('input', (e) => {
             setUITheme({ accent: 'custom', customAccent: e.target.value });
         });
+        document.getElementById('cfg-ui-density')?.addEventListener('change', (e) => {
+            applyUIDensity(e.target.value, true);
+        });
         document.getElementById('cfg-unit-system')?.addEventListener('change', (e) => {
             applyUnitSystem(e.target.value, true);
+        });
+    }
+
+    function initHeaderDetails() {
+        const button = document.getElementById('btn-header-details');
+        if (!button) return;
+        button.addEventListener('click', () => {
+            const open = !document.body.classList.contains('header-details-open');
+            document.body.classList.toggle('header-details-open', open);
+            button.setAttribute('aria-expanded', String(open));
+            const label = button.querySelector('span');
+            if (label) label.textContent = open ? 'Close Status' : 'Status';
+        });
+    }
+
+    function initMapControlGroups() {
+        const groups = Array.from(document.querySelectorAll('#map-controls .map-control-group'));
+        groups.forEach((group) => {
+            group.addEventListener('toggle', () => {
+                if (!group.open) return;
+                groups.forEach((other) => {
+                    if (other !== group) other.open = false;
+                });
+            });
+        });
+        document.addEventListener('click', (event) => {
+            if (event.target.closest('#map-controls')) return;
+            groups.forEach((group) => { group.open = false; });
+        });
+    }
+
+    function applyDashboardPanelPreferences(preferences) {
+        const state = { ...DASHBOARD_PANEL_DEFAULTS, ...(preferences || {}) };
+        const selectors = {
+            weather: '#wx-current',
+            lightning: '#lightning-card',
+            alerts: '#wx-alerts-container',
+            'source-health': '#source-health-control',
+            'watched-paths': '#watched-paths-panel',
+            'space-weather': '#space-weather-card, #external-propagation-card, #space-weather-heading, #external-propagation-heading',
+        };
+        Object.entries(selectors).forEach(([key, selector]) => {
+            document.querySelectorAll(selector).forEach((element) => {
+                element.classList.toggle('dashboard-panel-user-hidden', state[key] === false);
+            });
+            const control = document.querySelector(`[data-dashboard-panel="${key}"]`);
+            if (control) control.checked = state[key] !== false;
+        });
+        document.body.classList.toggle('weather-panel-user-hidden', state.weather === false);
+        document.body.classList.toggle('lightning-panel-user-hidden', state.lightning === false);
+        window.pvMap?.map?.invalidateSize?.();
+    }
+
+    function initDashboardPanelPreferences() {
+        const uiState = _loadUIState();
+        const preferences = { ...DASHBOARD_PANEL_DEFAULTS, ...(uiState.dashboardPanels || {}) };
+        applyDashboardPanelPreferences(preferences);
+        document.querySelectorAll('[data-dashboard-panel]').forEach((control) => {
+            control.addEventListener('change', () => {
+                preferences[control.dataset.dashboardPanel] = control.checked;
+                const nextState = _loadUIState();
+                nextState.dashboardPanels = { ...preferences };
+                _saveUIState(nextState);
+                applyDashboardPanelPreferences(preferences);
+            });
+        });
+    }
+
+    function initGuidedEmptyStates() {
+        const enhance = (root = document) => {
+            const candidates = [];
+            if (root.matches?.('.analytics-empty:not([data-guided-empty])')) candidates.push(root);
+            candidates.push(...(root.querySelectorAll?.('.analytics-empty:not([data-guided-empty])') || []));
+            candidates.forEach((empty) => {
+                empty.dataset.guidedEmpty = 'true';
+                const section = empty.closest('.analytics-section');
+                const category = section?.id === 'sec-weather'
+                    ? 'alerts'
+                    : (section?.id === 'sec-alerts' ? 'alerts' : 'radio');
+                const label = section?.id === 'sec-weather'
+                    ? 'Open weather settings'
+                    : (section?.id === 'sec-alerts' ? 'Configure alerts' : 'Review data sources');
+                const action = document.createElement('button');
+                action.type = 'button';
+                action.className = 'empty-state-action';
+                action.textContent = label;
+                action.addEventListener('click', () => {
+                    if (label === 'Review data sources') {
+                        document.getElementById('btn-source-health')?.click();
+                        return;
+                    }
+                    _activateDesktopTab('tab-settings');
+                    window.pvActivateSettingsCategory?.(category);
+                });
+                empty.appendChild(action);
+            });
+        };
+        enhance();
+        const observer = new MutationObserver((records) => {
+            records.forEach((record) => record.addedNodes.forEach((node) => {
+                if (node.nodeType === Node.ELEMENT_NODE) enhance(node);
+            }));
+        });
+        document.querySelectorAll('.analytics-panel, .prop-detail').forEach((panel) => {
+            observer.observe(panel, { childList: true, subtree: true });
         });
     }
 
@@ -1309,7 +1486,10 @@
 
         ws.on('alert', (msg) => {
             if (msg.data) {
-                window.pvAlertAudio?.play(msg.data.type === 'watched_path' ? 'regional_watch' : msg.data.type);
+                const audioType = msg.data.type === 'watched_path'
+                    ? 'regional_watch'
+                    : (msg.data.type === 'lightning_proximity' ? 'weather_warning' : msg.data.type);
+                window.pvAlertAudio?.play(audioType);
                 if (msg.data.type === 'my_station_opening' || msg.data.type === 'regional_watch' || msg.data.type === 'watched_path') {
                     showBandAlertNotification(msg.data);
                 } else if (msg.data.message) {
@@ -1796,6 +1976,7 @@
         if (!data) return;
 
         window.pvEvidence?.update(data, lastStatus);
+        renderPropagationEvent(data.event);
 
         // ── My Station meter (direct-heard only) ───────────
         const myScore = data.my_score || 0;
@@ -1819,6 +2000,7 @@
         }
         setTextById('prop-level-reg', data.evidence?.state === 'awaiting_live' ? 'HISTORY' : data.evidence?.state === 'no_data' ? 'NO DATA' : data.evidence?.state === 'stale' ? 'STALE' : level.toUpperCase());
         setTextById('prop-score-reg', `Score: ${score.toFixed(0)}`);
+        setTextById('header-details-summary', `${myLevel.toUpperCase()} · Regional ${level.toUpperCase()}`);
         document.getElementById('prop-meter-reg')?.style.setProperty('--radio-meter-score', Math.min(score, 100));
 
         // Header stats
@@ -1845,6 +2027,28 @@
         window.pvMap?.setPropagationVisuals?.(data);
     }
 
+    function renderPropagationEvent(event) {
+        const card = document.getElementById('prop-event-card');
+        if (!card || !event) return;
+        const state = event.state || 'normal';
+        card.className = `prop-event-card ${state}`;
+        setTextById('prop-event-state', state.toUpperCase());
+        setTextById('prop-event-score', Math.round(event.current_score || 0));
+        setTextById('prop-event-peak', Math.round(event.peak_score || 0));
+        setTextById('prop-event-samples', `${event.sample_count || 0} sample${event.sample_count === 1 ? '' : 's'}`);
+        const bearing = event.strongest_bearing == null ? '' : ` · ${Math.round(event.strongest_bearing)}°`;
+        setTextById('prop-event-scope', `${event.strongest_scope === 'direct' ? 'Direct' : 'Regional'}${bearing}`);
+        setTextById('prop-event-updated', event.updated_at
+            ? `Sampled ${new Date(event.updated_at * 1000).toLocaleTimeString()}`
+            : 'Waiting for live RF samples');
+        const timeline = document.getElementById('prop-event-timeline');
+        if (!timeline) return;
+        const transitions = event.transitions || [];
+        timeline.innerHTML = transitions.length
+            ? transitions.slice(-6).map(item => `<span class="${_escapeHTML(item.state || 'normal')}"><b>${_escapeHTML((item.state || 'normal').toUpperCase())}</b> ${Math.round(item.score || 0)} · ${new Date((item.timestamp || 0) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>`).join('')
+            : '<span>No opening lifecycle is active.</span>';
+    }
+
     function renderWatchedPaths(watched) {
         const panel = document.getElementById('watched-paths-panel');
         if (!panel) return;
@@ -1853,7 +2057,7 @@
             panel.innerHTML = '<div class="analytics-empty">No watched paths configured.</div>';
             return;
         }
-        panel.innerHTML = opportunities.map((item) => {
+        panel.innerHTML = opportunities.map((item, index) => {
             const conf = item.confidence || 'none';
             const probeLine = item.probes?.length
                 ? item.probes.slice(0, 3).map((p) => `${_escapeHTML(p.callsign || '?')} ${window.formatDist(p.distance_km || 0, 0)} ${Math.round(p.heading_diff || 0)} deg off`).join('<br>')
@@ -1864,6 +2068,7 @@
             const profile = `${Math.round((item.my_tx_power_w || 0))} W, ${Number(item.my_antenna_gain_dbi || 0).toFixed(1)} dBi, EIRP ${Math.round(item.my_eirp_w || 0)} W`;
             const bonus = item.capability_bonus ? `, score adj ${item.capability_bonus > 0 ? '+' : ''}${item.capability_bonus}` : '';
             const radius = item.target_area_radius_km ? ` - target area ${window.formatDist(item.target_area_radius_km || 0, 0)}` : '';
+            const awareness = [item.watch_weather_enabled ? 'weather' : '', item.watch_lightning_enabled ? `lightning ${item.watch_alert_radius_miles || 25} mi` : ''].filter(Boolean).join(' + ');
             return `
                 <div class="watched-path-card watched-path-${_escapeHTML(conf)}">
                     <div class="watched-path-top">
@@ -1873,7 +2078,9 @@
                     <div class="watched-path-meta">${_escapeHTML(mode || 'any band')} - ${window.formatDist(item.target_distance_km || 0, 0)} - bearing ${Math.round(item.target_heading || 0)} deg</div>
                     <div class="watched-path-meta">${_escapeHTML(geometry || 'geometry unknown')} - horizon ${window.formatDist(item.radio_horizon_km || 0, 0)}${radius}</div>
                     <div class="watched-path-meta">${_escapeHTML(profile + bonus)}</div>
+                    ${awareness ? `<div class="watched-path-meta">Remote alerts: ${_escapeHTML(awareness)}</div>` : ''}
                     <div class="watched-path-probes">${probeLine}</div>
+                    <button type="button" class="btn btn-small watched-path-scope" onclick="window.pvMap?.focusWatchScopeByIndex(${index})">View local scope</button>
                 </div>
             `;
         }).join('');
@@ -2568,6 +2775,12 @@
             badge.textContent = count ? String(count) : '';
             badge.title = `${count} modified ${count === 1 ? 'section' : 'sections'}`;
         }
+        const freshness = document.getElementById('settings-action-freshness');
+        if (freshness) {
+            freshness.textContent = count
+                ? `${count} modified ${count === 1 ? 'section' : 'sections'} not saved`
+                : 'Configuration up to date';
+        }
         window.pvRefreshSettingsContext?.();
     }
 
@@ -3070,6 +3283,11 @@
             setChk('cfg-visual-watched-path-flow', cfg.web?.visual_watched_path_flow ?? true);
             setChk('cfg-visual-activity-moments', cfg.web?.visual_activity_moments ?? true);
             setVal('cfg-visual-packet-animation', cfg.web?.visual_packet_animation || 'basic');
+            setVal('cfg-club-display-interval', cfg.web?.club_display_rotation_seconds ?? 20);
+            const clubScenes = new Set(cfg.web?.club_display_scenes || ['map', 'propagation', 'weather', 'activity']);
+            document.querySelectorAll('input[name="cfg-club-display-scene"]').forEach((input) => {
+                input.checked = clubScenes.has(input.value);
+            });
             window.pvMap?.setVisualizationConfig?.(cfg.web || {});
             window._expireMinutes = cfg.web?.expire_after_minutes ?? 0;
 
@@ -3087,6 +3305,7 @@
             setVal('cfg-callbook-qrz-pass', cfg.callbook?.qrz_password || '');
             setVal('cfg-watched-paths', watchedPathsToText(cfg.watched_paths || []));
             applyWatchedBuilderProfileDefaults(cfg.watched_paths || []);
+            refreshWatchedAlertTargets(cfg.watched_paths || []);
             setVal('cfg-msg-retention', cfg.messaging?.message_retention_days ?? 30);
             setChk('cfg-msg-sibling-ssids', cfg.messaging?.receive_sibling_ssids ?? true);
 
@@ -3173,6 +3392,8 @@
             setVal('cfg-prop-my-dist', Math.round(window.distToDisplay(cfg.propagation?.my_station_full_dist_km || 200)));
             setVal('cfg-prop-reg-count', cfg.propagation?.regional_full_count ?? 10);
             setVal('cfg-prop-reg-dist', Math.round(window.distToDisplay(cfg.propagation?.regional_full_dist_km || 200)));
+            setChk('cfg-prop-psk-enabled', cfg.propagation?.psk_reporter_enabled ?? false);
+            setVal('cfg-prop-psk-window', cfg.propagation?.psk_reporter_window_minutes ?? 30);
             setChk('cfg-alerts-msg-discord', cfg.alerts?.msg_discord_enabled);
             setChk('cfg-alerts-msg-email', cfg.alerts?.msg_email_enabled);
             setChk('cfg-alerts-msg-sms', cfg.alerts?.msg_sms_enabled);
@@ -3205,6 +3426,23 @@
             setVal('cfg-wx-radar-custom-key', cfg.weather?.radar_custom_api_key || '');
             setVal('cfg-wx-radar-opacity', cfg.weather?.radar_opacity ?? 0.55);
             setChk('cfg-wx-radar-animate', cfg.weather?.radar_animate ?? true);
+            setChk('cfg-wx-satellite-enabled', cfg.weather?.satellite_imagery_enabled);
+            setVal('cfg-wx-satellite-opacity', cfg.weather?.satellite_imagery_opacity ?? 0.35);
+            setChk('cfg-wx-info-banner-enabled', cfg.weather?.weather_info_banner_enabled ?? true);
+            setChk('cfg-wx-alert-discord', cfg.weather?.weather_alert_discord_enabled);
+            setChk('cfg-wx-alert-email', cfg.weather?.weather_alert_email_enabled);
+            setChk('cfg-wx-alert-sms', cfg.weather?.weather_alert_sms_enabled);
+            setChk('cfg-wx-lightning-enabled', cfg.weather?.lightning_enabled);
+            setVal('cfg-wx-lightning-satellite', cfg.weather?.lightning_satellite || 'auto');
+            setVal('cfg-wx-lightning-history', cfg.weather?.lightning_history_minutes ?? 10);
+            setVal('cfg-wx-lightning-opacity', cfg.weather?.lightning_opacity ?? 0.8);
+            setChk('cfg-wx-lightning-alert-enabled', cfg.weather?.lightning_alert_enabled);
+            setVal('cfg-wx-lightning-radius', cfg.weather?.lightning_alert_radius_miles ?? 25);
+            setVal('cfg-wx-lightning-cooldown', cfg.weather?.lightning_alert_cooldown_minutes ?? 30);
+            setChk('cfg-wx-lightning-card-enabled', cfg.weather?.lightning_info_card_enabled ?? true);
+            setChk('cfg-wx-lightning-alert-discord', cfg.weather?.lightning_alert_discord_enabled);
+            setChk('cfg-wx-lightning-alert-email', cfg.weather?.lightning_alert_email_enabled);
+            setChk('cfg-wx-lightning-alert-sms', cfg.weather?.lightning_alert_sms_enabled);
             setChk('cfg-wx-alert-overlay-enabled', cfg.weather?.alert_overlay_enabled);
             setVal('cfg-wx-alert-overlay-range', cfg.weather?.alert_overlay_range_miles ?? 80);
             setCheckboxGroupValues('cfg-wx-alert-group', cfg.weather?.alert_overlay_groups);
@@ -3215,6 +3453,13 @@
             setVal('cfg-wx-elevated-cooldown', cfg.weather?.elevated_alert_cooldown_minutes ?? 15);
             setElevatedTriggerEvents(cfg.weather?.elevated_trigger_events || []);
             setChk('cfg-wx-alert-symbol', cfg.weather?.weather_alert_symbol_enabled);
+            setChk('cfg-space-weather-enabled', cfg.weather?.space_weather_enabled ?? true);
+            setChk('cfg-space-weather-alert-enabled', cfg.weather?.space_weather_alert_enabled ?? false);
+            setVal('cfg-space-weather-min-kp', cfg.weather?.space_weather_alert_min_kp ?? 5);
+            setVal('cfg-space-weather-cooldown', cfg.weather?.space_weather_alert_cooldown_minutes ?? 60);
+            setChk('cfg-space-weather-discord', cfg.weather?.space_weather_alert_discord_enabled ?? false);
+            setChk('cfg-space-weather-email', cfg.weather?.space_weather_alert_email_enabled ?? false);
+            setChk('cfg-space-weather-sms', cfg.weather?.space_weather_alert_sms_enabled ?? false);
             updateWeatherOverlayOpacityLabel();
             updateWeatherAlertGroupSummary();
             updateElevatedTriggerSummary();
@@ -3240,6 +3485,7 @@
         } finally {
             settingsLoading = false;
             clearSettingsDirty();
+            setTextById('settings-action-freshness', `Loaded ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`);
             captureSettingsSnapshots();
             updateFirstRunChecklist();
             loadTransmitHistory();
@@ -3294,6 +3540,15 @@
     }
 
     function watchedPathsToText(paths) {
+        const awareness = (item) => [
+            item.watch_weather_enabled ? 1 : 0,
+            item.watch_lightning_enabled ? 1 : 0,
+            item.watch_alert_radius_miles ?? 25,
+            item.watch_alert_cooldown_minutes ?? 30,
+            item.watch_discord_enabled ? 1 : 0,
+            item.watch_email_enabled ? 1 : 0,
+            item.watch_sms_enabled ? 1 : 0,
+        ];
         return (paths || []).map((item) => {
             if (item.grid) {
                 return [
@@ -3308,6 +3563,7 @@
                     item.my_tx_power_w ?? 50,
                     item.my_antenna_gain_dbi ?? 0,
                     item.target_area_radius_km ?? 100,
+                    ...awareness(item),
                 ].join('|');
             }
             return [
@@ -3323,6 +3579,7 @@
                 item.my_tx_power_w ?? 50,
                 item.my_antenna_gain_dbi ?? 0,
                 item.target_area_radius_km ?? 100,
+                ...awareness(item),
             ].join('|');
         }).join('\n');
     }
@@ -3369,6 +3626,13 @@
                         my_tx_power_w: parts[8] || '50',
                         my_antenna_gain_dbi: parts[9] || '0',
                         target_area_radius_km: parts[10] || '100',
+                        watch_weather_enabled: parts[11] === '1',
+                        watch_lightning_enabled: parts[12] === '1',
+                        watch_alert_radius_miles: parts[13] || '25',
+                        watch_alert_cooldown_minutes: parts[14] || '30',
+                        watch_discord_enabled: parts[15] === '1',
+                        watch_email_enabled: parts[16] === '1',
+                        watch_sms_enabled: parts[17] === '1',
                     };
                 }
                 return {
@@ -3385,8 +3649,68 @@
                     my_tx_power_w: parts[9] || '50',
                     my_antenna_gain_dbi: parts[10] || '0',
                     target_area_radius_km: parts[11] || '100',
+                    watch_weather_enabled: parts[12] === '1',
+                    watch_lightning_enabled: parts[13] === '1',
+                    watch_alert_radius_miles: parts[14] || '25',
+                    watch_alert_cooldown_minutes: parts[15] || '30',
+                    watch_discord_enabled: parts[16] === '1',
+                    watch_email_enabled: parts[17] === '1',
+                    watch_sms_enabled: parts[18] === '1',
                 };
             });
+    }
+
+    function loadWatchedAlertTarget() {
+        const select = document.getElementById('watched-alert-target');
+        const controls = document.getElementById('watched-alert-controls');
+        const empty = document.getElementById('watched-alert-empty');
+        const paths = collectWatchedPaths();
+        const selected = paths.find((item) => item.callsign === select?.value);
+        if (controls) controls.hidden = !selected;
+        if (empty) empty.hidden = Boolean(selected);
+        if (!selected) return;
+        setChk('cfg-watched-alert-weather', selected.watch_weather_enabled);
+        setChk('cfg-watched-alert-lightning', selected.watch_lightning_enabled);
+        setVal('cfg-watched-alert-radius', selected.watch_alert_radius_miles || 25);
+        setVal('cfg-watched-alert-cooldown', selected.watch_alert_cooldown_minutes || 30);
+        setChk('cfg-watched-alert-discord', selected.watch_discord_enabled);
+        setChk('cfg-watched-alert-email', selected.watch_email_enabled);
+        setChk('cfg-watched-alert-sms', selected.watch_sms_enabled);
+    }
+
+    function refreshWatchedAlertTargets(paths = collectWatchedPaths(), preferred = '') {
+        const select = document.getElementById('watched-alert-target');
+        if (!select) return;
+        const previous = preferred || select.value;
+        select.replaceChildren();
+        (paths || []).forEach((item) => {
+            if (!item?.callsign) return;
+            const option = document.createElement('option');
+            option.value = item.callsign;
+            option.textContent = item.callsign;
+            select.appendChild(option);
+        });
+        select.disabled = !select.options.length;
+        if (Array.from(select.options).some((option) => option.value === previous)) select.value = previous;
+        loadWatchedAlertTarget();
+    }
+
+    function applyWatchedAlertSettings() {
+        const select = document.getElementById('watched-alert-target');
+        const target = select?.value;
+        if (!target) return;
+        const paths = collectWatchedPaths();
+        const selected = paths.find((item) => item.callsign === target);
+        if (!selected) return;
+        selected.watch_weather_enabled = getChk('cfg-watched-alert-weather');
+        selected.watch_lightning_enabled = getChk('cfg-watched-alert-lightning');
+        selected.watch_alert_radius_miles = Math.max(1, Math.min(500, parseFloat(getVal('cfg-watched-alert-radius')) || 25));
+        selected.watch_alert_cooldown_minutes = Math.max(1, Math.min(1440, parseInt(getVal('cfg-watched-alert-cooldown')) || 30));
+        selected.watch_discord_enabled = getChk('cfg-watched-alert-discord');
+        selected.watch_email_enabled = getChk('cfg-watched-alert-email');
+        selected.watch_sms_enabled = getChk('cfg-watched-alert-sms');
+        setVal('cfg-watched-paths', watchedPathsToText(paths));
+        refreshWatchedAlertTargets(paths, target);
     }
 
     function watchedPathLineFromBuilder() {
@@ -3403,16 +3727,17 @@
         const powerW = Math.max(0.1, parseFloat(getVal('watched-builder-power-w')) || 50);
         const gainDbi = Math.max(-20, Math.min(30, parseFloat(getVal('watched-builder-gain-dbi')) || 0));
         const radiusKm = Math.max(10, Math.min(500, parseFloat(getVal('watched-builder-radius-km')) || 100));
+        const awareness = [0, 0, 25, 30, 0, 0, 0];
         if (!callsign || callsign.length > 24 || /[|\r\n]/.test(callsign)) {
             throw new Error('Enter a target station callsign or short area label.');
         }
         if (grid) {
-            return [callsign, grid, band, confidence, mode, frequency, myHeightM, targetHeightM, powerW, gainDbi, radiusKm].join('|');
+            return [callsign, grid, band, confidence, mode, frequency, myHeightM, targetHeightM, powerW, gainDbi, radiusKm, ...awareness].join('|');
         }
         if (!lat || !lon || Number.isNaN(parseFloat(lat)) || Number.isNaN(parseFloat(lon))) {
             throw new Error('Lookup a station or enter a grid/latitude/longitude.');
         }
-        return [callsign, lat, lon, band, confidence, mode, frequency, myHeightM, targetHeightM, powerW, gainDbi, radiusKm].join('|');
+        return [callsign, lat, lon, band, confidence, mode, frequency, myHeightM, targetHeightM, powerW, gainDbi, radiusKm, ...awareness].join('|');
     }
 
     function setWatchedBuilderResult(message, type = '') {
@@ -3485,6 +3810,7 @@
             const base = line.split('|')[0];
             const withoutSameCall = existing.filter((item) => item.split('|')[0].toUpperCase() !== base);
             textarea.value = [...withoutSameCall, line].join('\n');
+            refreshWatchedAlertTargets(collectWatchedPaths(), base);
             markSettingsDirty();
             setWatchedBuilderResult(`${base} added to watched paths. Save settings to apply it.`, 'success');
         } catch (e) {
@@ -3495,6 +3821,11 @@
     function initWatchedPathBuilder() {
         document.getElementById('btn-watched-lookup')?.addEventListener('click', lookupWatchedPathCallsign);
         document.getElementById('btn-watched-add')?.addEventListener('click', addWatchedPathFromBuilder);
+        document.getElementById('watched-alert-target')?.addEventListener('change', loadWatchedAlertTarget);
+        document.querySelectorAll('#watched-alert-controls input').forEach((control) => {
+            control.addEventListener('change', applyWatchedAlertSettings);
+        });
+        document.getElementById('cfg-watched-paths')?.addEventListener('change', () => refreshWatchedAlertTargets());
         document.getElementById('watched-builder-band')?.addEventListener('change', applyWatchedBandDefaults);
         document.getElementById('watched-builder-mode')?.addEventListener('change', applyWatchedBandDefaults);
         document.getElementById('watched-builder-callsign')?.addEventListener('keydown', (e) => {
@@ -3618,6 +3949,8 @@
                 visual_watched_path_flow: getChk('cfg-visual-watched-path-flow'),
                 visual_activity_moments: getChk('cfg-visual-activity-moments'),
                 visual_packet_animation: getVal('cfg-visual-packet-animation') || 'basic',
+                club_display_rotation_seconds: parseInt(getVal('cfg-club-display-interval')) || 20,
+                club_display_scenes: Array.from(document.querySelectorAll('input[name="cfg-club-display-scene"]:checked')).map((input) => input.value),
             },
             database: {
                 packet_retention_days: Number(getVal("cfg-packet-retention")),
@@ -3710,6 +4043,23 @@
                 radar_custom_api_key: getVal('cfg-wx-radar-custom-key') || '',
                 radar_opacity: parseFloat(getVal('cfg-wx-radar-opacity')) || 0.55,
                 radar_animate: getChk('cfg-wx-radar-animate'),
+                satellite_imagery_enabled: getChk('cfg-wx-satellite-enabled'),
+                satellite_imagery_opacity: parseFloat(getVal('cfg-wx-satellite-opacity')) || 0.35,
+                weather_info_banner_enabled: getChk('cfg-wx-info-banner-enabled'),
+                weather_alert_discord_enabled: getChk('cfg-wx-alert-discord'),
+                weather_alert_email_enabled: getChk('cfg-wx-alert-email'),
+                weather_alert_sms_enabled: getChk('cfg-wx-alert-sms'),
+                lightning_enabled: getChk('cfg-wx-lightning-enabled'),
+                lightning_satellite: getVal('cfg-wx-lightning-satellite') || 'auto',
+                lightning_history_minutes: parseInt(getVal('cfg-wx-lightning-history')) || 10,
+                lightning_opacity: parseFloat(getVal('cfg-wx-lightning-opacity')) || 0.8,
+                lightning_alert_enabled: getChk('cfg-wx-lightning-alert-enabled'),
+                lightning_alert_radius_miles: parseFloat(getVal('cfg-wx-lightning-radius')) || 25,
+                lightning_alert_cooldown_minutes: parseInt(getVal('cfg-wx-lightning-cooldown')) || 30,
+                lightning_info_card_enabled: getChk('cfg-wx-lightning-card-enabled'),
+                lightning_alert_discord_enabled: getChk('cfg-wx-lightning-alert-discord'),
+                lightning_alert_email_enabled: getChk('cfg-wx-lightning-alert-email'),
+                lightning_alert_sms_enabled: getChk('cfg-wx-lightning-alert-sms'),
                 alert_overlay_enabled: getChk('cfg-wx-alert-overlay-enabled'),
                 alert_overlay_range_miles: parseInt(getVal('cfg-wx-alert-overlay-range')) || 80,
                 alert_overlay_groups: getCheckboxGroupValues('cfg-wx-alert-group'),
@@ -3720,12 +4070,21 @@
                 elevated_alert_cooldown_minutes: parseInt(getVal('cfg-wx-elevated-cooldown')) || 15,
                 elevated_trigger_events: getElevatedTriggerEvents(),
                 weather_alert_symbol_enabled: getChk('cfg-wx-alert-symbol'),
+                space_weather_enabled: getChk('cfg-space-weather-enabled'),
+                space_weather_alert_enabled: getChk('cfg-space-weather-alert-enabled'),
+                space_weather_alert_min_kp: parseFloat(getVal('cfg-space-weather-min-kp')) || 5,
+                space_weather_alert_cooldown_minutes: parseInt(getVal('cfg-space-weather-cooldown')) || 60,
+                space_weather_alert_discord_enabled: getChk('cfg-space-weather-discord'),
+                space_weather_alert_email_enabled: getChk('cfg-space-weather-email'),
+                space_weather_alert_sms_enabled: getChk('cfg-space-weather-sms'),
             },
             propagation: {
                 my_station_full_count: parseInt(getVal('cfg-prop-my-count')) || 10,
                 my_station_full_dist_km: Math.round(window.displayToDist(parseFloat(getVal('cfg-prop-my-dist')) || 200)),
                 regional_full_count: parseInt(getVal('cfg-prop-reg-count')) || 10,
                 regional_full_dist_km: Math.round(window.displayToDist(parseFloat(getVal('cfg-prop-reg-dist')) || 200)),
+                psk_reporter_enabled: getChk('cfg-prop-psk-enabled'),
+                psk_reporter_window_minutes: parseInt(getVal('cfg-prop-psk-window')) || 30,
             },
             mqtt: {
                 enabled: getChk('cfg-mqtt-enabled'),
@@ -3788,6 +4147,7 @@
                     aprsIsPasscodeConfigured = true;
                 }
                 clearSettingsDirty();
+                setTextById('settings-action-freshness', `Saved ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`);
                 captureSettingsSnapshots();
                 updateFirstRunChecklist();
                 document.dispatchEvent(new CustomEvent('pvsettingssaved', { detail: { config: body } }));
@@ -3799,6 +4159,7 @@
                     if (!settingsDirty) statusEl.style.display = 'none';
                 }, delay);
                 window.pvWeather?.fetchWeather(true);
+                window.pvWeather?.fetchLightning();
                 window.pvMap?.setMapTileConfig(body.web);
                 loadUpdateStatus(false);
             }
@@ -3835,6 +4196,18 @@
     function getChk(id) {
         const el = document.getElementById(id);
         return el ? el.checked : false;
+    }
+
+    function initClubDisplayControls() {
+        document.getElementById('btn-launch-club-display')?.addEventListener('click', () => {
+            const selected = document.querySelectorAll('input[name="cfg-club-display-scene"]:checked');
+            if (!selected.length) {
+                const fallback = document.querySelector('input[name="cfg-club-display-scene"][value="map"]');
+                if (fallback) fallback.checked = true;
+                markSettingsDirty('At least one club-display layout is required. Live Map was selected.', fallback);
+            }
+            window.open('/kiosk', 'propview-club-display');
+        });
     }
 
     function initSettingsImportExport() {
@@ -4387,6 +4760,7 @@
 
     function initWeatherSettingsUi() {
         document.getElementById('cfg-wx-radar-opacity')?.addEventListener('input', updateWeatherOverlayOpacityLabel);
+        document.getElementById('cfg-wx-satellite-opacity')?.addEventListener('input', updateWeatherOverlayOpacityLabel);
         document.getElementById('cfg-wx-radar-provider')?.addEventListener('change', updateRadarProviderUi);
         document.getElementById('cfg-wx-alert-provider')?.addEventListener('change', updateWeatherProviderUi);
         document.querySelectorAll('input[name="cfg-wx-alert-group"]').forEach((el) => {
@@ -4444,10 +4818,14 @@
     }
 
     function updateWeatherOverlayOpacityLabel() {
-        const input = document.getElementById('cfg-wx-radar-opacity');
-        const label = document.getElementById('cfg-wx-radar-opacity-value');
-        if (!input || !label) return;
-        label.textContent = `${Math.round((parseFloat(input.value) || 0) * 100)}%`;
+        [
+            ['cfg-wx-radar-opacity', 'cfg-wx-radar-opacity-value'],
+            ['cfg-wx-satellite-opacity', 'cfg-wx-satellite-opacity-value'],
+        ].forEach(([inputId, labelId]) => {
+            const input = document.getElementById(inputId);
+            const label = document.getElementById(labelId);
+            if (input && label) label.textContent = `${Math.round((parseFloat(input.value) || 0) * 100)}%`;
+        });
     }
 
     function updateWeatherAlertGroupSummary() {

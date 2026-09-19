@@ -32,6 +32,9 @@
                 document.documentElement.dataset.uiMode = mode === 'light' ? 'light' : 'dark';
                 document.documentElement.dataset.uiSkin = skin;
                 document.documentElement.dataset.uiAccent = accent;
+                document.documentElement.dataset.uiDensity = ['comfortable', 'compact', 'wallboard'].includes(state.uiDensity)
+                    ? state.uiDensity
+                    : 'compact';
                 document.documentElement.style.setProperty(
                     '--user-accent',
                     accent === 'custom' && /^#[0-9a-f]{6}$/i.test(state.uiAccentCustom || '')
@@ -43,7 +46,7 @@
     </script>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css" />
-    <link rel="stylesheet" href="/static/css/style.css?v=__ASSET_VERSION__-branding" />
+    <link rel="stylesheet" href="/static/css/style.css?v=__ASSET_VERSION__-club-display" />
     <link rel="stylesheet" href="/static/css/themes.css?v=__ASSET_VERSION__" />
     <!-- Leaflet JS -->
     <script defer src="/static/vendor/leaflet/leaflet.js"></script>
@@ -115,6 +118,10 @@
             </div>
         </div>
         <div class="header-right">
+            <button id="btn-header-details" class="header-details-toggle" type="button" aria-expanded="false" aria-controls="header-secondary-controls">
+                <span>Status</span><small id="header-details-summary">Waiting for RF</small>
+            </button>
+            <div id="header-secondary-controls" class="header-secondary-controls">
             <div class="header-action">
                 <div class="header-action-controls">
                     <button id="btn-manual-beacon" class="btn-primary btn-header-action" type="button" title="Transmit a beacon immediately">Transmit Beacon</button>
@@ -141,6 +148,16 @@
                 </div>
             </div>
             <div class="header-utility-stack">
+            <div id="source-health-control" class="source-health-control">
+                <button id="btn-source-health" class="source-health-button" type="button" title="Data source health" aria-label="Data source health" aria-expanded="false">
+                    <span class="source-health-dot"></span><span>Data</span><b id="source-health-count" hidden>0</b>
+                </button>
+                <div id="source-health-panel" class="source-health-panel" hidden>
+                    <div class="source-health-header"><span>Source health</span><small id="source-health-updated">Checking…</small></div>
+                    <div id="source-health-list" class="source-health-list"><div class="source-health-empty">Checking data sources…</div></div>
+                    <div class="source-health-note">Freshness reports when PropView last received data. Browser tile layers are reported as configured because tile availability is verified visually.</div>
+                </div>
+            </div>
             <div id="header-notifications" class="header-notifications">
                 <button id="btn-header-notifications" class="notification-button" type="button" title="Notifications" aria-label="Notifications" aria-expanded="false">
                     <span class="notification-icon">🔔</span>
@@ -166,6 +183,7 @@
                 <span title="APRS-IS Stations (1h)">IS: <b id="is-count-1h">0</b></span>
                 <span title="Max Distance">Max: <b id="max-distance">0</b> <span class="dist-unit">mi</span></span>
             </div>
+            </div>
         </div>
     </header>
 
@@ -188,7 +206,7 @@
         <div id="map-panel">
             <!-- Weather Banner (top of map) -->
             <div id="wx-banner" class="wx-banner" style="display:none;">
-                <div class="wx-current">
+                <div id="wx-current" class="wx-current">
                     <span class="wx-icon" id="wx-icon">☀️</span>
                     <span class="wx-temp" id="wx-temp">--°F</span>
                     <span class="wx-desc" id="wx-desc">--</span>
@@ -205,6 +223,18 @@
                     </button>
                     <button id="wx-refresh-btn" class="wx-refresh-btn" title="Refresh weather">🔄</button>
                 </div>
+                <div id="lightning-card" class="lightning-card" hidden>
+                    <div class="lightning-card-title">⚡ GLM Lightning <span id="lightning-source">--</span></div>
+                    <div class="lightning-card-metrics">
+                        <span><b id="lightning-minute">0</b><small>LAST MIN</small></span>
+                        <span><b id="lightning-retained">0</b><small>ROLLING</small></span>
+                        <span><b id="lightning-nearest">--</b><small>NEAREST</small></span>
+                    </div>
+                    <div class="lightning-card-status">
+                        <span id="lightning-status">Waiting for NOAA data…</span>
+                        <button type="button" id="lightning-view-btn" title="Zoom to the nearest active lightning cluster">View nearest</button>
+                    </div>
+                </div>
             </div>
             <!-- Severe weather alert banners -->
             <div id="wx-alerts-container" class="wx-alerts-container"></div>
@@ -216,20 +246,48 @@
             <div id="map"></div>
             <button id="sidebar-toggle" title="Toggle sidebar">▶</button>
             <div id="map-controls">
-                <button id="btn-center-map" title="Center on my station">📍</button>
-                <button id="btn-create-object" title="Create APRS object from map">Obj</button>
-                <button id="btn-toggle-lines" title="Toggle propagation lines" class="active">📏</button>
-                <button id="btn-toggle-rf" title="Toggle RF stations" class="active">🔴</button>
-                <button id="btn-toggle-is" title="Toggle APRS-IS stations" class="active">🔵</button>
-                <button id="btn-toggle-direct-rf" class="map-wide-control" title="Show only RF stations heard directly, excluding digipeaters and APRS-IS">Direct RF</button>
-                <button id="btn-toggle-maidenhead" class="map-wide-control" title="Show Maidenhead grid; click a square to use it in the watched-path builder">Grid</button>
-                <div class="map-control-divider"></div>
-                <button id="btn-toggle-theme" title="Toggle light/dark map" class="active">🌙</button>
-                <button id="btn-toggle-labels" title="Toggle station callsign labels">🏷️</button>
-                <button id="btn-toggle-autofit" title="Auto-zoom to fit all stations">⛶</button>
-                <button id="btn-cache-map" title="Cache visible map tiles for offline use">Cache</button>
-                <div class="map-control-divider"></div>
-                <div id="symbol-size-wrap">
+                <details class="map-control-group">
+                    <summary>View</summary>
+                    <div class="map-control-group-body">
+                        <button id="btn-center-map" title="Center on my station">📍 Center</button>
+                        <button id="btn-local-scope" class="map-wide-control" title="Show a QTH-centered local scope with 25, 50, and 100 mile range rings">Scope</button>
+                        <button id="btn-toggle-autofit" title="Auto-zoom to fit all stations">⛶ Fit</button>
+                        <button id="btn-create-object" title="Create APRS object from map">Obj</button>
+                    </div>
+                </details>
+                <details class="map-control-group">
+                    <summary>Stations</summary>
+                    <div class="map-control-group-body">
+                        <button id="btn-toggle-rf" title="Toggle RF stations" class="active">🔴 RF</button>
+                        <button id="btn-toggle-is" title="Toggle APRS-IS stations" class="active">🔵 APRS-IS</button>
+                        <button id="btn-toggle-direct-rf" class="map-wide-control" title="Show only RF stations heard directly, excluding digipeaters and APRS-IS">Direct RF</button>
+                        <button id="btn-toggle-labels" title="Toggle station callsign labels">🏷️ Labels</button>
+                        <div id="map-type-filter-wrap">
+                            <button id="map-type-filter-btn" title="Filter stations by type">Types ▾</button>
+                            <div id="map-type-filter-dropdown" class="map-type-dropdown">
+                                <label class="map-type-cb map-type-cb-all"><input type="checkbox" id="map-type-all" checked> <span>All Types</span></label>
+                                <div class="map-type-divider"></div>
+                                <div id="map-type-checkboxes"></div>
+                            </div>
+                        </div>
+                    </div>
+                </details>
+                <details class="map-control-group">
+                    <summary>Layers</summary>
+                    <div class="map-control-group-body">
+                        <button id="btn-toggle-lines" title="Toggle propagation lines" class="active">📏 Paths</button>
+                        <button id="btn-toggle-maidenhead" class="map-wide-control" title="Show Maidenhead grid; click a square to use it in the watched-path builder">Grid</button>
+                        <select id="line-time-filter" title="Filter paths by time">
+                            <option value="1">1h paths</option><option value="6">6h paths</option><option value="12">12h paths</option><option value="24" selected>24h paths</option><option value="0">All paths</option>
+                        </select>
+                    </div>
+                </details>
+                <details class="map-control-group">
+                    <summary>Appearance</summary>
+                    <div class="map-control-group-body">
+                        <button id="btn-toggle-theme" title="Switch to light map" aria-label="Switch to light map" class="active">🌙</button>
+                        <button id="btn-cache-map" title="Cache visible map tiles for offline use">Cache</button>
+                        <div id="symbol-size-wrap">
                     <button id="symbol-size-btn" class="map-wide-control" type="button" title="Station symbol size">Size</button>
                     <div id="symbol-size-popover" class="line-style-popover">
                         <label>
@@ -238,15 +296,8 @@
                         </label>
                         <div id="station-symbol-size-value">100%</div>
                     </div>
-                </div>
-                <select id="line-time-filter" title="Filter lines by time">
-                    <option value="1">1h lines</option>
-                    <option value="6">6h lines</option>
-                    <option value="12">12h lines</option>
-                    <option value="24" selected>24h lines</option>
-                    <option value="0">All time</option>
-                </select>
-                <div id="line-style-wrap">
+                        </div>
+                        <div id="line-style-wrap">
                     <button id="line-style-btn" class="map-wide-control" type="button" title="Line style options">Line</button>
                     <div id="line-style-popover" class="line-style-popover">
                         <label>
@@ -282,17 +333,9 @@
                             <input id="line-show-watched-paths" type="checkbox" checked>
                         </label>
                     </div>
-                </div>
-                <div id="map-type-filter-wrap">
-                    <button id="map-type-filter-btn" title="Filter stations by type">🏷️ Types ▾</button>
-                    <div id="map-type-filter-dropdown" class="map-type-dropdown">
-                        <label class="map-type-cb map-type-cb-all">
-                            <input type="checkbox" id="map-type-all" checked> <span>All Types</span>
-                        </label>
-                        <div class="map-type-divider"></div>
-                        <div id="map-type-checkboxes"></div>
+                        </div>
                     </div>
-                </div>
+                </details>
             </div>
         </div>
 
@@ -466,6 +509,20 @@
             <!-- ── Propagation Tab ───────────────────────────── -->
             <div id="tab-prop" class="tab-content">
                 <div class="prop-detail">
+                    <section id="prop-event-card" class="prop-event-card normal" aria-live="polite">
+                        <div class="prop-event-heading">
+                            <div><span class="prop-event-kicker">Propagation event</span><strong id="prop-event-state">NORMAL</strong></div>
+                            <span id="prop-event-updated">Waiting for live RF samples</span>
+                        </div>
+                        <div class="prop-event-summary">
+                            <div><small>Current</small><b id="prop-event-score">0</b></div>
+                            <div><small>Peak</small><b id="prop-event-peak">0</b></div>
+                            <div><small>Evidence</small><b id="prop-event-samples">0 samples</b></div>
+                            <div><small>Strongest</small><b id="prop-event-scope">Regional</b></div>
+                        </div>
+                        <div id="prop-event-timeline" class="prop-event-timeline"><span>No opening lifecycle is active.</span></div>
+                        <p>Events require sustained, fresh RF evidence. A score is an observation summary, not a propagation forecast.</p>
+                    </section>
                     <h3>Current Conditions</h3>
                     <div class="prop-grid">
                         <div class="prop-card">
@@ -515,6 +572,30 @@
                         <a id="dxview-map-link" href="https://vhf.dxview.org/map?center=34.42,-88.10,7.7" target="_blank" rel="noopener" title="Open VHF DXView map centered on your station">Open VHF DXView Map</a>
                     </div>
                     <div id="dxview-map-coords" class="dxview-map-coords">Waiting for station location</div>
+
+                    <h3>NOAA Space Weather Context</h3>
+                    <div id="space-weather-card" class="space-weather-card">
+                        <div class="space-weather-heading"><strong>NOAA SWPC</strong><span id="space-weather-age">Waiting for data…</span></div>
+                        <div class="space-weather-metrics">
+                            <span><small>Kp</small><b id="space-weather-kp">--</b></span>
+                            <span><small>Geomagnetic</small><b id="space-weather-g">G--</b></span>
+                            <span><small>Radio blackout</small><b id="space-weather-r">R--</b></span>
+                            <span><small>Solar radiation</small><b id="space-weather-s">S--</b></span>
+                        </div>
+                        <p id="space-weather-context">This is supporting context, not a VHF propagation forecast.</p>
+                    </div>
+
+                    <h3 id="external-propagation-heading" hidden>Independent Digital-Mode Context</h3>
+                    <div id="external-propagation-card" class="external-propagation-card" hidden>
+                        <div class="space-weather-heading"><strong>PSK REPORTER · 50 MHz+</strong><span id="external-propagation-age">Waiting for data…</span></div>
+                        <div class="space-weather-metrics">
+                            <span><small>Reports</small><b id="external-propagation-count">0</b></span>
+                            <span><small>Peers</small><b id="external-propagation-peers">0</b></span>
+                            <span><small>Max path</small><b id="external-propagation-distance">--</b></span>
+                            <span><small>Active bands</small><b id="external-propagation-bands">--</b></span>
+                        </div>
+                        <p id="external-propagation-note">Independent digital-mode reports are supporting context, not APRS RF evidence.</p>
+                    </div>
 
                     <h3>Solar-Terrestrial Data</h3>
                     <div class="solar-widget">
@@ -744,6 +825,21 @@
                             <canvas id="weather-humidity-chart" width="380" height="160"></canvas>
                         </div>
                         <div id="weather-analytics-summary" class="analytics-empty">No weather data loaded yet.</div>
+                        <div class="analytics-header weather-mesh-header">
+                            <div>
+                                <h3>APRS Weather Mesh</h3>
+                                <p class="analytics-desc">Latest packet-derived conditions from nearby APRS weather stations.</p>
+                            </div>
+                            <select id="weather-mesh-radius" title="Weather mesh radius">
+                                <option value="80">50 mi</option>
+                                <option value="160">100 mi</option>
+                                <option value="320" selected>200 mi</option>
+                                <option value="800">500 mi</option>
+                            </select>
+                        </div>
+                        <div id="weather-mesh-list" class="weather-mesh-list">
+                            <div class="analytics-empty">No APRS weather stations loaded yet.</div>
+                        </div>
                     </div>
 
                     <!-- Data Export -->
@@ -1242,6 +1338,14 @@
                                     <input id="cfg-ui-accent-custom" data-local-setting type="color" value="#58a6ff" title="Choose a custom accent color" aria-label="Custom accent color">
                                 </div>
                             </div>
+                            <div class="settings-row">
+                                <label for="cfg-ui-density">Display Density</label>
+                                <select id="cfg-ui-density" data-local-setting>
+                                    <option value="comfortable">Comfortable</option>
+                                    <option value="compact">Compact</option>
+                                    <option value="wallboard">Wallboard</option>
+                                </select>
+                            </div>
                             <div class="theme-preview-strip" aria-hidden="true">
                                 <span></span><span></span><span></span>
                                 <b>LIVE THEME PREVIEW</b>
@@ -1337,7 +1441,54 @@
                                 <span><strong>Packet Animation</strong><small>Shows station transmit bursts and directional packet flow. Enhanced adds a moving head, contrail, and hop pulses.</small></span>
                             </label>
                         </div>
+                        <h4>Dashboard Visibility</h4>
+                        <div class="dashboard-panel-settings" aria-label="Dashboard panel visibility">
+                            <label><input type="checkbox" id="cfg-dashboard-weather" data-dashboard-panel="weather" data-local-setting checked> <span><strong>Weather</strong><small>Current local conditions above the map.</small></span></label>
+                            <label><input type="checkbox" id="cfg-dashboard-glm-card" data-dashboard-panel="lightning" data-local-setting checked> <span><strong>Lightning</strong><small>GOES GLM activity and nearest strike.</small></span></label>
+                            <label><input type="checkbox" id="cfg-dashboard-alerts" data-dashboard-panel="alerts" data-local-setting checked> <span><strong>Weather Alerts</strong><small>Active alert banners and warnings.</small></span></label>
+                            <label><input type="checkbox" id="cfg-dashboard-source-health" data-dashboard-panel="source-health" data-local-setting checked> <span><strong>Source Health</strong><small>Data freshness control in the header.</small></span></label>
+                            <label><input type="checkbox" id="cfg-dashboard-watched-paths" data-dashboard-panel="watched-paths" data-local-setting checked> <span><strong>Watched Paths</strong><small>Configured VHF path observations.</small></span></label>
+                            <label><input type="checkbox" id="cfg-dashboard-space-weather" data-dashboard-panel="space-weather" data-local-setting checked> <span><strong>Propagation Context</strong><small>NOAA space weather and external context cards.</small></span></label>
+                        </div>
                         <p class="settings-note">Each effect is independent. Motion is automatically reduced when your operating system requests reduced motion.</p>
+                    </div>
+
+                    <div class="settings-section" data-settings-key="club-display" data-summary="Rotating layouts for club rooms, events, and unattended monitors.">
+                        <h3>📺 Club Display</h3>
+                        <div class="settings-row">
+                            <label for="cfg-club-display-interval">Rotation Interval (seconds)</label>
+                            <input type="number" id="cfg-club-display-interval" min="10" max="300" step="5" value="20">
+                        </div>
+                        <div class="weather-alert-groups">
+                            <div class="weather-overlay-title">Core Panels</div>
+                            <div class="weather-alert-groups-grid">
+                                <label><input type="checkbox" id="cfg-club-scene-map" name="cfg-club-display-scene" value="map" checked> Live Map</label>
+                                <label><input type="checkbox" id="cfg-club-scene-propagation" name="cfg-club-display-scene" value="propagation" checked> Propagation</label>
+                                <label><input type="checkbox" id="cfg-club-scene-weather" name="cfg-club-display-scene" value="weather" checked> Weather</label>
+                                <label><input type="checkbox" id="cfg-club-scene-activity" name="cfg-club-display-scene" value="activity" checked> RF Activity</label>
+                            </div>
+                            <details class="club-display-extra-panels">
+                                <summary>Additional rotation panels</summary>
+                                <div class="weather-alert-groups-grid">
+                                    <label><input type="checkbox" id="cfg-club-scene-aprs-is" name="cfg-club-display-scene" value="aprs-is"> APRS-IS Activity</label>
+                                    <label><input type="checkbox" id="cfg-club-scene-packets" name="cfg-club-display-scene" value="packets"> Packet Feed</label>
+                                    <label><input type="checkbox" id="cfg-club-scene-longest-paths" name="cfg-club-display-scene" value="longest-paths"> Longest Paths</label>
+                                    <label><input type="checkbox" id="cfg-club-scene-heatmap" name="cfg-club-display-scene" value="heatmap"> Propagation Heatmap</label>
+                                    <label><input type="checkbox" id="cfg-club-scene-reliability" name="cfg-club-display-scene" value="reliability"> Station Reliability</label>
+                                    <label><input type="checkbox" id="cfg-club-scene-best-times" name="cfg-club-display-scene" value="best-times"> Best Times</label>
+                                    <label><input type="checkbox" id="cfg-club-scene-alerts" name="cfg-club-display-scene" value="alerts"> Band Alerts</label>
+                                    <label><input type="checkbox" id="cfg-club-scene-anomaly" name="cfg-club-display-scene" value="anomaly"> Propagation Anomaly</label>
+                                    <label><input type="checkbox" id="cfg-club-scene-bearing" name="cfg-club-display-scene" value="bearing"> Bearing Sectors</label>
+                                    <label><input type="checkbox" id="cfg-club-scene-history" name="cfg-club-display-scene" value="history"> Historical Comparison</label>
+                                    <label><input type="checkbox" id="cfg-club-scene-sporadic-e" name="cfg-club-display-scene" value="sporadic-e"> Sporadic-E</label>
+                                    <label><input type="checkbox" id="cfg-club-scene-first-heard" name="cfg-club-display-scene" value="first-heard"> First Heard</label>
+                                </div>
+                            </details>
+                        </div>
+                        <div class="settings-row settings-action-row">
+                            <button type="button" class="btn-primary" id="btn-launch-club-display">Open Club Display</button>
+                        </div>
+                        <p class="settings-note">Opens a read-only display at <code>/kiosk</code>. Select any combination of core and additional panels. Live Map fills the map area; data panels use map-free full-width dashboards with automatic scrolling. Includes pause, previous, next, and fullscreen controls.</p>
                     </div>
 
                     <!-- Tracking -->
@@ -1368,7 +1519,7 @@
                         <p class="settings-note">Use CALL-SSID to block one station ID, or CALL to block every SSID for that callsign. Blocked packets are ignored before station, packet, message, and propagation history updates.</p>
                     </div>
 
-                    <div class="settings-section" data-settings-key="watched-paths" data-summary="Target stations for VHF path opportunity alerts.">
+                    <div class="settings-section" data-settings-key="watched-paths" data-summary="Target stations and radio-path criteria for VHF monitoring.">
                         <h3>Watched Paths</h3>
                         <div class="settings-row">
                             <label for="cfg-callbook-provider">Lookup Source</label>
@@ -1487,7 +1638,7 @@
                         </div>
                         <div class="settings-row settings-row-stacked">
                             <label for="cfg-watched-paths">Advanced Target List</label>
-                            <textarea id="cfg-watched-paths" rows="5" placeholder="W1AW|35.0000|-80.0000|2m|medium|SSB|144.200|10|10|50|0&#10;W1AW-7|EM85|6m|low|FT8|50.313|10|10|50|0"></textarea>
+                            <textarea id="cfg-watched-paths" rows="5" placeholder="W1AW|35.0000|-80.0000|2m|medium|SSB|144.200|10|10|50|0|100|1|1|25|30|1|0|0"></textarea>
                         </div>
                         <p class="settings-note">Use the builder for normal entries. Auto lookup uses Callook and HamDB before optional QRZ/HamQTH credentials. Returned locations are license or callbook address locations; override grid or coordinates when you know the actual station site. Advanced height values are meters.</p>
                     </div>
@@ -1635,7 +1786,7 @@
                     </div>
 
                     <!-- Weather -->
-                    <div class="settings-section" data-settings-key="weather" data-summary="Weather banner, radar overlay, alert polygons, and refresh interval.">
+                    <div class="settings-section" data-settings-key="weather" data-summary="Weather sources, map overlays, local weather alerts, and nearby lightning alerts.">
                         <h3>🌤️ Weather</h3>
                         <div class="settings-row">
                             <label for="cfg-wx-enabled">Weather Enabled</label>
@@ -1755,7 +1906,26 @@
                             <p class="weather-overlay-note">When any configured trigger event is active in the selected alert scope, alert polling automatically increases to the elevated interval so new warnings are picked up faster.</p>
                         </div>
                         <div class="weather-overlay-card">
-                            <div class="weather-overlay-title">Weather Alert Beacons</div>
+                            <div class="weather-overlay-title">Weather Alerts &amp; Display</div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-info-banner-enabled">Show Weather Info Banner</label>
+                                <input type="checkbox" id="cfg-wx-info-banner-enabled">
+                            </div>
+                            <div class="weather-overlay-title weather-overlay-subtitle">Notification Destinations</div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-alert-discord">Discord</label>
+                                <input type="checkbox" id="cfg-wx-alert-discord">
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-alert-email">Email</label>
+                                <input type="checkbox" id="cfg-wx-alert-email">
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-alert-sms">SMS</label>
+                                <input type="checkbox" id="cfg-wx-alert-sms">
+                            </div>
+                            <p class="weather-overlay-note">Each newly active weather alert is sent once to the selected destinations. Destination connection details and quiet hours are shared with Band Opening Alerts.</p>
+                            <div class="weather-overlay-title weather-overlay-subtitle">APRS Weather Beacons</div>
                             <div class="settings-row">
                                 <label for="cfg-status-weather-alerts">Beacon Severe WX Alerts</label>
                                 <input type="checkbox" id="cfg-status-weather-alerts">
@@ -1776,6 +1946,18 @@
                         </div>
                         <div class="weather-overlay-card">
                             <div class="weather-overlay-title">Map Overlays</div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-satellite-enabled">Show Satellite Imagery</label>
+                                <input type="checkbox" id="cfg-wx-satellite-enabled">
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-satellite-opacity">Satellite Opacity</label>
+                                <div class="weather-range-wrap">
+                                    <input type="range" id="cfg-wx-satellite-opacity" min="0.1" max="0.8" step="0.05" value="0.35">
+                                    <span id="cfg-wx-satellite-opacity-value" class="filter-preview">35%</span>
+                                </div>
+                            </div>
+                            <p class="weather-overlay-note">NOAA/NESDIS GOES infrared cloud imagery. This layer is placed directly above the basemap and beneath every other map layer.</p>
                             <div class="settings-row">
                                 <label for="cfg-wx-radar-enabled">Show Radar On Map</label>
                                 <input type="checkbox" id="cfg-wx-radar-enabled">
@@ -1816,6 +1998,57 @@
                                 <label for="cfg-wx-radar-animate">Animate Radar</label>
                                 <input type="checkbox" id="cfg-wx-radar-animate">
                             </div>
+                            <div class="weather-overlay-title weather-overlay-subtitle">GOES GLM Lightning</div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-lightning-card-enabled">Show Lightning Info Card</label>
+                                <input type="checkbox" id="cfg-wx-lightning-card-enabled">
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-lightning-enabled">Show Lightning On Map</label>
+                                <input type="checkbox" id="cfg-wx-lightning-enabled">
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-lightning-satellite">Satellite</label>
+                                <select id="cfg-wx-lightning-satellite">
+                                    <option value="auto">Auto by station location</option>
+                                    <option value="goes19">GOES-19 East</option>
+                                    <option value="goes18">GOES-18 West</option>
+                                </select>
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-lightning-history">Rolling History (min)</label>
+                                <input type="number" id="cfg-wx-lightning-history" min="1" max="60" step="1" value="10">
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-lightning-opacity">Lightning Opacity</label>
+                                <input type="range" id="cfg-wx-lightning-opacity" min="0.1" max="1" step="0.05" value="0.8">
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-lightning-alert-enabled">Nearby Lightning Alert</label>
+                                <input type="checkbox" id="cfg-wx-lightning-alert-enabled">
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-lightning-radius">Alert Radius (miles)</label>
+                                <input type="number" id="cfg-wx-lightning-radius" min="1" max="500" step="1" value="25">
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-lightning-cooldown">Alert Cooldown (min)</label>
+                                <input type="number" id="cfg-wx-lightning-cooldown" min="1" max="1440" step="1" value="30">
+                            </div>
+                            <div class="weather-overlay-title weather-overlay-subtitle">Nearby Lightning Destinations</div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-lightning-alert-discord">Discord</label>
+                                <input type="checkbox" id="cfg-wx-lightning-alert-discord">
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-lightning-alert-email">Email</label>
+                                <input type="checkbox" id="cfg-wx-lightning-alert-email">
+                            </div>
+                            <div class="settings-row">
+                                <label for="cfg-wx-lightning-alert-sms">SMS</label>
+                                <input type="checkbox" id="cfg-wx-lightning-alert-sms">
+                            </div>
+                            <p class="weather-overlay-note">Auto selects the closest GOES East/West orbital view. Data is kept only in memory and automatically removed when it leaves the rolling window. Selected destinations use the connection details and quiet hours under Band Opening Alerts. GLM reports optical flashes, not confirmed ground strikes.</p>
                             <div class="settings-row">
                                 <label for="cfg-wx-alert-overlay-enabled">Show Alert Polygons</label>
                                 <input type="checkbox" id="cfg-wx-alert-overlay-enabled">
@@ -1836,6 +2069,26 @@
                                 </div>
                             </details>
                             <p class="weather-overlay-note">Alert banners use the alert scope/range above. Map polygons can use a wider NWS radius so nearby storms are visible without triggering local banner/beacon alerts. RainViewer supports animation. IEM NEXRAD and custom sources display as static overlays.</p>
+                        </div>
+                    </div>
+
+                    <div class="settings-section" data-settings-key="watched-alerts" data-summary="Weather and lightning notifications for configured watched locations.">
+                        <h3>📍 Watched Location Alerts</h3>
+                        <div class="settings-row">
+                            <label for="watched-alert-target">Watched Location</label>
+                            <select id="watched-alert-target" data-local-setting></select>
+                        </div>
+                        <div id="watched-alert-empty" class="settings-note">Add a watched path under Propagation before configuring alerts for it.</div>
+                        <div id="watched-alert-controls" class="weather-overlay-card watched-alert-options" hidden>
+                            <div class="settings-row"><label for="cfg-watched-alert-weather">Weather alerts at this location</label><input type="checkbox" id="cfg-watched-alert-weather"></div>
+                            <div class="settings-row"><label for="cfg-watched-alert-lightning">Lightning alerts at this location</label><input type="checkbox" id="cfg-watched-alert-lightning"></div>
+                            <div class="settings-row"><label for="cfg-watched-alert-radius">Lightning radius (miles)</label><input type="number" id="cfg-watched-alert-radius" min="1" max="500" value="25"></div>
+                            <div class="settings-row"><label for="cfg-watched-alert-cooldown">Cooldown (minutes)</label><input type="number" id="cfg-watched-alert-cooldown" min="1" max="1440" value="30"></div>
+                            <div class="weather-overlay-title weather-overlay-subtitle">Notification Destinations</div>
+                            <div class="settings-row"><label for="cfg-watched-alert-discord">Discord</label><input type="checkbox" id="cfg-watched-alert-discord"></div>
+                            <div class="settings-row"><label for="cfg-watched-alert-email">Email</label><input type="checkbox" id="cfg-watched-alert-email"></div>
+                            <div class="settings-row"><label for="cfg-watched-alert-sms">SMS</label><input type="checkbox" id="cfg-watched-alert-sms"></div>
+                            <p class="settings-note">Changes follow the selected watched location and are saved with the rest of the configuration. Connection details and quiet hours come from Notification Delivery below.</p>
                         </div>
                     </div>
 
@@ -1860,11 +2113,33 @@
                             <label for="cfg-prop-reg-dist">Distance for Full Score (<span class="dist-unit">mi</span>)</label>
                             <input type="number" id="cfg-prop-reg-dist" min="1" max="2000" value="200">
                         </div>
+                        <h4 style="color:var(--accent-cyan);margin:10px 0 6px;">Independent Digital-Mode Context</h4>
+                        <div class="settings-row">
+                            <label for="cfg-prop-psk-enabled">PSK Reporter (50 MHz+)</label>
+                            <input type="checkbox" id="cfg-prop-psk-enabled">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-prop-psk-window">Report Window (minutes)</label>
+                            <input type="number" id="cfg-prop-psk-window" min="5" max="360" value="30">
+                        </div>
+                        <p class="settings-note">Optional and off by default. Queries only your base callsign at the provider's recommended five-minute cadence. These reports never raise the APRS RF propagation score.</p>
+                        <div class="weather-overlay-card">
+                            <div class="weather-overlay-title">NOAA Space Weather Context</div>
+                            <div class="settings-row"><label for="cfg-space-weather-enabled">Show SWPC Context</label><input type="checkbox" id="cfg-space-weather-enabled"></div>
+                            <div class="settings-row"><label for="cfg-space-weather-alert-enabled">Geomagnetic Alert</label><input type="checkbox" id="cfg-space-weather-alert-enabled"></div>
+                            <div class="settings-row"><label for="cfg-space-weather-min-kp">Minimum Kp</label><input type="number" id="cfg-space-weather-min-kp" min="0" max="9" step="0.33" value="5"></div>
+                            <div class="settings-row"><label for="cfg-space-weather-cooldown">Cooldown (minutes)</label><input type="number" id="cfg-space-weather-cooldown" min="5" max="1440" value="60"></div>
+                            <div class="weather-overlay-title weather-overlay-subtitle">Space Weather Destinations</div>
+                            <div class="settings-row"><label for="cfg-space-weather-discord">Discord</label><input type="checkbox" id="cfg-space-weather-discord"></div>
+                            <div class="settings-row"><label for="cfg-space-weather-email">Email</label><input type="checkbox" id="cfg-space-weather-email"></div>
+                            <div class="settings-row"><label for="cfg-space-weather-sms">SMS</label><input type="checkbox" id="cfg-space-weather-sms"></div>
+                            <p class="weather-overlay-note">Kp and NOAA G/R/S scales provide operational context only. PropView does not treat them as proof of auroral or other VHF propagation.</p>
+                        </div>
                     </div>
 
                     <!-- Band Opening Alerts -->
-                    <div class="settings-section" data-settings-key="alerts" data-summary="Band-opening thresholds and notification channel settings.">
-                        <h3>🚨 Band Opening Alerts</h3>
+                    <div class="settings-section" data-settings-key="alerts" data-summary="Band-opening rules and shared notification delivery settings.">
+                        <h3>🚨 Propagation Alerts &amp; Notification Delivery</h3>
                         <div class="settings-row">
                             <label for="cfg-alerts-enabled">Alerts Enabled</label>
                             <input type="checkbox" id="cfg-alerts-enabled">
@@ -2060,6 +2335,10 @@
                     </div>
 
                     <div class="settings-actions">
+                        <div class="settings-action-context" aria-live="polite">
+                            <strong id="settings-current-context">Overview</strong>
+                            <span id="settings-action-freshness">Configuration loaded</span>
+                        </div>
                         <button id="btn-save-settings" class="btn-primary btn-save-settings">
                             <span>Save Configuration</span>
                             <span id="settings-unsaved-count" class="settings-unsaved-count" hidden></span>
@@ -2074,7 +2353,7 @@
                 <div class="about-panel">
                     <div class="about-header">
                         <h2>APRS PropView</h2>
-                        <span id="about-version" class="about-version">v1.10.2</span>
+                        <span id="about-version" class="about-version">v1.11.0</span>
                     </div>
                     <div class="about-section">
                         <p>A real-time APRS digipeater and IGate focused on VHF propagation, live mapping, APRS messaging, analytics, and weather-aware situational awareness.</p>
@@ -2091,9 +2370,9 @@
                     </div>
                     <div class="about-section">
                         <h3>Build Info</h3>
-                        <p>Version: <span id="about-version-detail">1.10.2</span></p>
-                        <p>Release Date: <span id="about-date">September 14, 2026</span></p>
-                        <p>Highlights: Adds accurate custom-mode reporting, contextual setup guidance, transmit-safe settings saves, and a clearer map-first APRS object workflow.</p>
+                        <p>Version: <span id="about-version-detail">1.11.0</span></p>
+                        <p>Release Date: <span id="about-date">September 19, 2026</span></p>
+                        <p>Highlights: Adds unified source health, expanded propagation and weather context, remote awareness alerts, club display mode, Bullseye SQLite compatibility, and reliable APRS object placement through weather polygons.</p>
                     </div>
                     <div class="about-section">
                         <h3>Video Guide</h3>
@@ -2423,7 +2702,7 @@
                         <tr><td>🏷️ Types ▾</td><td><b>Type Filter</b> — Check/uncheck station categories (Digipeater, Weather, House, Car, etc.) to control which types appear on the map.</td></tr>
                         <tr><td>Search</td><td><b>Callsign Search</b> — Expand the search box, enter a callsign, press Enter or Find to jump to that marker, and press Esc to collapse the search.</td></tr>
                     </table>
-                    <p>Weather radar and NWS polygons are managed from Settings - Weather. Base map tiles are served through PropView's tile proxy, so cached default OSM or custom XYZ tiles can be reused when the upstream tile source is unavailable. All map toggle states, zoom level, position, and filter selections are saved automatically and persist across restarts. Expanded weather alert banners rise above map controls and scroll when alert text is long; use the X on an alert banner to clear that alert from view.</p>
+                    <p>Weather radar and NWS polygons are managed from Settings - Weather. While APRS object creation is active, alert polygons temporarily stop intercepting clicks so any point inside a watch or warning remains selectable; normal alert popups resume after placement or cancellation. Base map tiles are served through PropView's tile proxy, so cached default OSM or custom XYZ tiles can be reused when the upstream tile source is unavailable. All map toggle states, zoom level, position, and filter selections are saved automatically and persist across restarts. Expanded weather alert banners rise above map controls and scroll when alert text is long; use the X on an alert banner to clear that alert from view.</p>
                     <p>Application update checks are managed from Settings - Web Interface. You can disable release checks entirely or choose how often the app rechecks GitHub while it stays running. Windows setup installs can download and launch newer setup installers from the About tab; Linux, Raspberry Pi, and macOS installs show release notices without the Windows-only installer button.</p>
                 </section>
 
@@ -2510,7 +2789,8 @@
                     <p><b>Host/Port</b> — Bind address and port for the web UI (default <code>127.0.0.1:14501</code>). Use <code>0.0.0.0</code> to allow network access.</p>
                     <p><b>Opening Browser</b> &mdash; Choose which browser APRS PropView opens at startup, or choose <b>Do not open automatically</b> for headless Pi/VM/service deployments where browser auto-open is not desired.</p>
                     <p><b>Font</b> — Choose a display font for the entire UI.</p>
-                    <p><b>UI Theme</b> — Choose interface brightness, a visual skin, and an accent color independently from the map tile theme. Mission Control, Industrial, Neon Grid, Radio, iVIEW, and HackR alter panel materials and controls. iVIEW uses translucent liquid-glass surfaces; HackR uses a compact intelligence-console layout and night-vision map. Radio uses transceiver-style dual analog propagation meters whose needles follow the current direct and regional scores. Terminal Green Screen replaces the graphical dashboard with a numbered text console: use 1–8 for menus, F1 for help, F3/F12 to close, F5 to refresh, and F9 to switch between text and map views.</p>
+                    <p><b>UI Theme and Density</b> — Choose interface brightness, a visual skin, an accent color, and Comfortable, Compact, or Wallboard density independently from the map tile theme. Mission Control, Industrial, Neon Grid, Radio, iVIEW, and HackR alter panel materials and controls. iVIEW uses translucent liquid-glass surfaces; HackR uses a compact intelligence-console layout and night-vision map. Radio uses transceiver-style dual analog propagation meters whose needles follow the current direct and regional scores. Terminal Green Screen replaces the graphical dashboard with a numbered text console: use 1–8 for menus, F1 for help, F3/F12 to close, F5 to refresh, and F9 to switch between text and map views.</p>
+                    <p><b>Dashboard Layout</b> — Map tools are grouped into View, Stations, Layers, and Appearance menus. On narrow screens, open the Status drawer for beacon, connection, source-health, notification, and theme controls. Map &amp; Display → Visualizations also lets you hide optional weather, lightning, alert, source-health, watched-path, and propagation-context panels for this browser.</p>
                     <p><b>Visualizations</b> — Independently enable the propagation aura, new-path reveal, map color harmony, condition backdrops, expressive home marker, watched-path flow, quiet direct-heard activity moments, and Off/Basic/Enhanced live packet animation.</p>
                     <p><b>Units</b> — Choose Imperial or Metric for distance, map weather temperature, APRS WX station temperature, wind, and precipitation displays.</p>
                     <p><b>Map Tiles</b> — Use the default online OpenStreetMap tiles or point PropView at a custom XYZ tile URL such as a local MBTiles/XYZ server. Custom URLs must include <code>{z}</code>, <code>{x}</code>, and <code>{y}</code>.</p>
@@ -2589,8 +2869,12 @@
     <script defer src="/static/js/weather.js?v=__ASSET_VERSION__"></script>
     <script defer src="/static/js/alert-audio.js?v=__ASSET_VERSION__"></script>
     <script defer src="/static/js/propagation-evidence.js?v=__ASSET_VERSION__"></script>
+    <script defer src="/static/js/source-health.js?v=__ASSET_VERSION__"></script>
+    <script defer src="/static/js/space-weather.js?v=__ASSET_VERSION__"></script>
+    <script defer src="/static/js/external-propagation.js?v=__ASSET_VERSION__"></script>
     <script defer src="/static/js/onboarding.js?v=__ASSET_VERSION__"></script>
     <script defer src="/static/js/app.js?v=__ASSET_VERSION__"></script>
     <script defer src="/static/js/usability.js?v=__ASSET_VERSION__"></script>
+    <script defer src="/static/js/kiosk.js?v=__ASSET_VERSION__"></script>
 </body>
 </html>

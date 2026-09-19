@@ -109,6 +109,8 @@ visual_activity_moments = true
 # "off" keeps static paths, "basic" adds station bursts and flowing dashes,
 # and "enhanced" adds a moving packet head, contrail, and hop pulses.
 visual_packet_animation = "basic"
+club_display_rotation_seconds = 20
+club_display_scenes = ["map", "propagation", "weather", "activity"]
 
 [database]
 path = "propview.db"
@@ -153,6 +155,13 @@ qrz_password = ""
 #target_antenna_height_m = 10.0
 #my_tx_power_w = 50.0
 #my_antenna_gain_dbi = 0.0
+#watch_weather_enabled = false
+#watch_lightning_enabled = false
+#watch_alert_radius_miles = 25.0
+#watch_alert_cooldown_minutes = 30
+#watch_discord_enabled = false
+#watch_email_enabled = false
+#watch_sms_enabled = false
 
 [messaging]
 # How many days to retain APRS message history in the database
@@ -203,6 +212,8 @@ my_station_full_count = 10
 my_station_full_dist_km = 200.0
 regional_full_count = 10
 regional_full_dist_km = 200.0
+psk_reporter_enabled = false
+psk_reporter_window_minutes = 30
 
 [status]
 enabled = false
@@ -261,6 +272,27 @@ radar_enabled = false
 radar_provider = "rainviewer"
 radar_opacity = 0.55
 radar_animate = true
+# NOAA/NESDIS daily infrared cloud imagery, rendered beneath every PropView overlay.
+satellite_imagery_enabled = false
+satellite_imagery_opacity = 0.35
+weather_info_banner_enabled = true
+weather_alert_discord_enabled = false
+weather_alert_email_enabled = false
+weather_alert_sms_enabled = false
+# NOAA NODD GOES GLM optical-lightning map layer. Satellite: auto, goes19, or goes18.
+lightning_enabled = false
+lightning_satellite = "auto"
+# Flashes are retained only in memory and removed after this rolling window.
+lightning_history_minutes = 10
+lightning_opacity = 0.8
+lightning_stale_seconds = 120
+lightning_alert_enabled = false
+lightning_alert_radius_miles = 25.0
+lightning_alert_cooldown_minutes = 30
+lightning_info_card_enabled = true
+lightning_alert_discord_enabled = false
+lightning_alert_email_enabled = false
+lightning_alert_sms_enabled = false
 alert_overlay_enabled = false
 alert_overlay_range_miles = 80
 alert_overlay_groups = ["warnings", "watches", "flood", "winter", "marine", "fire_heat", "other"]
@@ -270,6 +302,14 @@ elevated_alert_polling_enabled = false
 elevated_alert_polling_seconds = 60
 elevated_alert_cooldown_minutes = 15
 elevated_trigger_events = ["Tornado Watch", "Severe Thunderstorm Watch"]
+# NOAA SWPC context is informational. Alerts require explicit destinations.
+space_weather_enabled = true
+space_weather_alert_enabled = false
+space_weather_alert_min_kp = 5.0
+space_weather_alert_cooldown_minutes = 60
+space_weather_alert_discord_enabled = false
+space_weather_alert_email_enabled = false
+space_weather_alert_sms_enabled = false
 
 [wxnow]
 enabled = false

@@ -4,7 +4,7 @@
 Launch this to start the application. The web interface opens automatically.
 """
 
-APP_VERSION = "1.10.2"
+APP_VERSION = "1.11.0"
 
 import asyncio
 import sys
@@ -44,6 +44,9 @@ from server.websocket_manager import WebSocketManager
 from server.analytics import AnalyticsEngine
 from server.alerts import AlertManager, AlertConfig
 from server.weather import WeatherManager
+from server.lightning import LightningManager
+from server.space_weather import SpaceWeatherManager
+from server.external_propagation import PskReporterManager
 from server.update_checker import UpdateChecker
 from server.gps import GPSManager
 from server.wxnow import WxNowTransmitter
@@ -450,7 +453,10 @@ async def main():
 
     # ── Weather ────────────────────────────────────────────────────
 
-    weather_manager = WeatherManager(config)
+    weather_manager = WeatherManager(config, alert_manager, ws_manager)
+    lightning_manager = LightningManager(config, alert_manager, ws_manager)
+    space_weather_manager = SpaceWeatherManager(config, alert_manager, ws_manager)
+    psk_reporter_manager = PskReporterManager(config, ws_manager)
     handler.set_weather_manager(weather_manager)
     if config.weather.enabled and config.weather.location_code:
         logger.info(f"Weather: enabled, location={config.weather.location_code}")
@@ -517,6 +523,9 @@ async def main():
         alert_manager,
         aprs_is,
         weather_manager,
+        lightning_manager=lightning_manager,
+        space_weather_manager=space_weather_manager,
+        psk_reporter_manager=psk_reporter_manager,
         wxnow_transmitter=wxnow_transmitter,
         status_transmitter=status_transmitter,
         scheduled_transmitter=scheduled_transmitter,
@@ -554,6 +563,10 @@ async def main():
     tasks.append(asyncio.create_task(wxnow_transmitter.loop()))
     tasks.append(asyncio.create_task(status_transmitter.loop()))
     tasks.append(asyncio.create_task(scheduled_transmitter.loop()))
+    tasks.append(asyncio.create_task(weather_manager.notification_loop()))
+    tasks.append(asyncio.create_task(lightning_manager.run()))
+    tasks.append(asyncio.create_task(space_weather_manager.run()))
+    tasks.append(asyncio.create_task(psk_reporter_manager.run()))
 
     # ── Start web server ────────────────────────────────────────────
 

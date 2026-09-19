@@ -6,9 +6,12 @@ window.pvWeather = (function () {
     'use strict';
 
     let refreshTimer = null;
+    let lightningTimer = null;
     let lastAlertCount = 0;
     let hasRenderedAlerts = false;
     let lastWeatherData = null;
+    let weatherBannerVisible = false;
+    let lightningCardVisible = false;
     let alertPulseAcknowledged = false;
     let lastAlertSignature = '';
     const dismissedAlertKeys = new Set();
@@ -21,6 +24,9 @@ window.pvWeather = (function () {
             fetchWeather(true);
         });
         document.getElementById('wx-ducting')?.addEventListener('click', showDuctingDetails);
+        document.getElementById('lightning-view-btn')?.addEventListener('click', () => {
+            window.pvMap?.focusNearestLightning?.();
+        });
         document.getElementById('ducting-modal-close')?.addEventListener('click', closeDuctingDetails);
         document.getElementById('ducting-modal')?.addEventListener('click', (e) => {
             if (e.target?.id === 'ducting-modal') closeDuctingDetails();
@@ -51,6 +57,7 @@ window.pvWeather = (function () {
 
         // Start fetch cycle — initial fetch after brief delay
         setTimeout(() => fetchWeather(), 2000);
+        setTimeout(() => fetchLightning(), 2500);
     }
 
     async function fetchWeather(force) {
@@ -76,12 +83,14 @@ window.pvWeather = (function () {
     }
 
     function renderWeather(data) {
-        const banner = document.getElementById('wx-banner');
+        const current = document.getElementById('wx-current');
         const alertsContainer = document.getElementById('wx-alerts-container');
         syncMapOverlays(data);
 
         if (!data || !data.enabled || !data.configured || !data.current) {
-            if (banner) banner.style.display = 'none';
+            weatherBannerVisible = false;
+            if (current) current.hidden = true;
+            syncWeatherBannerVisibility();
             if (alertsContainer) alertsContainer.innerHTML = '';
             updateMapSearchOffset();
             return;
@@ -90,7 +99,9 @@ window.pvWeather = (function () {
         const wx = data.current;
 
         // Show current weather banner
-        if (banner) banner.style.display = 'flex';
+        weatherBannerVisible = data.weather_info_banner_enabled !== false;
+        if (current) current.hidden = !weatherBannerVisible;
+        syncWeatherBannerVisibility();
 
         setText('wx-icon', wx.icon || '❓');
         setText('wx-temp', window.formatTempF ? window.formatTempF(wx.temperature_f) : (wx.temperature_f != null ? Math.round(wx.temperature_f) + '°F' : '--°F'));
@@ -120,6 +131,50 @@ window.pvWeather = (function () {
         // Render severe weather alerts
         renderAlerts(data.alerts || []);
         updateMapSearchOffset();
+    }
+
+    async function fetchLightning() {
+        if (lightningTimer) clearTimeout(lightningTimer);
+        try {
+            const resp = await fetch('/api/lightning');
+            const data = await resp.json();
+            renderLightning(data);
+            window.pvMap?.updateLightning?.(data);
+        } catch (e) {
+            console.error('Lightning fetch failed:', e);
+        } finally {
+            lightningTimer = setTimeout(fetchLightning, 20000);
+        }
+    }
+
+    function renderLightning(data) {
+        const card = document.getElementById('lightning-card');
+        if (!card) return;
+        lightningCardVisible = Boolean(data?.enabled && data?.info_card_enabled !== false);
+        card.hidden = !lightningCardVisible;
+        syncWeatherBannerVisibility();
+        if (!data?.enabled) return;
+        card.classList.toggle('stale', Boolean(data.stale));
+        setText('lightning-source', data.satellite_label || '--');
+        setText('lightning-minute', data.counts?.last_minute ?? 0);
+        setText('lightning-retained', data.counts?.retained ?? 0);
+        const nearest = data.nearest?.distance_miles;
+        setText('lightning-nearest', nearest == null ? '--' : `${nearest} mi`);
+        const status = document.getElementById('lightning-status');
+        if (!status) return;
+        if (data.last_error) {
+            status.textContent = `Feed error: ${data.last_error}`;
+        } else if (data.stale) {
+            status.textContent = 'Waiting for fresh NOAA GLM data';
+        } else {
+            const age = Math.max(0, Math.round(data.data_age_seconds || 0));
+            status.textContent = `Updated ${age}s ago · ${data.history_minutes} min rolling memory window`;
+        }
+    }
+
+    function syncWeatherBannerVisibility() {
+        const banner = document.getElementById('wx-banner');
+        if (banner) banner.style.display = weatherBannerVisible || lightningCardVisible ? 'flex' : 'none';
     }
 
     function updateMapSearchOffset() {
@@ -547,6 +602,7 @@ window.pvWeather = (function () {
     return {
         init,
         fetchWeather,
+        fetchLightning,
         rerender,
         toggleAlertDetail,
         dismissAlert,

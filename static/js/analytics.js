@@ -51,6 +51,7 @@
         document.getElementById('first-heard-hours')?.addEventListener('change', () => loadFirstHeard());
         document.getElementById('first-heard-direct-only')?.addEventListener('change', () => loadFirstHeard());
         document.getElementById('weather-analytics-hours')?.addEventListener('change', () => loadWeatherGraphs());
+        document.getElementById('weather-mesh-radius')?.addEventListener('change', () => loadWeatherMesh());
         document.querySelector('.weather-analytics-grid')?.addEventListener('click', (e) => {
             const canvas = e.target.closest('canvas');
             if (canvas && WEATHER_CHARTS[canvas.id]) showWeatherGraphPopout(canvas.id);
@@ -62,12 +63,12 @@
         }
     }
 
-    function setActiveSection(sectionId) {
+    function setActiveSection(sectionId, persist = true) {
         document.querySelectorAll('.analytics-subtab').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.analytics-section').forEach(s => s.classList.remove('active'));
         document.querySelector(`.analytics-subtab[data-section="${sectionId}"]`)?.classList.add('active');
         document.getElementById(sectionId)?.classList.add('active');
-        localStorage.setItem(ANALYTICS_SECTION_KEY, sectionId);
+        if (persist) localStorage.setItem(ANALYTICS_SECTION_KEY, sectionId);
     }
 
     function loadSectionData(sectionId) {
@@ -862,9 +863,51 @@
                     ? `${samples.length} weather sample${samples.length === 1 ? '' : 's'} from ${sources.join(', ')}`
                     : 'No weather samples in this time window.';
             }
+            loadWeatherMesh();
         } catch (e) {
             console.error('Weather analytics error:', e);
             if (summary) summary.textContent = 'Failed to load weather graphs.';
+        }
+    }
+
+    async function loadWeatherMesh() {
+        const container = document.getElementById('weather-mesh-list');
+        if (!container) return;
+        const hours = Math.min(48, Number(document.getElementById('weather-analytics-hours')?.value || 24));
+        const radius = Number(document.getElementById('weather-mesh-radius')?.value || 320);
+        try {
+            const response = await fetch(`/api/analytics/weather-mesh?hours=${hours}&radius_km=${radius}`);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.json();
+            const stations = data.stations || [];
+            if (!stations.length) {
+                container.innerHTML = '<div class="analytics-empty">No APRS weather reports with usable nearby positions in this window.</div>';
+                return;
+            }
+            const trend = (value, suffix = '') => {
+                if (value == null || Math.abs(Number(value)) < .05) return 'steady';
+                return `${Number(value) > 0 ? '▲' : '▼'} ${Math.abs(Number(value)).toFixed(1)}${suffix}`;
+            };
+            container.innerHTML = stations.map(station => {
+                const age = station.age_seconds < 60 ? `${station.age_seconds}s` : `${Math.round(station.age_seconds / 60)}m`;
+                const temp = station.temperature_f == null ? '--' : (window.formatTempF ? window.formatTempF(station.temperature_f) : `${Math.round(station.temperature_f)}°F`);
+                const wind = station.wind_speed_mph == null ? '--' : (window.formatWindMph ? window.formatWindMph(station.wind_speed_mph) : `${Math.round(station.wind_speed_mph)} mph`);
+                const gust = station.wind_gust_mph == null ? '' : ` · gust ${window.formatWindMph ? window.formatWindMph(station.wind_gust_mph) : `${Math.round(station.wind_gust_mph)} mph`}`;
+                const distance = station.distance_km == null ? 'position unavailable' : window.formatDist(station.distance_km, 0);
+                return `<article class="weather-mesh-card ${station.stale ? 'stale' : ''}">
+                    <div class="weather-mesh-title"><strong>${_esc(station.callsign)}</strong><span>${_esc(String(station.source || '').toUpperCase())} · ${age} ago</span></div>
+                    <div class="weather-mesh-values">
+                        <span><small>Temperature</small><b>${_esc(temp)}</b><em>${trend(station.temperature_trend_f, '°F')}</em></span>
+                        <span><small>Wind</small><b>${_esc(wind)}</b><em>${_esc(gust || trend(station.wind_trend_mph, ' mph'))}</em></span>
+                        <span><small>Pressure</small><b>${station.pressure_mb == null ? '--' : `${Number(station.pressure_mb).toFixed(1)} mb`}</b><em>${trend(station.pressure_trend_mb, ' mb')}</em></span>
+                        <span><small>Humidity</small><b>${station.humidity == null ? '--' : `${Math.round(station.humidity)}%`}</b><em>${_esc(distance)}</em></span>
+                    </div>
+                    <div class="weather-mesh-quality"><span>Data confidence ${station.reliability_score}/100</span><span>${station.path ? _esc(station.path) : 'Direct/unknown path'}</span></div>
+                </article>`;
+            }).join('');
+        } catch (error) {
+            console.error('Weather mesh error:', error);
+            container.innerHTML = '<div class="analytics-empty">Failed to load the APRS weather mesh.</div>';
         }
     }
 
@@ -1424,8 +1467,13 @@
         loadSporadicE,
         loadFirstHeard,
         loadWeatherGraphs,
+        loadWeatherMesh,
         showWeatherDashboard,
         exportData,
+        showSection(sectionId, persist = true) {
+            setActiveSection(sectionId, persist);
+            loadSectionData(sectionId);
+        },
     };
 
 })();

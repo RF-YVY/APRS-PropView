@@ -1,6 +1,6 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.10.2** | September 14, 2026
+**Version 1.11.0** | September 19, 2026
 
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/RF-YVY/APRS-PropView/total)
@@ -29,6 +29,13 @@ Version 1.9.0 added live packet-flow animation to the APRS map, including statio
 
 Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs/linux-raspberry-pi.md).
 Docker, TrueNAS SCALE, Portainer, and app-registry installs are covered in [docs/docker.md](docs/docker.md).
+
+## 1.11.0
+
+- Added unified source-health reporting, propagation confidence and event lifecycle context, QTH/watch range scopes, APRS weather mesh comparisons, NOAA GOES lightning and space-weather context, optional PSK Reporter corroboration, and a rotating club display.
+- Weather-alert polygons no longer intercept location selection while creating an APRS object; clicks inside a watch or warning now open the object editor at the selected point.
+- Restored Raspberry Pi OS/Debian Bullseye database compatibility by removing the SQLite 3.35-only `RETURNING` clause while preserving atomic station packet counts.
+- Expanded the built-in and standalone user guides for the new weather, source-health, propagation, display, and object-creation behavior.
 
 ## 1.10.2
 
@@ -73,8 +80,11 @@ The mobile PIN/access model is unchanged in this release.
 - **APRS-IS Station Tracking** — Separate list of stations received from APRS-IS
 - **Propagation Map** — Interactive Leaflet map with APRS sprite icons, adjustable marker size, directional arrowed path lines, map-created APRS objects, and light/dark theme toggle
 - **Maidenhead Grid Overlay** — Zoom-aware field, square, and subsquare labels with click-to-select support for the watched-path builder
+- **QTH and Watch Scopes** — One-click 25/50/100-mile local range rings at the home station or any configured watched-path target, with its target-area radius highlighted separately
 - **Custom/Offline Map Tiles** — Point the map at a local XYZ tile server or use the map **Cache** control to store the visible map area in `map_tile_cache/` for offline/field use
 - **Dual Propagation Meters** — Header gauges: "VHF Propagation My Station" (direct-heard RF only) and "Regional VHF Propagation" (all RF including via digipeater), each with configurable scoring thresholds
+- **Evidence Confidence & Event Lifecycle** — Each propagation meter explains its freshness and sample confidence; sustained one-minute observations progress through developing, confirmed/peak, and fading event phases
+- **Unified Source Health** — Header panel reports LIVE, DELAYED, STALE, WAITING, OFFLINE, or configured state for RF, APRS-IS, weather, alerts, GOES GLM, radar, and satellite imagery
 - **Configurable Path Lines** — Directional station-to-station lines support distance or custom coloring, weight, opacity, solid/dashed/dotted patterns, and offset arrows for bidirectional paths
 - **Digipeater-Routed Lines** — RF stations heard through known digipeaters draw TX-to-digi-to-RX paths instead of misleading direct-heard lines
 - **Moving Station Cleanup** — If APRS-IS later reports the same moving callsign at a newer different position, the stale RF marker and path line are removed from the map
@@ -132,6 +142,12 @@ The mobile PIN/access model is unchanged in this release.
 - **Configurable Alert Range** - Select how far from your location to monitor severe weather banners/beacons in radius mode (default 40 miles)
 - **NWS Alert Awareness** - Current conditions, animated radar overlays, and NWS alert banners/polygons for weather situational awareness
 - **Weather Radar Overlay** - Optional animated radar tiles layered directly on the map with adjustable opacity for fast visual storm tracking
+- **GOES GLM Lightning Overlay** - Optional live NOAA GOES-19 East or GOES-18 West optical-lightning flashes with automatic satellite selection, a bounded rolling memory window, and configurable nearby-lightning alerts
+- **Remote Awareness Alerts** - Give each watched location its own weather- and lightning-alert radius, cooldown, and Discord/email/SMS destinations
+- **APRS Weather Mesh** - Compare nearby APRS weather stations by freshness, measurement completeness, and short-term trends at selectable 50–500 mile ranges
+- **NOAA Space Weather Context** - Show current Kp and NOAA G/R/S scales beside propagation evidence, with optional threshold alerts and explicit evidence-correlation wording
+- **Optional PSK Reporter Context** - Corroborate station-specific 50 MHz+ digital paths on a five-minute, provider-friendly cadence without mixing them into APRS RF scores
+- **Rotating Club Display** - Open a read-only `/kiosk` view that cycles through live map, propagation, weather, and RF-activity layouts with configurable timing and fullscreen controls
 - **NWS Alert Polygons** - Optional US map overlay for severe weather polygons, with an independent map-only radius (default 80 miles) and per-category filters for warnings, watches, flood, winter, marine, fire/heat, and other alerts
 - **NWS Zone Geometry Fallback** - Watches or zone-based alerts without native polygons can draw affected county/zone geometry when available
 - **Adaptive Alert Polling** - Automatically increases alert checks to a 1-minute cadence when selected trigger events, such as Tornado Watch or Severe Thunderstorm Watch, become active
@@ -306,7 +322,7 @@ the current `APRSPropView.exe`.
 Installer upgrades replace the application executable and bundled files only.
 User data such as `config.toml`, `propview.db`, `map_tile_cache/`, and
 `user_audio/` is left in place. Publish both `APRSPropView.exe` and the setup
-asset on GitHub releases; assets named like `APRSPropViewSetup-1.10.2.exe` are
+asset on GitHub releases; assets named like `APRSPropViewSetup-1.11.0.exe` are
 detected by the in-app update checker so users can click **Install Update** in
 the About tab. On Linux, Raspberry Pi, and macOS, users still see release
 notices but installer-based update buttons are hidden because those platforms

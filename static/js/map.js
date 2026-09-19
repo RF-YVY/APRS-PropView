@@ -25,6 +25,7 @@ class PropViewMap {
         this.rangeCircles = null;
         this.observedRangeLayer = null;
         this.watchedPathLayer = null;
+        this.localScopeLayer = null;
         this.maidenheadGrid = null;
         this.ambientLayer = null;
         this.propagationAura = null;
@@ -65,6 +66,8 @@ class PropViewMap {
         this._observedRangeFetchedAt = 0;
         this._observedRangeRequest = null;
         this.weatherOverlayConfig = {
+            satellite_imagery_enabled: false,
+            satellite_imagery_opacity: 0.35,
             radar_enabled: false,
             radar_provider: 'rainviewer',
             radar_opacity: 0.55,
@@ -74,6 +77,7 @@ class PropViewMap {
         };
         this.weatherAlerts = [];
         this.weatherAlertLayer = null;
+        this.satelliteImageryLayer = null;
         this.radarFrames = [];
         this.radarTileLayers = [];
         this.radarStaticLayer = null;
@@ -82,6 +86,9 @@ class PropViewMap {
         this.radarMetadata = null;
         this.radarMetadataFetchedAt = 0;
         this.radarMetadataRequest = null;
+        this.lightningLayer = null;
+        this.lightningRenderer = null;
+        this.lightningFlashes = [];
         this.baseTileLayer = null;
         this.mapTileConfig = this._defaultTileConfig();
         this.myStationInfo = { symbol_table: '/', symbol_code: '#' };
@@ -119,7 +126,11 @@ class PropViewMap {
         this.isLayer = L.layerGroup().addTo(this.map);
         this.spiderLayer = L.layerGroup().addTo(this.map);
         this.watchedPathLayer = L.layerGroup().addTo(this.map);
+        this.localScopeLayer = L.layerGroup().addTo(this.map);
         this.maidenheadGrid = new window.MaidenheadGrid(this.map);
+        this.map.createPane('satelliteImageryPane');
+        this.map.getPane('satelliteImageryPane').style.zIndex = 205;
+        this.map.getPane('satelliteImageryPane').style.pointerEvents = 'none';
         this.map.createPane('ambientPane');
         this.map.getPane('ambientPane').style.zIndex = 210;
         this.map.getPane('ambientPane').style.pointerEvents = 'none';
@@ -130,6 +141,11 @@ class PropViewMap {
         this.map.getPane('weatherRadarPane').style.pointerEvents = 'none';
         this.map.createPane('weatherAlertPane');
         this.map.getPane('weatherAlertPane').style.zIndex = 430;
+        this.map.createPane('lightningPane');
+        this.map.getPane('lightningPane').style.zIndex = 390;
+        this.map.getPane('lightningPane').style.pointerEvents = 'none';
+        this.lightningRenderer = L.canvas({ pane: 'lightningPane', padding: 0.5 });
+        this.lightningLayer = L.layerGroup().addTo(this.map);
 
         // Add legend
         this._addLegend();
@@ -848,6 +864,65 @@ class PropViewMap {
                 weight: 2,
             }).bindPopup(popup).addTo(this.watchedPathLayer);
         });
+    }
+
+    _drawLocalScope(lat, lng, label, primaryRadiusMeters = 0) {
+        if (!this.map || !this.localScopeLayer) return false;
+        this.localScopeLayer.clearLayers();
+        const ringsMiles = [25, 50, 100];
+        ringsMiles.forEach((miles) => {
+            L.circle([lat, lng], {
+                radius: miles * 1609.344,
+                color: '#39d5ff',
+                weight: miles === 100 ? 1.5 : 1,
+                opacity: .6,
+                fillOpacity: .015,
+                dashArray: miles === 100 ? '' : '5 7',
+                interactive: false,
+            }).addTo(this.localScopeLayer);
+        });
+        if (primaryRadiusMeters > 0) {
+            L.circle([lat, lng], {
+                radius: primaryRadiusMeters,
+                color: '#ffd33d',
+                weight: 2,
+                opacity: .85,
+                fillColor: '#ffd33d',
+                fillOpacity: .025,
+                dashArray: '8 5',
+                interactive: false,
+            }).addTo(this.localScopeLayer);
+        }
+        L.marker([lat, lng], {
+            icon: L.divIcon({ className: 'local-scope-label', html: this._escapeHtml(label), iconSize: [130, 22], iconAnchor: [65, 11] }),
+            interactive: false,
+        }).addTo(this.localScopeLayer);
+        this.map.setView([lat, lng], 8, { animate: true });
+        return true;
+    }
+
+    toggleLocalScope(button) {
+        if (!this.map || !this.myPosition || !this.localScopeLayer) return false;
+        const active = !button?.classList.contains('active');
+        if (!active) {
+            this.localScopeLayer.clearLayers();
+        } else {
+            this._drawLocalScope(this.myPosition.lat, this.myPosition.lng, `${this.myCallsign || 'QTH'} LOCAL SCOPE`);
+        }
+        button?.classList.toggle('active', active);
+        return active;
+    }
+
+    focusWatchScopeByIndex(index) {
+        const item = this._lastWatchedPaths?.opportunities?.[Number(index)];
+        if (!item) return false;
+        const lat = Number(item.target_latitude);
+        const lng = Number(item.target_longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+        const radiusMeters = Math.max(0, Number(item.target_area_radius_km || 0)) * 1000;
+        this._drawLocalScope(lat, lng, `${item.callsign || 'WATCH'} SCOPE`, radiusMeters);
+        document.getElementById('btn-local-scope')?.classList.add('active');
+        return true;
     }
 
     _watchedPathColor(confidence) {
@@ -1979,7 +2054,12 @@ class PropViewMap {
             this.darkMode = false;
             this.map.getContainer().classList.remove('dark-tiles');
             const btn = document.getElementById('btn-toggle-theme');
-            if (btn) { btn.classList.remove('active'); btn.textContent = '☀️'; btn.title = 'Switch to dark map'; }
+            if (btn) {
+                btn.classList.remove('active');
+                btn.textContent = '☀️';
+                btn.title = 'Switch to dark map';
+                btn.setAttribute('aria-label', 'Switch to dark map');
+            }
         }
 
         // Restore labels
@@ -2101,6 +2181,10 @@ class PropViewMap {
             this.centerOnStation();
         });
 
+        document.getElementById('btn-local-scope')?.addEventListener('click', (event) => {
+            this.toggleLocalScope(event.currentTarget);
+        });
+
         document.getElementById('btn-toggle-lines')?.addEventListener('click', (e) => {
             const active = this.toggleLines();
             e.target.classList.toggle('active', active);
@@ -2183,6 +2267,7 @@ class PropViewMap {
             e.target.classList.toggle('active', dark);
             e.target.textContent = dark ? '🌙' : '☀️';
             e.target.title = dark ? 'Switch to light map' : 'Switch to dark map';
+            e.target.setAttribute('aria-label', e.target.title);
         });
     }
 
@@ -2469,6 +2554,7 @@ class PropViewMap {
 
     enableObjectMode() {
         this.objectMode = true;
+        this._setWeatherAlertInteractivity(false);
         this.map.getContainer().style.cursor = 'crosshair';
         let banner = document.getElementById('pick-mode-banner');
         if (!banner) {
@@ -2490,6 +2576,7 @@ class PropViewMap {
 
     disableObjectMode() {
         this.objectMode = false;
+        this._setWeatherAlertInteractivity(true);
         this.map.getContainer().style.cursor = '';
         document.getElementById('btn-create-object')?.classList.remove('active');
         const banner = document.getElementById('pick-mode-banner');
@@ -2498,6 +2585,11 @@ class PropViewMap {
             this.map.off('click', this._objectHandler);
             this._objectHandler = null;
         }
+    }
+
+    _setWeatherAlertInteractivity(enabled) {
+        const pane = this.map?.getPane?.('weatherAlertPane');
+        if (pane) pane.style.pointerEvents = enabled ? '' : 'none';
     }
 
     _showObjectCreatePopup(lat, lng) {
@@ -2754,8 +2846,40 @@ class PropViewMap {
     }
 
     _applyWeatherOverlayConfig() {
+        this._updateSatelliteImageryOverlay();
         this._renderWeatherAlertLayer();
         this._updateRadarOverlay();
+    }
+
+    _updateSatelliteImageryOverlay() {
+        const cfg = this.weatherOverlayConfig || {};
+        if (!cfg.satellite_imagery_enabled) {
+            if (this.satelliteImageryLayer) {
+                this.satelliteImageryLayer.remove();
+                this.satelliteImageryLayer = null;
+            }
+            return;
+        }
+
+        const opacity = Number(cfg.satellite_imagery_opacity) || 0.35;
+        if (this.satelliteImageryLayer) {
+            this.satelliteImageryLayer.setOpacity(opacity);
+            return;
+        }
+
+        this.satelliteImageryLayer = L.tileLayer(
+            'https://gis.nnvl.noaa.gov/arcgis/rest/services/GOES/GOES_current/ImageServer/tile/{z}/{y}/{x}',
+            {
+                pane: 'satelliteImageryPane',
+                opacity,
+                minZoom: 0,
+                maxZoom: 23,
+                maxNativeZoom: 23,
+                updateWhenIdle: false,
+                className: 'weather-satellite-tile-layer',
+                attribution: 'Satellite: NOAA/NESDIS',
+            },
+        ).addTo(this.map);
     }
 
     _renderWeatherAlertLayer() {
@@ -2988,6 +3112,76 @@ class PropViewMap {
             this.radarFrames = [];
         }
         this.radarFrameIndex = 0;
+    }
+
+    updateLightning(data) {
+        if (!this.lightningLayer) return;
+        this.lightningLayer.clearLayers();
+        this.lightningFlashes = [];
+        if (!data?.enabled || data.stale || !Array.isArray(data.flashes)) return;
+
+        const now = Date.now() / 1000;
+        const historySeconds = Math.max(60, Number(data.history_minutes || 10) * 60);
+        const baseOpacity = Math.max(0.1, Math.min(1, Number(data.opacity || 0.8)));
+        const flashes = data.flashes.slice(-5000).filter((flash) => (
+            Number.isFinite(Number(flash.lat)) && Number.isFinite(Number(flash.lon))
+        ));
+        this.lightningFlashes = flashes;
+        const recentIcons = new Set(
+            flashes.filter((flash) => now - Number(flash.timestamp || 0) <= 60).slice(-250),
+        );
+        flashes.forEach((flash) => {
+            const age = Math.max(0, now - Number(flash.timestamp || now));
+            const freshness = Math.max(0.15, 1 - age / historySeconds);
+            const recent = age <= 60;
+            if (recentIcons.has(flash)) {
+                L.marker([flash.lat, flash.lon], {
+                    pane: 'lightningPane',
+                    icon: L.divIcon({
+                        className: 'lightning-flash-icon',
+                        html: '⚡',
+                        iconSize: [18, 18],
+                        iconAnchor: [9, 9],
+                    }),
+                    interactive: false,
+                    keyboard: false,
+                    opacity: baseOpacity * freshness,
+                }).addTo(this.lightningLayer);
+                return;
+            }
+            L.circleMarker([flash.lat, flash.lon], {
+                renderer: this.lightningRenderer,
+                pane: 'lightningPane',
+                radius: recent ? 4 : 2.5,
+                color: recent ? '#fff2a8' : '#39d5ff',
+                weight: recent ? 1 : 0,
+                fillColor: recent ? '#ffd33d' : '#39d5ff',
+                fillOpacity: baseOpacity * freshness,
+                opacity: baseOpacity * freshness,
+                interactive: false,
+            }).addTo(this.lightningLayer);
+        });
+    }
+
+    focusNearestLightning() {
+        if (!this.map || !this.lightningFlashes.length) return false;
+        this.map.invalidateSize();
+        const now = Date.now() / 1000;
+        const recent = this.lightningFlashes.filter((flash) => now - Number(flash.timestamp || 0) <= 60);
+        const candidates = recent.length ? recent : this.lightningFlashes;
+        let nearest = candidates[candidates.length - 1];
+        if (this.myPosition) {
+            nearest = candidates.reduce((best, flash) => {
+                const distance = this.map.distance(this.myPosition, [flash.lat, flash.lon]);
+                return !best || distance < best.distance ? { flash, distance } : best;
+            }, null)?.flash || nearest;
+        }
+        const cluster = candidates.filter((flash) => (
+            this.map.distance([nearest.lat, nearest.lon], [flash.lat, flash.lon]) <= 300000
+        ));
+        const bounds = L.latLngBounds((cluster.length ? cluster : [nearest]).map((flash) => [flash.lat, flash.lon]));
+        this.map.fitBounds(bounds, { padding: [35, 35], maxZoom: 7 });
+        return true;
     }
 
     _escapeHtml(text) {

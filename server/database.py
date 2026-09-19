@@ -239,14 +239,21 @@ class Database:
               last_comment=CASE WHEN excluded.last_comment!='' THEN excluded.last_comment ELSE stations.last_comment END,
               last_path=excluded.last_path, last_port_name=excluded.last_port_name, last_raw=excluded.last_raw,
               distance_km=COALESCE(excluded.distance_km, stations.distance_km),
-              heading=COALESCE(excluded.heading, stations.heading)
-            RETURNING *""",
+              heading=COALESCE(excluded.heading, stations.heading)""",
             (callsign, source, now, now, latitude, longitude, symbol_table, symbol_code,
              comment, path, port_name, raw, distance_km, heading))
-        row = await cursor.fetchone()
         await cursor.close()
         if commit:
             await self.db.commit()
+
+        # SQLite versions before 3.35 do not support RETURNING.  Bullseye
+        # ships 3.34, so fetch the completed UPSERT in a separate statement.
+        cursor = await self.db.execute(
+            "SELECT * FROM stations WHERE callsign = ? AND source = ?",
+            (callsign, source),
+        )
+        row = await cursor.fetchone()
+        await cursor.close()
         return classify_station(dict(row)) if row else {}
 
     async def get_stations(
