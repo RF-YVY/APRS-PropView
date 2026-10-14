@@ -7477,7 +7477,7 @@ body.kiosk-paused .kiosk-progress { width: 100%; opacity: .25; }
     border: 0;
 }
 
-body.settings-pane-open #side-panel { z-index: 2300; }
+body.settings-pane-open #tab-settings { z-index: 2400; }
 
 .settings-panel {
     width: min(1680px, 100%);

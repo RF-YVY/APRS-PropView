@@ -1,6 +1,6 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.11.0** | September 19, 2026
+**Version 1.11.1** | October 14, 2026
 
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/RF-YVY/APRS-PropView/total)
@@ -29,6 +29,12 @@ Version 1.9.0 added live packet-flow animation to the APRS map, including statio
 
 Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs/linux-raspberry-pi.md).
 Docker, TrueNAS SCALE, Portainer, and app-registry installs are covered in [docs/docker.md](docs/docker.md).
+
+## 1.11.1
+
+- Preserve the saved MQTT password when saving settings with the password field left blank.
+- Move the settings overlay outside the clipped sidebar so Safari can display its Close and Save controls.
+- Load bundled CA certificates for weather HTTPS requests in Windows desktop builds while retaining system trust and TLS verification.
 
 ## 1.11.0
 
@@ -322,7 +328,7 @@ the current `APRSPropView.exe`.
 Installer upgrades replace the application executable and bundled files only.
 User data such as `config.toml`, `propview.db`, `map_tile_cache/`, and
 `user_audio/` is left in place. Publish both `APRSPropView.exe` and the setup
-asset on GitHub releases; assets named like `APRSPropViewSetup-1.11.0.exe` are
+asset on GitHub releases; assets named like `APRSPropViewSetup-1.11.1.exe` are
 detected by the in-app update checker so users can click **Install Update** in
 the About tab. On Linux, Raspberry Pi, and macOS, users still see release
 notices but installer-based update buttons are hidden because those platforms

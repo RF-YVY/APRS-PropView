@@ -392,6 +392,13 @@
         const btn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
         if (!btn) return;
 
+        // Keep the viewport overlay outside the sidebar's clipping/compositing
+        // ancestors (WebKit can otherwise clip its fixed-position descendants).
+        const settings = document.getElementById('tab-settings');
+        if (settings && settings.parentElement !== document.body) {
+            document.body.appendChild(settings);
+        }
+
         if (tabId !== 'tab-settings' && tabId !== 'tab-messages') {
             lastNonSettingsTab = tabId;
         }
@@ -3474,6 +3481,8 @@
             setVal('cfg-mqtt-topic', cfg.mqtt?.topic_prefix);
             setVal('cfg-mqtt-user', cfg.mqtt?.username);
             setVal('cfg-mqtt-pass', '');
+            document.getElementById('cfg-mqtt-pass').placeholder = cfg.mqtt?.password
+                ? 'Password saved; leave blank to keep' : '(optional)';
             setChk('cfg-mqtt-discovery', cfg.mqtt?.discovery_enabled);
             setVal('cfg-mqtt-discovery-prefix', cfg.mqtt?.discovery_prefix || 'homeassistant');
             setVal('cfg-mqtt-device-name', cfg.mqtt?.device_name || 'APRS PropView');
@@ -4092,7 +4101,8 @@
                 port: parseInt(getVal('cfg-mqtt-port')) || 1883,
                 topic_prefix: getVal('cfg-mqtt-topic'),
                 username: getVal('cfg-mqtt-user'),
-                password: getVal('cfg-mqtt-pass'),
+                // Omitted secrets are preserved by the server on unrelated saves.
+                ...(getVal('cfg-mqtt-pass') ? { password: getVal('cfg-mqtt-pass') } : {}),
                 discovery_enabled: getChk('cfg-mqtt-discovery'),
                 discovery_prefix: getVal('cfg-mqtt-discovery-prefix') || 'homeassistant',
                 device_name: getVal('cfg-mqtt-device-name') || 'APRS PropView',

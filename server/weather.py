@@ -12,6 +12,7 @@ import json
 import logging
 import math
 import re
+import ssl
 import time
 import urllib.request
 import urllib.error
@@ -22,6 +23,15 @@ from typing import Optional, Dict, Any, List, Tuple
 from server.config import Config
 
 logger = logging.getLogger("propview.weather")
+
+
+def _weather_ssl_context() -> ssl.SSLContext:
+    """Trust system roots and the CA bundle included in desktop builds."""
+    import certifi
+
+    context = ssl.create_default_context()
+    context.load_verify_locations(cafile=certifi.where())
+    return context
 
 # ── WMO Weather Code descriptions ────────────────────────────────────
 
@@ -193,7 +203,7 @@ def _sync_http_get(url: str, timeout: int = 10, retries: int = 1, log_fail: bool
     last_err = None
     for attempt in range(1 + retries):
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with urllib.request.urlopen(req, timeout=timeout, context=_weather_ssl_context()) as resp:
                 return json.loads(resp.read().decode("utf-8"))
         except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError,
                 OSError, TimeoutError) as e:
