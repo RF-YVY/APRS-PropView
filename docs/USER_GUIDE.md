@@ -1,12 +1,12 @@
 # APRS PropView User Guide
 
-Current version: **1.13.0**. This guide covers the desktop dashboard, mobile companion, settings and built-in modem.
+Current version: **1.13.1**. This guide covers the desktop dashboard, mobile companion, settings and built-in modem.
 
 ## Getting started
 
-Install the application, launch it, and complete the operator-password window on the host computer. Set your callsign, SSID, symbol and coordinates under **Settings â†’ Station & Location**. Coordinates can be typed, picked on the map or supplied by the configured GPS source. Use your actual licensed station identity before transmitting.
+Install the application, launch it, and complete the operator-password window on the host computer. Set your callsign, SSID, symbol and coordinates under **Settings → Station & Location**. Coordinates can be typed, picked on the map or supplied by the configured GPS source. Use your actual licensed station identity before transmitting.
 
-Open **Settings â†’ Radio & TNC â†’ RF Ports** to configure an external TNC or the built-in experimental modem. APRS-IS is an independent internet feed; configure it in the same category if needed. Start with reception, verify the RF/APRS-IS indicators and packet list, then enable the transmit functions you intend to use. Weather and lightning require their own enable switches under **Alerts & Weather**; setting station coordinates alone does not enable them.
+Open **Settings → Radio & TNC → RF Ports** to configure an external TNC or the built-in experimental modem. APRS-IS is an independent internet feed; configure it in the same category if needed. Start with reception, verify the RF/APRS-IS indicators and packet list, then enable the transmit functions you intend to use. Weather and lightning require their own enable switches under **Alerts & Weather**; setting station coordinates alone does not enable them.
 
 Settings offers **Show Advanced / Show Basic**, category navigation, search, collapsible sections, guided setup, connection diagnostics, operating-mode presets, a configuration-readiness summary and transmit-setting protection. Presets stage changes for review; save them to apply. Settings with a restart requirement identify it in the save feedback. Export a configuration backup before changing network or interface settings.
 
@@ -16,7 +16,7 @@ Click the small **lock icon in the toolbar below the map** to see whether this b
 
 Authentication belongs to the browser session that signed in. Signing in on the host or through a private VPN does not unlock anyone else's public browser. Public viewers can observe the dashboard; settings, private messages, transmissions, configuration exports and update operations require operator access. Lock now revokes this browser's session. Expiry returns it to read-only viewing; it does not stop the backend modem or previously configured station functions.
 
-The host's password setup window can enable automatic sign-in for browsers opened by the local application. A manually entered dashboard address does not receive that local-launch access automatically. Passwords must be **6â€“256 characters**. For a forgotten password, use **Set/reset operator password** from the host's tray or Start menu. The local GUI sets a replacement password and revokes existing sessions; no email or hosted recovery server is required.
+The host's password setup window can enable automatic sign-in for browsers opened by the local application. A manually entered dashboard address does not receive that local-launch access automatically. Passwords must be **6–256 characters**. For a forgotten password, use **Set/reset operator password** from the host's tray or Start menu. The local GUI sets a replacement password and revokes existing sessions; no email or hosted recovery server is required.
 
 For public hosting, use HTTPS through your reverse proxy and retain operator authentication. A private VPN is another option for remote use. Set the listening host/port as needed and restart when requested. Only expose the intended web interface. See the separate public-hosting guide for session and proxy details.
 
@@ -24,14 +24,14 @@ For public hosting, use HTTPS through your reverse proxy and retain operator aut
 
 The header shows station identity, direct and regional propagation evidence, RF/APRS-IS/browser connection indicators, Data source health and notifications. Theme controls change the UI separately from the map background. The sidebar contains RF stations, APRS-IS stations, packet history, propagation, analytics, operator messages/settings and About/Help. Collapse the sidebar for more map area.
 
-The bottom map toolbar provides **Send OTA Activity Spot**, **View**, **Stations**, **Layers**, **Appearance** and the operator lock button. The built-in modem is configured in **Settings â†’ Radio & TNC â†’ RF Ports**, not from this toolbar.
+The bottom map toolbar provides **Send OTA Activity Spot**, **View**, **Stations**, **Layers**, **Appearance** and the operator lock button. The built-in modem is configured in **Settings → Radio & TNC → RF Ports**, not from this toolbar.
 
 - **View:** center on your station, enable the local scope/range rings, fit visible stations or create an APRS object. Auto-fit stops after manual map movement; enable it again to resume.
 - **Stations:** show RF and APRS-IS sources, direct RF only, callsign labels and station-type filters. Station lists also filter age, distance, callsign, category and path, and offer sorting.
 - **Layers:** use the available map overlays, radar visibility and loop/static controls, and the RF line-history time window. Weather layers also have provider and opacity settings.
 - **Appearance:** map light/dark theme, tile caching, station symbol size and **Lines**. Lines is the same size as the adjacent buttons and expands its controls inside Appearance.
 
-In **Appearance â†’ Lines**, **Show RF lines** switches persistent RF paths on or off. Color can follow distance or use a custom color; weight, solid/dash/dot/dash-dot pattern and opacity adjust the drawing. **VHF Paths** independently controls watched-path lines. These preferences are saved in this browser, along with map position, zoom and filters.
+In **Appearance → Lines**, **Show RF lines** switches persistent RF paths on or off. Color can follow distance or use a custom color; weight, solid/dash/dot/dash-dot pattern and opacity adjust the drawing. **VHF Paths** independently controls watched-path lines. These preferences are saved in this browser, along with map position, zoom and filters.
 
 Persistent paths describe RF reception only. Direct stations connect to your station; relayed stations follow known used digipeater positions. When a required digipeater position is missing, the path is suppressed rather than drawn as a direct contact. APRS-IS packet animations remain temporary and are not evidence that your radio heard the station. With only APRS-IS stations visible, no persistent RF paths are expected. The line time filter and source/type filters can also hide RF lines.
 
@@ -53,11 +53,11 @@ Manual **Transmit Beacon** uses the selected RF, APRS-IS or combined route and r
 
 ## Built-in modem: reception
 
-This development-only original Bell 202 modem handles 1200-baud AFSK APRS. Open **Settings â†’ Radio & TNC â†’ RF Ports â†’ Configure Built-in Modem**. Select the radio's audio input and left/mono or right channel, then **Start receiving**. Use actual local receiver audio for operating the radio. Avoid microphone noise suppression, automatic gain processing, feedback and clipping. Open squelch is supported; ordinary receiver hiss should not count as an APRS carrier.
+This development-only original Bell 202 modem handles 1200-baud AFSK APRS. Open **Settings → Radio & TNC → RF Ports → Configure Built-in Modem**. Select the radio's audio input and left/mono or right channel, then **Start receiving**. Use actual local receiver audio for operating the radio. Avoid microphone noise suppression, automatic gain processing, feedback and clipping. Open squelch is supported; ordinary receiver hiss should not count as an APRS carrier.
 
 Successful RX setup is saved for automatic reception on subsequent application launches. Saved audio devices are matched by name and host API rather than assuming their numeric device IDs are unchanged. If a saved device is unavailable, startup reports an error instead of choosing an unrelated input or output. Refresh devices and reconfigure it. **Stop** reception disables RX automatic startup and stops TX. Closing the modem window leaves the backend operating; quitting releases the devices while preserving the configured startup choices.
 
-**Test with a WAV recording** decodes 16-bit PCM WAV, mono or stereo, 8â€“96 kHz, up to five minutes and 32 MB. Choose the intended audio channel. The generated test WAV is an offline reference. Imported recording results stay out of the live map and cannot cause gating, digipeating or message acknowledgements. A recording decoding successfully while live input does not usually calls for checking the selected input and audio routing.
+**Test with a WAV recording** decodes 16-bit PCM WAV, mono or stereo, 8–96 kHz, up to five minutes and 32 MB. Choose the intended audio channel. The generated test WAV is an offline reference. Imported recording results stay out of the live map and cannot cause gating, digipeating or message acknowledgements. A recording decoding successfully while live input does not usually calls for checking the selected input and audio routing.
 
 ### Reading modem diagnostics
 
@@ -81,7 +81,7 @@ The transmit watchdog bounds audio/serial PTT to ten seconds per packet; VOX rel
 
 ## APRS-IS and packet interpretation
 
-Configure callsign, server, port, passcode and filter under **Radio & TNC â†’ APRS-IS**. Unverified/read-only connections can receive; sending requires verification. Filter helpers support fixed station ranges, moving/my ranges and extra APRS-IS filter tokens. The packet list identifies RF versus internet source; internet reports must not be read as local radio propagation evidence.
+Configure callsign, server, port, passcode and filter under **Radio & TNC → APRS-IS**. Unverified/read-only connections can receive; sending requires verification. Filter helpers support fixed station ranges, moving/my ranges and extra APRS-IS filter tokens. The packet list identifies RF versus internet source; internet reports must not be read as local radio propagation evidence.
 
 ## Messages, contacts and OTA activity spots
 
@@ -113,7 +113,7 @@ NOAA space weather adds Kp/context with optional threshold alerts. The default M
 
 ## Weather, radar, alerts and lightning
 
-Open **Settings â†’ Alerts & Weather â†’ Weather**. The Weather section is visible in both Basic and Advanced Settings. Check **Weather Enabled**, enter a ZIP/ICAO location code and use **Lookup**, select the appropriate current-condition source, then **Save**. Station coordinates alone do not supply this separate weather location. Open-Meteo current conditions require no API key; optional providers can require their own credentials. WXnow can supply local current weather when configured.
+Open **Settings → Alerts & Weather → Weather**. The Weather section is visible in both Basic and Advanced Settings. Check **Weather Enabled**, enter a ZIP/ICAO location code and use **Lookup**, select the appropriate current-condition source, then **Save**. Station coordinates alone do not supply this separate weather location. Open-Meteo current conditions require no API key; optional providers can require their own credentials. WXnow can supply local current weather when configured.
 
 Current conditions, wind, precipitation, forecast/ducting context and alerts are displayed when available and their banner/panel settings permit it. Radar visibility, animation versus static, opacity/provider/custom layers, satellite imagery and weather alert polygons have separate controls. The bottom map Layers menu provides radar show/hide and loop/static controls. Provider coverage and valid tile configuration affect availability.
 
@@ -137,7 +137,7 @@ Web/Display settings include listening host/port, browser selection or no automa
 
 ## Source health and troubleshooting
 
-**Data â†’ Source Health** separates connection state from data age. RF **LISTENING** means a receiver is connected but no RF packet has been recorded this session; **LIVE** means recent RF data; **STALE** means old observations; **OFFLINE** means unavailable; **OFF** means disabled. Configured tile layers are not a guarantee every external tile request succeeded. Browser live-link state is separate from backend feed health.
+**Data → Source Health** separates connection state from data age. RF **LISTENING** means a receiver is connected but no RF packet has been recorded this session; **LIVE** means recent RF data; **STALE** means old observations; **OFFLINE** means unavailable; **OFF** means disabled. Configured tile layers are not a guarantee every external tile request succeeded. Browser live-link state is separate from backend feed health.
 
 - **Weather/lightning OFF:** enable their separate settings and save. If settings are missing, clear Settings search, open Alerts & Weather and expand Weather. Dashboard visibility can still hide a card.
 - **Modem audio but no live decode:** verify input/channel/routing, avoid clipping or audio processing, and compare a recording with Test with a WAV recording. Green audio does not establish APRS content.
@@ -165,4 +165,4 @@ Callbook lookup supports configured QRZ/HamQTH credentials and provider selectio
 
 ## More information
 
-Use **About/Help â†’ Illustrated Quick Start** for the guided tour. The in-app guide and Full HTML Documentation are generated from this guide. Source-distribution companions provide [public-hosting details](PUBLIC_HOSTING.md), [modem test instructions](DEVELOPMENT_MODEM.md), [Linux/Raspberry Pi deployment](linux-raspberry-pi.md), and [Docker deployment](docker.md). License, trademarks and bundled third-party notices remain applicable; the modem is an original implementation, not GrayWolf or Dire Wolf source.
+Use **About/Help → Illustrated Quick Start** for the guided tour. The in-app guide and Full HTML Documentation are generated from this guide. Source-distribution companions provide [public-hosting details](PUBLIC_HOSTING.md), [modem test instructions](DEVELOPMENT_MODEM.md), [Linux/Raspberry Pi deployment](linux-raspberry-pi.md), and [Docker deployment](docker.md). License, trademarks and bundled third-party notices remain applicable; the modem is an original implementation, not GrayWolf or Dire Wolf source.

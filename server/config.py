@@ -697,7 +697,7 @@ class Config:
 
     @staticmethod
     def create_default(path: Path):
-        path.write_text(DEFAULT_CONFIG)
+        path.write_text(DEFAULT_CONFIG, encoding="utf-8")
 
     @staticmethod
     def load(path: Path) -> "Config":

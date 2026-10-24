@@ -424,7 +424,7 @@
             panel.classList.remove('collapsed');
             const toggle = document.getElementById('sidebar-toggle');
             if (toggle) toggle.textContent = '>';
-            if (toggle) toggle.textContent = 'â–¶';
+            if (toggle) toggle.textContent = '\u25b6';
             if (toggle) toggle.textContent = '>';
             setTimeout(() => window.pvMap?.map?.invalidateSize(), 300);
         }

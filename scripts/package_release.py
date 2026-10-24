@@ -6,7 +6,7 @@ import tarfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-version = re.search(r'^APP_VERSION = "([^"]+)"', (ROOT / 'main.py').read_text(), re.M).group(1)
+version = re.search(r'^APP_VERSION = "([^"]+)"', (ROOT / 'main.py').read_text(encoding='utf-8'), re.M).group(1)
 machine = platform.machine().lower()
 arch = {'x86_64': 'amd64', 'amd64': 'amd64', 'arm64': 'arm64', 'aarch64': 'arm64'}.get(machine, machine)
 system = 'macos' if sys.platform == 'darwin' else 'linux'

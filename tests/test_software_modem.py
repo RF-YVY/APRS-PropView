@@ -124,7 +124,7 @@ class ReleaseIdentityTests(unittest.TestCase):
     def test_release_version_and_installer_identity(self):
         from pathlib import Path
         from main import APP_VERSION
-        self.assertEqual(APP_VERSION, '1.13.0')
+        self.assertEqual(APP_VERSION, '1.13.1')
         root=Path(__file__).resolve().parents[1]
         script=(root/'deploy/APRSPropView.iss').read_text(encoding='utf-8')
         self.assertIn('8F56D489-53F5-4E9E-89B0-BA55762CDE37',script)

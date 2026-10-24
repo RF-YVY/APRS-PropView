@@ -17,7 +17,7 @@
             dialog.setAttribute('aria-labelledby', 'whats-new-title');
             const title = document.createElement('h2');
             title.id = 'whats-new-title';
-            title.textContent = `Whatâ€™s new in APRS PropView ${release.version}`;
+            title.textContent = `What’s new in APRS PropView ${release.version}`;
             const copy = document.createElement('p');
             copy.textContent = 'Welcome to this release. Changes since the previous public version:';
             const changes = document.createElement('ul');
@@ -32,10 +32,10 @@
             done.type = 'button';
             done.textContent = 'Got it';
             dialog.append(title, copy);
-            if (release.changelog_url === '/static/releases/v1.13.0.html') {
+            if (typeof release.changelog_url === 'string' && /^\/static\/releases\/v1\.13\.\d+\.html$/.test(release.changelog_url)) {
                 const frame = document.createElement('iframe');
                 frame.src = release.changelog_url;
-                frame.title = 'Full v1.13.0 changelog since v1.11.1';
+                frame.title = 'Full release changelog since v1.11.1';
                 frame.style.cssText = 'width:100%;height:55vh;border:1px solid #405361;border-radius:8px';
                 dialog.append(frame);
             } else {

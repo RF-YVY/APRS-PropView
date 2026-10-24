@@ -26,7 +26,7 @@ python3 -m venv .venv
 The compiler produces `native/bin/libpropview_modem.so`. The dashboard defaults
 to port 14501. Desktop application data lives under
 `${XDG_DATA_HOME:-$HOME/.local/share}/aprs-propview`.
-Select your USB audio interface under Settings â†’ Radio & TNC. Linux serial
+Select your USB audio interface under Settings → Radio & TNC. Linux serial
 ports such as `/dev/ttyUSB0` are supported, including case-sensitive enumerated
 device paths. The application account needs permission to use the selected
 audio and serial devices; on Debian-derived systems those are commonly managed

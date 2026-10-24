@@ -18,7 +18,7 @@ def render(text):
 
 def page(title,body,toc):
     nav='<nav aria-label="Contents"><strong>Contents</strong><ul>'+''.join('<li><a href="#'+slug+'">'+html.escape(label)+'</a></li>' for slug,label in toc)+'</ul></nav>'
-    return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+html.escape(title)+'</title><style>'+CSS+'</style></head><body><main>'+nav+body+'<p><a href="/static/documentation.html">Full user guide</a> Ã‚Â· <a href="/">Dashboard</a></p></main></body></html>'
+    return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+html.escape(title)+'</title><style>'+CSS+'</style></head><body><main>'+nav+body+'<p><a href="/static/documentation.html">Full user guide</a> &#183; <a href="/">Dashboard</a></p></main></body></html>'
 
 text=(ROOT/'docs/USER_GUIDE.md').read_text(encoding='utf-8')
 body,toc=render(text)
@@ -39,4 +39,5 @@ print('Generated full documentation, in-app help and four companion guides')
 
 releases=ROOT/'static/releases';releases.mkdir(exist_ok=True)
 release_body,release_toc=render((ROOT/'CHANGELOG.md').read_text(encoding='utf-8'))
-(releases/'v1.13.0.html').write_text(page('APRS PropView v1.13.0 changelog',release_body,release_toc),encoding='utf-8')
+version = re.search(r'^APP_VERSION = "([^"]+)"', (ROOT/'main.py').read_text(encoding='utf-8'), re.M).group(1)
+(releases/('v'+version+'.html')).write_text(page('APRS PropView '+version+' changelog',release_body,release_toc),encoding='utf-8')

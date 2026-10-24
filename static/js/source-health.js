@@ -52,7 +52,7 @@
                 <span class="source-health-state-dot"></span>
                 <div class="source-health-copy">
                     <div><strong>${escapeHTML(item.label)}</strong><span>${escapeHTML(STATE_LABELS[item.state] || item.state)}</span></div>
-                    <small>${escapeHTML(item.detail || '')}${item.age_seconds == null ? '' : ` Â· ${escapeHTML(ageLabel(item.age_seconds))}`}</small>
+                    <small>${escapeHTML(item.detail || '')}${item.age_seconds == null ? '' : ` · ${escapeHTML(ageLabel(item.age_seconds))}`}</small>
                     ${item.error ? `<em title="${escapeHTML(item.error)}">${escapeHTML(item.error)}</em>` : ''}
                 </div>
             </div>`).join('');

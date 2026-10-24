@@ -12,6 +12,6 @@ def run():
     try:
         if decoder.feed(tx_audio)!=[frame.encode()]:raise RuntimeError('Packaged transmit encoder self-test failed.')
     finally:decoder.close()
-    return {'tx_encoder_passed':True,'version':'1.13.0','passed':True,'decoded_frames':result['decoded_frames'],
+    return {'tx_encoder_passed':True,'version':'1.13.1','passed':True,'decoded_frames':result['decoded_frames'],
             'audio_seconds':result['audio_seconds'],'processing_seconds':result['processing_seconds'],
             'portaudio_version':sounddevice.get_portaudio_version()[1],'transmit_defaults_off':True}

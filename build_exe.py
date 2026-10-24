@@ -105,7 +105,7 @@ def _rebuild_ico_png(ico_path):
             f.write(header + dir_entries + data_parts)
         print(f"  Rebuilt ICO with PNG compression ({len(entries)} sizes)")
     except ImportError:
-        print("  Pillow not available â€” using existing ICO as-is")
+        print("  Pillow not available — using existing ICO as-is")
     except Exception as e:
         print(f"  Warning: Could not rebuild ICO: {e}")
 
@@ -204,7 +204,7 @@ VSVersionInfo(
     print(f"  Generated version info resource")
 
 def build():
-    print("\n=== APRS PropView â€” Build Executable ===\n")
+    print("\n=== APRS PropView — Build Executable ===\n")
     version = read_app_version()
     check_pyinstaller()
     check_runtime_dependencies()
@@ -280,7 +280,7 @@ def build():
     _write_version_info(version_file, version)
     args.extend(["--version-file", str(version_file)])
 
-    # Custom manifest with unique assemblyIdentity â€” prevents Windows from
+    # Custom manifest with unique assemblyIdentity — prevents Windows from
     # matching the bootloader against Python's AppCompat cache entry
     manifest_file = PROJECT_ROOT / "APRSPropView.manifest"
     _write_manifest(manifest_file, version)

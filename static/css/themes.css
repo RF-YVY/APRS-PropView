@@ -182,7 +182,7 @@ textarea,
 }
 
 :root[data-ui-skin="mission-control"] .settings-section > h3::before {
-    content: "â—‰ ";
+    content: "◉ ";
     color: var(--mission-cyan);
     font-size: 0.72em;
     text-shadow: 0 0 10px rgba(var(--mission-cyan-rgb), 0.7);
@@ -757,7 +757,7 @@ textarea,
 }
 
 :root[data-ui-skin="industrial"] .settings-section h3::before {
-    content: "â–° ";
+    content: "▰ ";
     color: var(--industrial-rust);
 }
 
@@ -1114,7 +1114,7 @@ textarea,
 }
 
 :root[data-ui-skin="neon-grid"] .settings-section h3::before {
-    content: "â—‡ ";
+    content: "◇ ";
     color: var(--neon-cyan);
     text-shadow: 0 0 8px rgba(var(--neon-cyan-rgb), .85);
 }
@@ -2877,7 +2877,7 @@ textarea,
     }
 }
 
-/* â”€â”€ Unified information architecture and density system â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/* ── Unified information architecture and density system ─────────
    Shared by every visual skin so theme changes never alter usability. */
 :root[data-ui-skin] {
     --ui-space-1: 4px;
@@ -2987,13 +2987,13 @@ textarea,
 }
 
 .map-control-group > summary::-webkit-details-marker { display: none; }
-.map-control-group > summary::after { content: "âŒ„"; margin-left: 6px; color: var(--text-muted); }
+.map-control-group > summary::after { content: "\2304"; margin-left: 6px; color: var(--text-muted); }
 .map-control-group[open] > summary {
     border-color: color-mix(in srgb, var(--user-accent) 55%, var(--border));
     background: color-mix(in srgb, var(--user-accent) 12%, var(--button-bg-muted, var(--bg-secondary)));
     color: var(--text-primary);
 }
-.map-control-group[open] > summary::after { content: "âŒƒ"; }
+.map-control-group[open] > summary::after { content: "\2303"; }
 
 .map-control-group-body {
     position: absolute;

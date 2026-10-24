@@ -8,6 +8,10 @@ from server.config_io import atomic_write
 logger = logging.getLogger('propview.release')
 
 RELEASES = {
+    '1.13.1': [
+        'Fixed corrupted characters in toolbar icons, application text, Markdown guides and generated changelogs.',
+        'Added explicit UTF-8 handling and encoding regression checks; rebuilt all platform packages.',
+    ],
     '1.13.0': [
         'Experimental built-in soundcard modem: RX/TX, millisecond transmit delay, serial/VOX PTT, diagnostics, WAV tests and saved startup settings.',
         'Web and mobile access on port 14501 across LAN and Tailscale, with operator-protected controls.',
@@ -90,7 +94,7 @@ class ReleaseNotes:
         except (OSError, ValueError):
             state = {}
         previous = state.get('version')
-        self.pending = bool(state.get('pending')) if previous == version else bool(version == '1.13.0' or previous or existing_installation)
+        self.pending = bool(state.get('pending')) if previous == version else bool(version.startswith('1.13.') or previous or existing_installation)
         self._save()
 
     def _save(self):
@@ -113,18 +117,18 @@ class ReleaseNotes:
 
     def snapshot(self, operator=False):
         return {'version': self.version, 'changes': RELEASES.get(self.version, []),
-                'changelog_url': '/static/releases/v1.13.0.html' if self.version == '1.13.0' else None,
+                'changelog_url': f'/static/releases/v{self.version}.html' if self.version.startswith('1.13.') else None,
                 'should_show': bool(operator and self.pending)}
 
 
 def migrate_network_settings(config, config_path, version):
     """One-time migration of the former loopback/dev defaults for v1.13.0."""
-    if version != '1.13.0':
+    if not version.startswith('1.13.'):
         return
     path = Path(config_path)
     try:
         state = json.loads(path.with_name('release-state.json').read_text(encoding='utf-8'))
-        if state.get('version') == version:
+        if str(state.get('version', '')).startswith('1.13.'):
             return
     except (OSError, ValueError, AttributeError):
         pass

@@ -407,7 +407,7 @@ async def fetch_5day_forecast(lat: float, lon: float) -> List[Dict[str, Any]]:
     forecast: List[Dict[str, Any]] = []
     for idx, date_value in enumerate(dates[:5]):
         code = _list_value(daily, "weather_code", idx)
-        desc, icon = WMO_CODES.get(code, ("Unknown", "â“"))
+        desc, icon = WMO_CODES.get(code, ("Unknown", "❓"))
         forecast.append({
             "date": date_value,
             "weather_code": code,

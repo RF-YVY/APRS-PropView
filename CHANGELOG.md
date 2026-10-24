@@ -1,5 +1,15 @@
 # APRS PropView changelog
 
+## v1.13.1 — text encoding correction
+
+Released October 23, 2026.
+
+- Repaired corrupted Unicode characters throughout the application, settings, modem help, weather text, Markdown guides and generated changelog/documentation pages.
+- Fixed the View, Stations, Layers and Appearance dropdown indicators. CSS chevrons now use encoding-independent character escapes.
+- Repaired both single and repeated UTF-8/Windows-code-page conversion errors while preserving intended symbols and emoji.
+- Made text-file encoding explicit in maintenance/configuration code, added UTF-8 editor defaults, and added regression checks for invalid UTF-8 and common corruption patterns.
+- Regenerated bundled documentation from the corrected Markdown sources and rebuilt platform packages. The experimental-modem disclaimer and the full changes since v1.11.1 remain included.
+
 ## v1.13.0 — changes since v1.11.1
 
 Released October 23, 2026. This release consolidates the unpublished v1.12.0 work and the v1.13.0 development series into one public release.
