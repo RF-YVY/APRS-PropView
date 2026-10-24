@@ -208,6 +208,7 @@ def build():
     version = read_app_version()
     check_pyinstaller()
     check_runtime_dependencies()
+    subprocess.check_call([sys.executable, str(PROJECT_ROOT / 'native/build_modem.py')])
 
     # PyInstaller --clean clears its cache. Preserve dist: it may contain
     # local configurations, databases, and installers kept for rollback.
@@ -216,6 +217,11 @@ def build():
     args = [
         sys.executable, "-m", "PyInstaller",
         "--name", "APRSPropView",
+        "--add-binary", f"{PROJECT_ROOT / 'native/bin/propview_modem.dll'}{os.pathsep}native/bin",
+        "--add-data", f"{PROJECT_ROOT / 'docs/MODEM_THIRD_PARTY_NOTICES.txt'}{os.pathsep}.",
+        "--additional-hooks-dir", str(PROJECT_ROOT / "native/hooks"),
+        "--hidden-import", "_sounddevice",
+
         "--noconfirm",
         "--clean",
         # Keep generated machine-specific .spec files out of the source tree.
@@ -253,6 +259,8 @@ def build():
         "--hidden-import", "pystray",
         "--hidden-import", "pystray._win32",
         "--hidden-import", "certifi",
+        "--hidden-import", "tkinter",
+        "--hidden-import", "tkinter.ttk",
         "--hidden-import", "netCDF4",
         "--collect-data", "certifi",
         # Collect all submodules
@@ -301,7 +309,7 @@ def build():
                 print(f"  Copied config.toml.example to dist/")
 
             print(f"\n  To run: dist\\APRSPropView.exe")
-            print(f"  On first run, config.toml is created next to the exe and the app starts immediately.\n")
+            print(f"  Development settings and data are isolated in %LOCALAPPDATA%/APRSPropViewelopment.\n")
         else:
             print(f"\n  Warning: Build completed but exe not found at expected path.")
     else:

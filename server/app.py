@@ -3,11 +3,16 @@
 import asyncio
 from copy import deepcopy
 from server.config_io import apply_config, atomic_write
+from server.operator_auth import (
+    OperatorAuth, COOKIE, install_access_control, public_config, public_status,
+    public_packet, public_station, public_weather, public_socket_message, same_origin,
+)
 from server.config import tomllib
 from server.analytics_routes import register_analytics_routes
 import base64
 import binascii
 import hashlib
+import json
 import mimetypes
 import os
 import re
@@ -768,14 +773,69 @@ def create_app(
     app_version: str = "1.0.0",
     shutdown_event: Optional[asyncio.Event] = None,
     config_path: Optional[Path] = None,
+    release_notes=None,
 ) -> FastAPI:
     """Create and configure the FastAPI application."""
 
     app = FastAPI(title="APRS PropView", version=app_version)
+    modem = None
+    if '-dev.' in app_version or tuple(int(n) for n in re.findall(r'\d+', app_version)[:2]) >= (1, 13):
+        from server.software_modem import SoftwareModem
+        modem = SoftwareModem(handler, Path(config_path or 'config.toml').with_name('modem-development.json'))
+        handler.rf_interfaces.append(modem)
+        from server.modem_routes import register_modem_routes
+        register_modem_routes(app, modem)
+        app.state.software_modem = modem
+
     mqtt_state = mqtt_state if mqtt_state is not None else {"publisher": None}
     mqtt_lock = asyncio.Lock()
     config_path = Path(config_path or "config.toml")
+    from server.header_image import register_header_image_routes
+    register_header_image_routes(app, config_path, STATIC_DIR)
     started_at = time.time()
+    operator_auth = OperatorAuth(config_path.with_name('operator-auth.json'))
+    install_access_control(app, operator_auth)
+
+    @app.get('/api/whats-new')
+    async def whats_new(request: Request):
+        from server.release_notes import RELEASES
+        if release_notes:
+            return release_notes.snapshot(bool(request.state.operator_session))
+        return {'version': app_version, 'changes': RELEASES.get(app_version, []), 'should_show': False}
+
+    @app.post('/api/whats-new/acknowledge')
+    async def acknowledge_whats_new(request: Request):
+        body = await request.json()
+        if not release_notes or not release_notes.acknowledge(body.get('version')):
+            return JSONResponse({'success': False, 'message': 'Could not save release notice dismissal. Reload or try again.'}, status_code=409)
+        return {'success': True}
+
+    @app.post('/api/auth/desktop-open')
+    async def desktop_open(request: Request):
+        import hmac
+        secret = getattr(app.state, 'desktop_secret', None)
+        if not secret:
+            return JSONResponse({'message': 'Local launcher unavailable.'}, status_code=401)
+        raw = bytearray()
+        async for chunk in request.stream():
+            raw.extend(chunk)
+            if len(raw) > 4096:
+                return JSONResponse({'message': 'Invalid local launcher request.'}, status_code=401)
+        try:
+            candidate = json.loads(raw).get('secret')
+            if not isinstance(candidate, str) or not hmac.compare_digest(candidate, secret):
+                raise ValueError()
+        except (ValueError, AttributeError, TypeError):
+            return JSONResponse({'message': 'Local launcher authorization required.'}, status_code=401)
+        asyncio.get_running_loop().call_soon(app.state.desktop_open)
+        return {'success': True}
+
+    def filter_socket_message(websocket, message):
+        if operator_auth.session(websocket.cookies.get(COOKIE, '')):
+            return message
+        return public_socket_message(message)
+
+    ws_manager.message_filter = filter_socket_message
 
     def _mqtt_snapshot() -> tuple:
         return (
@@ -861,7 +921,7 @@ def create_app(
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     @app.get("/api/health")
-    async def get_health(full: bool = Query(False)):
+    async def get_health(request: Request, full: bool = Query(False)):
         status = handler.get_status() if handler else {}
         payload = {
             "ok": True,
@@ -875,6 +935,9 @@ def create_app(
             "aprs_is_connected": bool(status.get("aprs_is_connected")),
             "rf_interfaces": status.get("rf_interfaces", []),
         }
+        if not request.state.operator_session:
+            return {key: value for key, value in payload.items() if key in {
+                'ok', 'version', 'station', 'rf_connected', 'aprs_is_connected'}}
         if full:
             payload.update({
                 "uptime_seconds": round(time.time() - started_at),
@@ -1052,6 +1115,9 @@ def create_app(
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
+        if not same_origin(websocket):
+            await websocket.close(code=1008)
+            return
         accepted = await ws_manager.connect(websocket)
         if not accepted:
             return
@@ -1138,6 +1204,14 @@ def create_app(
         status["installer_install_supported"] = installer_install_supported
         return status
 
+    from server.update_install import installer_environment
+    update_install_state = {"phase": "idle", "downloaded_bytes": 0, "total_bytes": 0}
+    backend_instance = f"{os.getpid()}-{time.time_ns()}"
+
+    @app.get("/api/update-install-status")
+    async def update_install_status():
+        return {**update_install_state, "instance": backend_instance, "version": app_version}
+
     def _download_update_installer_sync(url: str, filename: str) -> str:
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme != "https" or parsed.netloc.lower() not in {
@@ -1160,7 +1234,13 @@ def create_app(
         )
         with urllib.request.urlopen(req, timeout=120, context=_github_ssl_context()) as resp:
             with open(target, "wb") as f:
-                shutil.copyfileobj(resp, f)
+                update_install_state['total_bytes'] = int(resp.headers.get('Content-Length') or 0)
+                while True:
+                    chunk = resp.read(256 * 1024)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    update_install_state['downloaded_bytes'] += len(chunk)
         if target.stat().st_size < 1024 * 1024:
             raise RuntimeError("Downloaded installer is unexpectedly small.")
         return str(target)
@@ -1180,7 +1260,7 @@ while ((Get-Date) -lt $deadline) {{
     if (-not $running) {{ break }}
     Start-Sleep -Milliseconds 500
 }}
-Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS', '/FORCECLOSEAPPLICATIONS', '/NORESTARTAPPLICATIONS', '/PROPVIEWINAPPUPDATE=1') -WorkingDirectory $workingDir
+Start-Process -FilePath $installer -WindowStyle Normal -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS', '/FORCECLOSEAPPLICATIONS', '/NORESTARTAPPLICATIONS', '/PROPVIEWINAPPUPDATE=1') -WorkingDirectory $workingDir
 """
         encoded_script = base64.b64encode(helper_script.encode("utf-16le")).decode("ascii")
         subprocess.Popen(
@@ -1195,6 +1275,7 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 encoded_script,
             ],
             cwd=str(installer.parent),
+            env=installer_environment(),
             close_fds=True,
         )
 
@@ -1207,7 +1288,7 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
             logger.warning("Update installer helper launched, but no shutdown event is configured.")
 
     @app.post("/api/update-install")
-    async def download_and_launch_update(background_tasks: BackgroundTasks):
+    async def download_and_launch_update(background_tasks: BackgroundTasks, request: Request = None):
         if _sys.platform != "win32":
             return JSONResponse(
                 status_code=400,
@@ -1219,56 +1300,77 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 content={"success": False, "message": "Update checker is not configured."},
             )
 
-        status = await update_checker.get_status(force=True)
-        if not status.get("update_available"):
-            return JSONResponse(
-                status_code=409,
-                content={"success": False, "message": status.get("message") or "No update is available."},
-            )
-
-        installer_url = (status.get("installer_url") or "").strip()
-        installer_name = (status.get("installer_name") or "").strip()
-        if not installer_url:
-            return JSONResponse(
-                status_code=404,
-                content={
-                    "success": False,
-                    "message": "This release does not include a setup installer asset. Open GitHub releases to update manually.",
-                    "release_url": status.get("release_url"),
-                },
-            )
-
-        loop = asyncio.get_running_loop()
+        if update_install_state['phase'] in {'checking', 'downloading', 'installing'}:
+            return JSONResponse(status_code=409, content={"success": False, "message": "An update is already in progress."})
+        update_install_state.update(phase='checking', downloaded_bytes=0, total_bytes=0)
         try:
-            installer_path = await loop.run_in_executor(
-                None,
-                _download_update_installer_sync,
-                installer_url,
-                installer_name,
-            )
-        except Exception as e:
-            logger.warning("Update installer download failed: %s", e)
-            return JSONResponse(
-                status_code=502,
-                content={"success": False, "message": "Could not download the update installer."},
-            )
+            status = await update_checker.get_status(force=True)
+            if not status.get("update_available"):
+                return JSONResponse(
+                    status_code=409,
+                    content={"success": False, "message": status.get("message") or "No update is available."},
+                )
 
-        background_tasks.add_task(_launch_update_installer, installer_path)
-        background_tasks.add_task(_shutdown_after_update_helper_launch)
-        return {
-            "success": True,
-            "message": "Update installer downloaded. APRS PropView will close, then setup will launch to replace the application while keeping your settings.",
-            "installer_path": installer_path,
-        }
+            installer_url = (status.get("installer_url") or "").strip()
+            installer_name = (status.get("installer_name") or "").strip()
+            if not installer_url:
+                return JSONResponse(
+                    status_code=404,
+                    content={
+                        "success": False,
+                        "message": "This release does not include a setup installer asset. Open GitHub releases to update manually.",
+                        "release_url": status.get("release_url"),
+                    },
+                )
+
+            update_install_state["phase"] = "downloading"
+            loop = asyncio.get_running_loop()
+            try:
+                installer_path = await loop.run_in_executor(
+                    None,
+                    _download_update_installer_sync,
+                    installer_url,
+                    installer_name,
+                )
+            except Exception as e:
+                logger.warning("Update installer download failed: %s", e)
+                return JSONResponse(
+                    status_code=502,
+                    content={"success": False, "message": "Could not download the update installer."},
+                )
+
+            try:
+                _launch_update_installer(installer_path)
+            except Exception:
+                logger.exception("Could not start update installer helper")
+                update_install_state['phase'] = 'failed'
+                return JSONResponse(status_code=500, content={"success": False, "message": "Could not start setup. Please try again."})
+            if request is not None:
+                try:
+                    operator_auth.preserve_local_update_session(request.cookies.get(COOKIE, ''))
+                except OSError:
+                    logger.warning('Could not preserve local update session; reopen from the tray after setup.')
+            update_install_state['phase'] = 'installing'
+            background_tasks.add_task(_shutdown_after_update_helper_launch)
+            return {
+                "success": True,
+                "message": "Update installer downloaded. APRS PropView will close, then setup will launch to replace the application while keeping your settings.",
+                "installer_path": installer_path,
+                "instance": backend_instance,
+            }
+        finally:
+            if update_install_state['phase'] != 'installing':
+                update_install_state['phase'] = 'failed'
 
     @app.get("/api/status")
-    async def get_status():
-        return handler.get_status()
+    async def get_status(request: Request):
+        status = handler.get_status()
+        return status if request.state.operator_session else public_status(status)
 
     @app.get("/api/source-health")
-    async def get_source_health():
+    async def get_source_health(request: Request):
         """Report source connectivity and freshness without triggering external requests."""
-        return build_source_health(
+        result = build_source_health(
             config,
             handler.get_status(),
             tracker,
@@ -1278,6 +1380,12 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
             psk_reporter_manager=psk_reporter_manager,
             aprs_is=aprs_is,
         )
+
+        if not request.state.operator_session:
+            for source in result.get('sources', []):
+                source['error'] = ''
+                source['detail'] = source['label']
+        return result
 
     @app.get("/api/diagnostics")
     async def get_diagnostics():
@@ -1389,6 +1497,7 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
 
     @app.get("/api/stations/rf")
     async def get_rf_stations(
+        request: Request,
         since: Optional[float] = Query(None, description="Unix timestamp filter"),
         hours: Optional[float] = Query(None, description="Hours ago filter"),
         max_distance: Optional[float] = Query(None, description="Max distance in km"),
@@ -1399,10 +1508,13 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
         elif hours:
             since_ts = time.time() - (hours * 3600)
         stations = await tracker.get_rf_stations(since=since_ts, max_distance=max_distance)
+        if not request.state.operator_session:
+            stations = [public_station(station) for station in stations]
         return {"stations": stations, "count": len(stations)}
 
     @app.get("/api/stations/is")
     async def get_is_stations(
+        request: Request,
         since: Optional[float] = Query(None),
         hours: Optional[float] = Query(None),
     ):
@@ -1412,14 +1524,19 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
         elif hours:
             since_ts = time.time() - (hours * 3600)
         stations = await tracker.get_is_stations(since=since_ts)
+        if not request.state.operator_session:
+            stations = [public_station(station) for station in stations]
         return {"stations": stations, "count": len(stations)}
 
     @app.get("/api/stations/all")
     async def get_all_stations(
+        request: Request,
         hours: Optional[float] = Query(24, description="Hours ago filter"),
     ):
         since_ts = time.time() - (hours * 3600) if hours else None
         data = await tracker.get_all_stations(since=since_ts)
+        if not request.state.operator_session:
+            data = {key: [public_station(station) for station in data[key]] for key in ('rf', 'aprs_is')}
         return {
             "rf": data["rf"],
             "aprs_is": data["aprs_is"],
@@ -1448,10 +1565,13 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
 
     @app.get("/api/packets")
     async def get_packets(
+        request: Request,
         limit: int = Query(100, ge=1, le=1000),
         source: Optional[str] = Query(None),
     ):
         packets = await db.get_recent_packets(limit=limit, source=source)
+        if not request.state.operator_session:
+            packets = [packet for packet in packets if public_packet(packet)]
         return {"packets": packets, "count": len(packets)}
 
     @app.get("/api/propagation")
@@ -1543,6 +1663,36 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
     async def delete_message_contact(callsign: str):
         deleted = await db.delete_message_contact(callsign)
         return {"success": True, "deleted": deleted}
+
+    @app.get("/api/spot/options")
+    async def aprs_spot_options():
+        from server.aprs_spot import ACTIVITY_PROFILES, LOOKUP_ACTIVITIES, HELP_TYPES
+        return {"activities": ACTIVITY_PROFILES, "lookup_activities": LOOKUP_ACTIVITIES,
+                "help_types": HELP_TYPES, "callsign": config.station.callsign.split("-")[0].upper()}
+
+    @app.post("/api/spot/preview")
+    @app.post("/api/spot/send")
+    async def aprs_spot(request: Request):
+        from server.aprs_spot import build_spot, select_spot_route
+        try:
+            spot = build_spot(await request.json(), config.station.full_callsign)
+            route = select_spot_route(handler, spot['source'])
+            spot['source'] = route or spot['source']
+            spot['can_send'] = bool(route)
+            spot['route_message'] = ('Using ' + ('RF' if route == 'rf' else 'APRS-IS')) if route else 'No transmit connection available. Connect a transmit-enabled RF interface or verified APRS-IS session.'
+            if request.url.path.endswith('/send'):
+                if not route:
+                    raise ValueError(spot['route_message'])
+                await handler.send_message(spot['to'], spot['text'],
+                                           preferred_source=spot['source'], require_delivery=True,
+                                           sender_call=spot['callsign'])
+            return {"success": True, "spot": spot}
+        except ValueError as exc:
+            return JSONResponse(status_code=400, content={"success": False, "message": str(exc)})
+        except Exception:
+            logger.exception("APRS spot send failed")
+            return JSONResponse(status_code=500, content={"success": False,
+                "message": "Could not send the spot. Check Messages and connection status before retrying."})
 
     @app.post("/api/messages/send")
     async def send_message(request: Request):
@@ -2007,7 +2157,7 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
     # ── Weather API ─────────────────────────────────────────────
 
     @app.get("/api/weather")
-    async def get_weather():
+    async def get_weather(request: Request):
         """Get current weather conditions and NWS alerts."""
         if not weather_manager:
             return {"enabled": False, "configured": False}
@@ -2022,10 +2172,10 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
                 config.weather.alert_overlay_enabled,
                 len(data.get("alerts") or []),
             )
-            return data
+            return data if request.state.operator_session else public_weather(data)
         except Exception as e:
             logger.error(f"Weather fetch error: {e}")
-            return {"enabled": config.weather.enabled, "configured": False, "error": str(e)}
+            return {"enabled": config.weather.enabled, "configured": False, "error": "Weather data unavailable."}
 
     @app.get("/api/weather/refresh")
     async def refresh_weather():
@@ -2178,7 +2328,9 @@ Start-Process -FilePath $installer -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS',
         return FileResponse(path, media_type=media_type)
 
     @app.get("/api/config")
-    async def get_config():
+    async def get_config(request: Request):
+        if not request.state.operator_session:
+            return public_config(config)
         return {
             "station": {
                 "callsign": config.station.callsign,

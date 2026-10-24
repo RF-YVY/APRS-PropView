@@ -115,9 +115,15 @@ PY
   fi
 fi
 
+if command -v apt-get >/dev/null 2>&1; then
+  apt-get update
+  apt-get install -y g++ libportaudio2
+fi
+
 sudo -u "${RUN_USER}" "${PYTHON_BIN}" -m venv "${INSTALL_DIR}/.venv"
 sudo -u "${RUN_USER}" "${INSTALL_DIR}/.venv/bin/python" -m pip install --upgrade pip
 sudo -u "${RUN_USER}" "${INSTALL_DIR}/.venv/bin/python" -m pip install -r "${INSTALL_DIR}/requirements.txt"
+sudo -u "${RUN_USER}" "${INSTALL_DIR}/.venv/bin/python" "${INSTALL_DIR}/native/build_modem.py"
 
 if [[ ! -f "${INSTALL_DIR}/config.toml" && -f "${INSTALL_DIR}/config.toml.example" ]]; then
   sudo -u "${RUN_USER}" cp "${INSTALL_DIR}/config.toml.example" "${INSTALL_DIR}/config.toml"
@@ -140,6 +146,9 @@ Type=simple
 User=${RUN_USER}
 Group=${RUN_GROUP}
 WorkingDirectory=${INSTALL_DIR}
+Environment=PROPVIEW_DEPLOYMENT=1
+Environment=PROPVIEW_DATA_DIR=${INSTALL_DIR}
+Environment=PROPVIEW_LAUNCH_BROWSER=none
 EnvironmentFile=-/etc/default/${SERVICE_NAME}
 ExecStart=${INSTALL_DIR}/.venv/bin/python ${INSTALL_DIR}/main.py
 Restart=on-failure

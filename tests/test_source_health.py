@@ -45,6 +45,27 @@ class SourceHealthTests(unittest.TestCase):
         self.assertEqual(states["weather"], "live")
         self.assertEqual(payload["summary"], "attention")
 
+    def test_modem_without_configured_ports_is_live(self):
+        payload=build_source_health(self.config,{'rf_connected':True,'rf_interfaces':[{'connected':True}]},SimpleNamespace(_last_rf_packet_time=self.now-5),now=self.now)
+        rf=next(item for item in payload['sources'] if item['id']=='rf')
+        self.assertEqual(rf['state'],'live');self.assertTrue(rf['enabled'])
+        self.assertEqual(rf['detail'],'1/1 interfaces connected')
+
+    def test_connected_receiver_listens_until_first_packet(self):
+        status={'rf_connected':True,'rf_interfaces':[{'connected':True}]}
+        tracker=SimpleNamespace(_last_rf_packet_time=0)
+        payload=build_source_health(self.config,status,tracker,now=self.now)
+        rf=next(item for item in payload['sources'] if item['id']=='rf')
+        self.assertEqual(rf['state'],'listening')
+        self.assertIsNone(rf['age_seconds'])
+        self.assertIn('no RF packets decoded',rf['detail'])
+        tracker._last_rf_packet_time=self.now-1
+        rf=next(item for item in build_source_health(self.config,status,tracker,now=self.now)['sources'] if item['id']=='rf')
+        self.assertEqual(rf['state'],'live')
+        tracker._last_rf_packet_time=self.now-1000
+        rf=next(item for item in build_source_health(self.config,status,tracker,now=self.now)['sources'] if item['id']=='rf')
+        self.assertEqual(rf['state'],'stale')
+
     def test_disabled_sources_do_not_raise_attention(self):
         self.config.rf_ports = []
         self.config.aprs_is.enabled = False

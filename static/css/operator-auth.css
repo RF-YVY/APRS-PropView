@@ -1,0 +1,114 @@
+/* These rules are present before page content, avoiding an operator-control flash. */
+html:not(.operator-authenticated) [data-operator-only],
+html:not(.operator-authenticated) #tab-settings,
+html:not(.operator-authenticated) #tab-messages,
+html:not(.operator-authenticated) .tab-btn[data-tab="tab-settings"],
+html:not(.operator-authenticated) .tab-btn[data-tab="tab-messages"],
+html:not(.operator-authenticated) #btn-manual-beacon,
+html:not(.operator-authenticated) .header-action,
+html:not(.operator-authenticated) #manual-beacon-mode,
+html:not(.operator-authenticated) #btn-create-object,
+html:not(.operator-authenticated) #btn-cache-map,
+html:not(.operator-authenticated) #btn-install-update,
+html:not(.operator-authenticated) #btn-check-updates,
+html:not(.operator-authenticated) #mtab-messages,
+html:not(.operator-authenticated) [data-quick-tab="mtab-messages"],
+html:not(.operator-authenticated) [data-tab="mtab-messages"],
+html:not(.operator-authenticated) #m-btn-gps { display: none !important; }
+#operator-access { position: relative; display: flex; align-items: center; }
+#operator-session-info {
+    position: absolute; right: 0; bottom: calc(100% + 9px); z-index: 10050;
+    display: grid; gap: 10px; width: max-content; max-width: min(340px, calc(100vw - 24px));
+    padding: 12px; border: 1px solid #607080; border-radius: 8px;
+    background: #161b22; color: #f0f3f6; font: 12px/1.5 system-ui, sans-serif;
+    box-shadow: 0 2px 12px #0006;
+}
+#operator-session-info[hidden] { display: none; }
+.operator-session-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+#operator-access.operator-access-floating { position: fixed; right: 12px; bottom: 12px; z-index: 10050; }
+#map-controls #operator-session-toggle { display: inline-flex; align-items: center; justify-content: center; width: 34px; min-width: 34px; height: 30px; padding: 0; }
+#map-controls #operator-session-info button { width: auto; height: auto; min-height: 30px; padding: 6px 9px; }
+#operator-access button, #operator-login-dialog button {
+    cursor: pointer; background: #253b52; color: #fff; border: 1px solid #748ba1;
+    border-radius: 4px; padding: 6px 9px; font: inherit;
+}
+#operator-access button[hidden] { display: none; }
+#operator-login-dialog {
+    margin: auto;
+    width: min(440px, calc(100vw - 40px)); max-height: 85vh; overflow: auto;
+    background: #161b22; color: #f0f3f6; border: 1px solid #748ba1;
+    border-radius: 10px; padding: 24px; font: 14px/1.5 system-ui, sans-serif;
+}
+#operator-login-dialog::backdrop { background: #000a; }
+#operator-login-dialog label { display: block; margin: 14px 0; }
+#operator-login-dialog input, #operator-login-dialog select {
+    display: block; width: 100%; padding: 9px; margin-top: 4px;
+    background: #0d1117; color: #fff; border: 1px solid #748ba1; border-radius: 4px;
+}
+#operator-login-dialog h2 { margin-top: 0; }
+#operator-login-error { color: #ffbd69; }
+#operator-login-dialog code { overflow-wrap: anywhere; }
+@media (max-width: 600px) { #operator-access.operator-access-floating { bottom: 67px; } }
+#whats-new-dialog {
+    margin: auto;
+    width: min(620px, calc(100vw - 40px)); max-height: 82vh; overflow: auto;
+    padding: 24px; border: 1px solid #748ba1; border-radius: 10px;
+    background: #161b22; color: #f0f3f6; font: 14px/1.55 system-ui, sans-serif;
+}
+#whats-new-dialog::backdrop { background: #000a; }
+#whats-new-dialog h2 { margin-top: 0; }
+#whats-new-dialog li { margin-bottom: 10px; }
+#whats-new-dialog ul { padding-left: 20px; }
+#whats-new-dialog button {
+    background: #253b52; color: #fff; border: 1px solid #748ba1;
+    border-radius: 4px; padding: 9px 18px; cursor: pointer; font: inherit;
+}
+
+#aprs-spot-dialog { margin:auto; width:min(560px, calc(100vw - 32px)); max-height:85vh; overflow:auto; padding:24px; border:1px solid #607080; border-radius:12px; background:#161b22; color:#eef2f6; font:14px system-ui,sans-serif; }
+#aprs-spot-dialog::backdrop { background:#0009; }
+#aprs-spot-dialog h2 { margin:0 0 12px; }
+#aprs-spot-dialog label { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; }
+#aprs-spot-dialog input, #aprs-spot-dialog select { width:100%; box-sizing:border-box; padding:9px; background:#222d3a; color:#fff; border:1px solid #607080; border-radius:5px; }
+#aprs-spot-dialog .spot-grid { display:grid; grid-template-columns:1fr 1fr; gap:0 16px; }
+#aprs-spot-dialog .spot-test { flex-direction:row; align-items:center; }
+#aprs-spot-dialog input[type=checkbox] { width:auto; }
+#aprs-spot-dialog pre { white-space:pre-wrap; overflow-wrap:anywhere; padding:12px; background:#0d1117; border-radius:5px; }
+#aprs-spot-dialog .spot-help, #aprs-spot-dialog footer { color:#b6c3d2; font-size:12px; line-height:1.5; }
+#aprs-spot-dialog a { color:#8ecaff; }
+#aprs-spot-dialog .spot-actions { display:flex; justify-content:flex-end; gap:10px; margin:18px 0; }
+#aprs-spot-dialog button { padding:9px 15px; cursor:pointer; }
+#aprs-spot-dialog button:disabled { opacity:.5; cursor:default; }
+@media(max-width:480px) { #aprs-spot-dialog .spot-grid { grid-template-columns:1fr; } }
+
+#aprs-spot-dialog fieldset { border:0; padding:0; margin:0; min-width:0; }
+#aprs-spot-dialog [hidden] { display:none !important; }
+#aprs-spot-dialog details { margin:10px 0; }
+#aprs-spot-dialog summary { cursor:pointer; color:#8ecaff; padding:6px 0; }
+#aprs-spot-dialog p { margin:10px 0; line-height:1.4; }
+#aprs-spot-dialog input[name=callsign], #aprs-spot-dialog input[name=reference] { text-transform:uppercase; }
+#aprs-spot-dialog .spot-actions { flex-wrap:wrap; }
+
+#software-modem-dialog { margin:auto; width:min(680px,calc(100vw - 32px)); max-height:85vh; overflow:auto; padding:24px; border:1px solid #758395; border-radius:12px; background:#161b22; color:#eef2f6; font:14px system-ui; }
+#software-modem-dialog::backdrop { background:#0009; }
+#software-modem-dialog h2 { margin:0 0 12px; }
+#software-modem-dialog h2 small { color:#ffc766; font-size:12px; }
+#software-modem-dialog label { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; }
+#software-modem-dialog input,#software-modem-dialog select { width:100%; box-sizing:border-box; padding:9px; background:#253140; color:white; border:1px solid #758395; border-radius:5px; }
+#software-modem-dialog .modem-grid { display:grid; grid-template-columns:2fr 1fr; gap:16px; }
+#software-modem-dialog .modem-actions { display:flex; justify-content:flex-end; gap:10px; margin:12px 0; flex-wrap:wrap; }
+#software-modem-dialog button { padding:9px 14px; cursor:pointer; }
+#software-modem-dialog button:disabled { opacity:.5; cursor:default; }
+#software-modem-dialog meter { width:100%; height:24px; }
+#software-modem-dialog .modem-note { color:#b5c4d4; font-size:12px; line-height:1.5; }
+#software-modem-dialog a,#software-modem-dialog summary { color:#8ecaff; }
+#software-modem-dialog summary { cursor:pointer; }
+#software-modem-dialog pre { white-space:pre-wrap; overflow-wrap:anywhere; background:#0d1117; padding:12px; max-height:180px; overflow:auto; }
+@media(max-width:520px) { #software-modem-dialog .modem-grid { grid-template-columns:1fr; } }
+
+#software-modem-dialog .modem-reading-help { margin:12px 0; }
+#software-modem-dialog .modem-reading-help dl { margin:12px 0; line-height:1.5; }
+#software-modem-dialog .modem-reading-help dt { font-weight:600; margin-top:12px; }
+#software-modem-dialog .modem-reading-help dd { margin:4px 0 0; color:#c6d2df; }
+
+#software-modem-dialog .modem-check { flex-direction:row; align-items:center; }
+#software-modem-dialog .modem-check input { width:auto; }

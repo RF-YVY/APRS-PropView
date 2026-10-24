@@ -14,6 +14,7 @@ class WebSocketManager:
         self._queues = {}
         self._senders = {}
         self._tasks = set()
+        self.message_filter = None
 
     async def connect(self, websocket):
         if len(self.active_connections) >= self.MAX_CONNECTIONS:
@@ -51,6 +52,13 @@ class WebSocketManager:
         try:
             while True:
                 _, data = await queue.get()
+                # Check at delivery time too: queued operator data must not leak
+                # after this browser logs out, expires, or resets its password.
+                if self.message_filter:
+                    message = self.message_filter(websocket, json.loads(data))
+                    if message is None:
+                        continue
+                    data = json.dumps(message, default=str)
                 await asyncio.wait_for(websocket.send_text(data), self.SEND_TIMEOUT)
         except (Exception, asyncio.CancelledError):
             pass

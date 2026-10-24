@@ -3,7 +3,7 @@
 ; Build through build_installer.py so MyAppVersion is supplied from main.py.
 
 #ifndef MyAppVersion
-#define MyAppVersion "1.11.1"
+#define MyAppVersion "1.13.0"
 #endif
 
 #define MyAppName "APRS PropView"
@@ -55,21 +55,39 @@ Source: "..\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\config.toml.example"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\NOTICE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\CHANGELOG.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\docs\MODEM_THIRD_PARTY_NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\TRADEMARKS.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\Set or reset operator password"; Filename: "{app}\{#MyAppExeName}"; Parameters: "--operator-password-dialog"; WorkingDir: "{app}"
 Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{cmd}"; Parameters: "/C start """" /D ""{app}"" ""{app}\{#MyAppExeName}"""; WorkingDir: "{app}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent runhidden
+Filename: "{app}\{#MyAppExeName}"; Parameters: "{code:GetLaunchParameters}"; WorkingDir: "{app}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent; BeforeInstall: PrepareAppLaunch
 
 [UninstallDelete]
 ; Keep config.toml, propview.db, map_tile_cache, and user_audio intact.
 Type: files; Name: "{app}\config.toml.example"
 
 [Code]
+function SetEnvironmentVariable(lpName, lpValue: String): Boolean;
+  external 'SetEnvironmentVariableW@kernel32.dll stdcall';
+
+procedure PrepareAppLaunch();
+begin
+  SetEnvironmentVariable('PYINSTALLER_RESET_ENVIRONMENT', '1');
+end;
+
+function GetLaunchParameters(Param: String): String;
+begin
+  Result := '';
+  if ExpandConstant('{param:PROPVIEWINAPPUPDATE|0}') = '1' then
+    Result := '--update-relaunch';
+end;
+
 procedure StopRunningApp();
 var
   ResultCode: Integer;

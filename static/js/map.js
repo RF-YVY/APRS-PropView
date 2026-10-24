@@ -78,6 +78,7 @@ class PropViewMap {
         this.weatherAlerts = [];
         this.weatherAlertLayer = null;
         this.satelliteImageryLayer = null;
+        this.radarUIOverrides = {};
         this.radarFrames = [];
         this.radarTileLayers = [];
         this.radarStaticLayer = null;
@@ -1636,6 +1637,11 @@ class PropViewMap {
     }
 
     setLineStyle(nextStyle = {}) {
+        if (typeof nextStyle.enabled === 'boolean') {
+            this.showLines = nextStyle.enabled;
+            if (this.showLines) this.map.addLayer(this.lineLayer);
+            else this.map.removeLayer(this.lineLayer);
+        }
         const current = this.lineStyle || {};
         const colorMode = nextStyle.colorMode || current.colorMode || 'distance';
         const pattern = nextStyle.pattern || current.pattern || 'solid';
@@ -1689,6 +1695,7 @@ class PropViewMap {
             visible = false;
         }
 
+        visible = visible && this.showLines && this.showRF;
         if (visible) {
             if (!this.lineLayer.hasLayer(line)) this.lineLayer.addLayer(line);
             hops.forEach(m => { if (!this.lineLayer.hasLayer(m)) this.lineLayer.addLayer(m); });
@@ -1994,6 +2001,7 @@ class PropViewMap {
 
     _saveUIState() {
         const state = {
+            radarUIOverrides: this.radarUIOverrides,
             showLines: this.showLines,
             showWatchedPaths: this.showWatchedPaths,
             showRF: this.showRF,
@@ -2016,6 +2024,12 @@ class PropViewMap {
         let state;
         try { state = JSON.parse(localStorage.getItem('pvMapUI')); } catch {}
         if (!state) return;
+
+        for (const key of ['radar_enabled', 'radar_animate']) {
+            if (typeof state.radarUIOverrides?.[key] === 'boolean') {
+                this.radarUIOverrides[key] = state.radarUIOverrides[key];
+            }
+        }
 
         // Restore toggles
         if (state.showLines === false) {
@@ -2154,6 +2168,7 @@ class PropViewMap {
         } else {
             this.map.removeLayer(this.rfLayer);
         }
+        this.applyAllLineTimeFilters();
         this._saveUIState();
         return this.showRF;
     }
@@ -2177,6 +2192,13 @@ class PropViewMap {
     }
 
     _bindControls() {
+        document.getElementById('btn-toggle-radar')?.addEventListener('click', () => {
+            this._toggleRadarControl('radar_enabled');
+        });
+        document.getElementById('btn-toggle-radar-loop')?.addEventListener('click', () => {
+            this._toggleRadarControl('radar_animate');
+        });
+
         document.getElementById('btn-center-map')?.addEventListener('click', () => {
             this.centerOnStation();
         });
@@ -2285,13 +2307,17 @@ class PropViewMap {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             popover.classList.toggle('open');
+            btn.setAttribute('aria-expanded',String(popover.classList.contains('open')));
         });
         document.addEventListener('click', (e) => {
             if (!popover.contains(e.target) && e.target !== btn) {
                 popover.classList.remove('open');
+                btn.setAttribute('aria-expanded','false');
             }
         });
 
+        const enabled = document.getElementById('line-enabled');
+        enabled?.addEventListener('change', () => this.setLineStyle({enabled: enabled.checked}));
         const update = () => this.setLineStyle({
             colorMode: colorMode?.value,
             customColor: customColor?.value,
@@ -2312,6 +2338,8 @@ class PropViewMap {
 
     _syncLineStyleControls() {
         const style = this.lineStyle || {};
+        const enabled = document.getElementById('line-enabled');
+        if (enabled) enabled.checked = this.showLines;
         const setValue = (id, value) => {
             const el = document.getElementById(id);
             if (el && el.value !== String(value)) el.value = String(value);
@@ -2832,11 +2860,42 @@ class PropViewMap {
         this._updateLegendContent();
     }
 
+    _toggleRadarControl(key) {
+        const value = !this.weatherOverlayConfig[key];
+        this.radarUIOverrides[key] = value;
+        this.weatherOverlayConfig[key] = value;
+        this._syncRadarControls();
+        this._saveUIState();
+        this._updateRadarOverlay();
+    }
+
+    _syncRadarControls() {
+        const cfg = this.weatherOverlayConfig;
+        const radar = document.getElementById('btn-toggle-radar');
+        if (radar) {
+            radar.textContent = cfg.radar_enabled ? 'Radar: On' : 'Radar: Off';
+            radar.classList.toggle('active', !!cfg.radar_enabled);
+            radar.setAttribute('aria-pressed', String(!!cfg.radar_enabled));
+        }
+        const loop = document.getElementById('btn-toggle-radar-loop');
+        if (loop) {
+            const supported = (cfg.radar_provider || 'rainviewer') === 'rainviewer';
+            const active = supported && !!cfg.radar_animate;
+            loop.textContent = active ? 'Radar: Loop' : 'Radar: Static';
+            loop.classList.toggle('active', active);
+            loop.setAttribute('aria-pressed', String(active));
+            loop.disabled = !cfg.radar_enabled || !supported;
+            loop.title = supported ? 'Switch radar between loop and latest static frame' : 'This radar source supports static imagery only';
+        }
+    }
+
     setWeatherOverlayConfig(config) {
         this.weatherOverlayConfig = {
             ...this.weatherOverlayConfig,
             ...(config || {}),
+            ...this.radarUIOverrides,
         };
+        this._syncRadarControls();
         this._applyWeatherOverlayConfig();
     }
 
@@ -2954,6 +3013,9 @@ class PropViewMap {
         }
 
         const frames = await this._getRadarFrames();
+        // A fetch can finish after the user hides radar or changes providers.
+        if (!this.weatherOverlayConfig.radar_enabled ||
+            (this.weatherOverlayConfig.radar_provider || 'rainviewer') !== provider) return;
         if (!frames.length) {
             this._clearRadarOverlay();
             return;
@@ -3079,6 +3141,9 @@ class PropViewMap {
         this._stopRadarAnimation();
         if (!this.radarTileLayers.length) return;
 
+        if (!this.weatherOverlayConfig?.radar_animate) {
+            this.radarFrameIndex = this.radarTileLayers.length - 1;
+        }
         this._applyRadarOpacity();
 
         if (!this.weatherOverlayConfig?.radar_animate || this.radarTileLayers.length < 2) return;

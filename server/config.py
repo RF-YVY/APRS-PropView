@@ -69,7 +69,7 @@ host = "127.0.0.1"
 port = 8001
 
 [web]
-host = "127.0.0.1"
+host = "0.0.0.0"
 port = 14501
 launch_browser = ""
 font_family = ""
@@ -391,7 +391,7 @@ class RFPortConfig:
 
 @dataclass
 class WebConfig:
-    host: str = "127.0.0.1"
+    host: str = "0.0.0.0"
     port: int = 14501
     launch_browser: str = ""
     font_family: str = ""

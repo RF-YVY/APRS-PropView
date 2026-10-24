@@ -71,6 +71,11 @@ class Digipeater:
         if not self.config.digipeater.enabled:
             return None
 
+        # Settings are applied live; do not retain startup identity or aliases.
+        self.my_call = self.config.station.full_callsign
+        self.aliases = {alias.strip().upper() for alias in self.config.digipeater.aliases}
+        self.dedupe.max_age = self.config.digipeater.dedupe_interval
+
         # Don't digipeat our own packets
         if frame.from_call.upper() == self.my_call.upper():
             return None

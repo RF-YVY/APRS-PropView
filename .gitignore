@@ -38,3 +38,15 @@ Thumbs.db
 *.db-wal
 *.db-shm
 config.toml.bak
+
+# Local operator password verifier (never include in releases or settings exports)
+operator-auth.json
+operator-auth.json.*
+
+operator-desktop.json
+release-state.json
+operator-update-session.json
+
+# Native development build products
+native/bin/
+modem-development.json

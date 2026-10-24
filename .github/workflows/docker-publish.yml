@@ -23,8 +23,11 @@ jobs:
 
       - name: Run regression tests
         run: |
-          python -m pip install -r requirements.txt
-          python scripts/run_tests.py
+          sudo apt-get update
+          sudo apt-get install -y g++ libportaudio2
+          python -m pip install -r requirements.txt pytest
+          python native/build_modem.py
+          python -m pytest -q
 
       - name: Build local image
         run: docker build -t aprs-propview:ci .

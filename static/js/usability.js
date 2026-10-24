@@ -7,7 +7,7 @@
     let savedTransmitConfig = null;
     const ADVANCED_SECTIONS = new Set([
         'smart-beaconing', 'bulletins', 'aprs-objects', 'digipeater', 'igate',
-        'tracking', 'messaging', 'status-dx', 'wxnow', 'weather', 'mqtt',
+        'tracking', 'messaging', 'status-dx', 'wxnow', 'mqtt',
     ]);
 
     const TERMS = {
@@ -576,6 +576,8 @@
     }
 
     async function openDiagnostics() {
+        await window.pvOperator.ready;
+        if (!window.pvOperator.authenticated) { window.pvOperator.openLogin(); return; }
         const modal = diagnosticsModal();
         const body = document.getElementById('connection-diagnostics-body');
         modal.style.display = 'flex';

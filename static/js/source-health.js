@@ -1,7 +1,7 @@
 /** Unified data-source freshness panel. */
 (() => {
     const STATE_LABELS = {
-        live: 'LIVE', delayed: 'DELAYED', stale: 'STALE', offline: 'OFFLINE',
+        live: 'LIVE', listening: 'LISTENING', delayed: 'DELAYED', stale: 'STALE', offline: 'OFFLINE',
         waiting: 'WAITING', configured: 'CONFIGURED', disabled: 'OFF'
     };
 
@@ -41,8 +41,8 @@
             detail: window.pvWebSocket?.isConnected ? 'Receiving live dashboard updates' : 'Reconnecting to PropView', error: ''
         };
         const sources = [websocket, ...(payload.sources || [])];
-        const attention = sources.filter(item => item.enabled && ['offline', 'stale'].includes(item.state)).length;
-        const delayed = sources.some(item => item.enabled && ['delayed', 'waiting'].includes(item.state));
+        const attention = sources.filter(item => item.enabled && (item.state === 'offline' || item.error)).length;
+        const delayed = sources.some(item => item.enabled && ['delayed', 'waiting', 'stale'].includes(item.state));
         button.dataset.state = attention ? 'attention' : delayed ? 'delayed' : 'healthy';
         count.hidden = attention === 0;
         count.textContent = attention;
@@ -52,7 +52,7 @@
                 <span class="source-health-state-dot"></span>
                 <div class="source-health-copy">
                     <div><strong>${escapeHTML(item.label)}</strong><span>${escapeHTML(STATE_LABELS[item.state] || item.state)}</span></div>
-                    <small>${escapeHTML(item.detail || '')}${item.age_seconds == null ? '' : ` · ${escapeHTML(ageLabel(item.age_seconds))}`}</small>
+                    <small>${escapeHTML(item.detail || '')}${item.age_seconds == null ? '' : ` Â· ${escapeHTML(ageLabel(item.age_seconds))}`}</small>
                     ${item.error ? `<em title="${escapeHTML(item.error)}">${escapeHTML(item.error)}</em>` : ''}
                 </div>
             </div>`).join('');

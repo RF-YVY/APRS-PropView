@@ -1,0 +1,47 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DEVELOPMENT MODEM</title><style>body{margin:0;background:#101820;color:#e5edf3;font:16px/1.65 system-ui,sans-serif}main{max-width:980px;margin:auto;padding:32px 24px 70px}h1,h2,h3{line-height:1.25;color:#fff}h2{margin-top:2.3em;border-bottom:1px solid #405361;padding-bottom:10px;scroll-margin-top:18px}a{color:#79c9ff}code{background:#243441;padding:2px 5px;border-radius:3px}li{margin:.5em 0}nav{padding:18px 24px;background:#1a2b38;border:1px solid #405361;border-radius:10px}nav ul{columns:2;padding-left:20px}nav li{break-inside:avoid}p,li{overflow-wrap:anywhere}@media(max-width:600px){nav ul{columns:1}main{padding:18px}}</style></head><body><main><nav aria-label="Contents"><strong>Contents</strong><ul><li><a href="#first-test">First test</a></li><li><a href="#transmit-testing-with-rigblaster-nomic">Transmit testing with RIGblaster NOMIC</a></li><li><a href="#scope">Scope</a></li><li><a href="#build">Build</a></li><li><a href="#open-squelch-receive-audio-and-dashboard-status">Open-squelch receive audio and dashboard status</a></li></ul></nav><h1>PropView 1.13.0: experimental built-in modem</h1>
+<p><strong>Experimental modem:</strong> further testing is needed on Linux, Raspberry Pi and macOS. Performance may vary by platform and audio interface.</p>
+<p>The paths below describe Windows. For Linux, Raspberry Pi, macOS and headless operation, see <a href="/static/guides/CROSS_PLATFORM_SETUP.html">Cross-platform setup</a>.</p>
+<ul>
+<li>App: APRS PropView (<code>APRSPropView.exe</code>).</li>
+<li>Install folder: <code>%LOCALAPPDATA%/Programs/APRS PropView</code>.</li>
+<li>Runtime data: <code>the installation folder beside the executable</code>.</li>
+<li>Dashboard: http://127.0.0.1:14501.</li>
+<li>Stable installation settings and data are preserved during upgrade. Separate development data is not imported automatically.</li>
+</ul>
+<h2 id="first-test">First test</h2>
+<ol>
+<li>Install the release installer or launch its portable executable.</li>
+<li>Complete its separate GUI operator-password setup if prompted. Configure your callsign/location in the application UI as needed.</li>
+<li>Open <strong>Settings â†’ Radio &amp; TNC â†’ RF Ports â†’ Configure Built-in Modem</strong>.</li>
+<li>Expand <strong>Test with a WAV recording</strong>. Download the generated test WAV, select it and click <strong>Decode recording</strong>. It should recover one synthetic N0CALL packet. Nothing is transmitted, played or inserted in the live map.</li>
+<li>To receive radio audio, select the USB audio input (WASAPI preferred when available), choose left/mono or right, and click <strong>Start receiving</strong>. Settings are remembered; successful setup enables automatic reception on subsequent launches.</li>
+<li>Check levels, clipping, dropped blocks and decoded packets. Live packets appear in the map and packet history.</li>
+<li><strong>Stop</strong> releases the input. Closing the modem window leaves reception running; quitting the application stops it.</li>
+</ol>
+<p>Compare real receiver recordings with your existing TNC. Supported files: 16-bit PCM WAV, mono/stereo, 8-96 kHz, at most five minutes and 32 MB. The channel selector also applies to WAV decoding. Imported recordings stay offline and cannot trigger digipeating, gating or message acknowledgements.</p>
+<p>Before installing a newer development build, use <strong>Stop TX / disable</strong> and quit the running development application to release its audio and PTT connections.</p>
+<h2 id="transmit-testing-with-rigblaster-nomic">Transmit testing with RIGblaster NOMIC</h2>
+<p>Start with a dummy load and a second receiver to verify PTT, tone level and packet reception. The software tests use mocked hardware; NOMIC hardware behavior still needs your validation.</p>
+<ol>
+<li>Configure your actual station callsign. Start receiving from the local radio input so the channel-busy detector monitors the frequency you will transmit on.</li>
+<li>Expand <strong>Transmit setup (NOMIC / serial / VOX)</strong>. Select the soundcard playback output physically connected to the NOMIC's audio input. Do not select a PC speaker or VB-CABLE unless that is deliberately part of your radio wiring.</li>
+<li>Select <strong>RIGblaster NOMIC (RTS)</strong> and its USB/serial COM port. Both RTS and DTR start low; only RTS is asserted for this preset. Generic DTR and VOX modes are also available.</li>
+<li>Begin with audio amplitude 0.20, TX delay 300 ms and tail 50 ms. Adjust audio level against your radio's deviation requirements; it does not set RF power.</li>
+<li>Check <strong>Enable RF transmission</strong> and click <strong>Apply transmit settings</strong>. This does not itself generate a test packet, but normal configured beacons, messages, spots and digipeating can now use the modem.</li>
+<li><strong>Send RF test packet</strong> sends a single status packet from your configured callsign directly via this modem, without a digipeater path. Confirm it on another receiver/decoder. Normal PropView transmit functions use their existing packet paths.</li>
+<li><strong>Stop TX / disable</strong> cancels active audio, releases serial RTS/DTR and disables further transmissions. Stopping reception disables TX. Quitting preserves enabled RX/TX for automatic startup on the next launch. Stop RX and Stop TX save their disabled states. Closing the window leaves the selected operating state running.</li>
+</ol>
+<p>Transmission waits for channel clear with a short randomized delay and fails without keying if the channel remains busy. Input decoding pauses while transmitting, then resynchronizes. Audio/serial PTT has a 10-second watchdog; VOX key release also depends on the radio's hang time. Output failures disable TX until settings are applied again. Audio output selection is explicit and never silently falls back to a different speaker. Internet-to-RF gating stays disabled on this modem interface in this build.</p>
+<p>NOMIC references: https://www.westmountainradio.com/product_info.php?products_id=nomicu_comp_usb and https://www.westmountainradio.com/pdf/nomicman4.pdf . USB/serial adapters can briefly change control lines during port opening despite software preset states; verify your adapter/radio on a dummy load.</p>
+<h2 id="scope">Scope</h2>
+<p>Original experimental Bell 202 1200-baud modem: four receive decision/timing lanes, NRZI/HDLC decoding, CRC rejection, and native transmit encoding with continuous-phase AFSK. Serial RTS/DTR and VOX transmission are available only after explicit initial enablement. Existing external TNC features remain available. Only APRS UI frames are supported by the built-in transmitter.</p>
+<p>Synthetic and independent reference-signal tests cover sample rates, moderate noise, tone imbalance, timing offsets, stereo selection, chunk boundaries and corrupt checksums. These are not a field-performance benchmark. Weak-signal, radio-specific and 24/7 reliability testing remain necessary. No claim of parity with mature modems is made.</p>
+<p>The original native DSP uses C++17 and the available MSVC toolchain, avoiding another build-tool installation. No GrayWolf/Dire Wolf modem source is used. Python and PortAudio provide device access. DSP runs outside the audio callback on a worker thread with bounded queues. Modem/admin endpoints require the development browser's operator session.</p>
+<h2 id="build">Build</h2>
+<p>Install Python requirements and MSVC x64 C++ Build Tools. Run <code>python native/build_modem.py</code>, <code>python -m pytest -q</code>, <code>python build_exe.py</code>, then <code>python build_installer.py --skip-exe-build</code> (Inno Setup 6 required). Run <code>dist/APRSPropViewDev.exe --modem-self-test</code> to verify the packaged decoder and PortAudio without opening audio devices or creating user data.</p>
+<h2 id="open-squelch-receive-audio-and-dashboard-status">Open-squelch receive audio and dashboard status</h2>
+<p>Open squelch is supported: ordinary hiss should read Channel: clear, while sustained APRS tones read busy. Development build 4 filters short noise peaks before starting the carrier hang timer. If a quiet channel remains busy, check for hum, feedback, or a continuous tone on the selected input; report it with a short WAV recording. RF test packets continue to defer while a carrier is detected.</p>
+<p>No additional RF port in Settings is required for the built-in modem. Start receiving to show RF connected; enable and apply transmit settings to make manual RF transmissions available. Station beacons also require station coordinates.</p>
+<h3>Optional channel wait</h3>
+<p>Transmit setup includes <strong>Wait for clear channel</strong>, checked by default. Uncheck it (applies immediately) to bypass carrier waiting for all built-in modem transmissions, including the test packet, beacons and messages. Carrier diagnostics continue running. The choice is saved across application restarts. Saved RX and enabled TX automatically resume at launch. Stop TX, frame validation and the PTT watchdog remain active in either mode.</p>
+<p><a href="/static/documentation.html">Full user guide</a> Ã‚Â· <a href="/">Dashboard</a></p></main></body></html>

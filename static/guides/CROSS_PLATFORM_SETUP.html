@@ -1,0 +1,102 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CROSS PLATFORM SETUP</title><style>body{margin:0;background:#101820;color:#e5edf3;font:16px/1.65 system-ui,sans-serif}main{max-width:980px;margin:auto;padding:32px 24px 70px}h1,h2,h3{line-height:1.25;color:#fff}h2{margin-top:2.3em;border-bottom:1px solid #405361;padding-bottom:10px;scroll-margin-top:18px}a{color:#79c9ff}code{background:#243441;padding:2px 5px;border-radius:3px}li{margin:.5em 0}nav{padding:18px 24px;background:#1a2b38;border:1px solid #405361;border-radius:10px}nav ul{columns:2;padding-left:20px}nav li{break-inside:avoid}p,li{overflow-wrap:anywhere}@media(max-width:600px){nav ul{columns:1}main{padding:18px}}</style></head><body><main><nav aria-label="Contents"><strong>Contents</strong><ul><li><a href="#linux-raspberry-pi-os">Linux / Raspberry Pi OS</a></li><li><a href="#macos-intel-or-apple-silicon">macOS (Intel or Apple Silicon)</a></li><li><a href="#headless-servers-and-containers">Headless servers and containers</a></li><li><a href="#validation">Validation</a></li></ul></nav><h1>Linux, Raspberry Pi and macOS builds</h1>
+<p>The built-in modem now builds a host-native library on Windows, Linux and macOS.
+Run Python 3.11 or newer. Build on the target OS and CPU architecture: a Windows
+DLL or executable cannot be used as a native Linux/Pi/macOS application.</p>
+<h2 id="linux-raspberry-pi-os">Linux / Raspberry Pi OS</h2>
+<p>Prefer 64-bit Raspberry Pi OS on an ARM64 Pi. ARM64 is in the CI matrix; a physical
+Pi and 32-bit ARM have not been validated locally. Native modem compilation uses
+the host compiler without x86-specific instructions. Dependency availability and
+real-time audio performance still need checking for older or 32-bit Pi models.</p>
+<p>For Debian/Ubuntu/Raspberry Pi OS, install the build and audio requirements:</p>
+<pre><code class="language-sh">sudo apt-get update
+sudo apt-get install -y python3-venv python3-dev g++ libportaudio2 libnetcdf-dev libhdf5-dev
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python native/build_modem.py
+.venv/bin/python main.py --modem-self-test
+.venv/bin/python main.py
+</code></pre>
+<p>The compiler produces <code>native/bin/libpropview_modem.so</code>. The dashboard defaults
+to port 14501. Desktop application data lives under
+<code>${XDG_DATA_HOME:-$HOME/.local/share}/aprs-propview</code>.
+Select your USB audio interface under Settings â†’ Radio &amp; TNC. Linux serial
+ports such as <code>/dev/ttyUSB0</code> are supported, including case-sensitive enumerated
+device paths. The application account needs permission to use the selected
+audio and serial devices; on Debian-derived systems those are commonly managed
+through <code>audio</code> and <code>dialout</code> groups. Log in again after changing group membership.</p>
+<p>For a portable executable:</p>
+<pre><code class="language-sh">.venv/bin/python -m pip install pyinstaller
+.venv/bin/python build_linux.py
+dist/APRSPropView --modem-self-test
+</code></pre>
+<p>Build on the oldest Linux distribution you intend to support. PyInstaller does
+not bundle glibc; an executable built on a newer distribution may not run on an
+older distribution. The target also needs system PortAudio (<code>libportaudio2</code>).</p>
+<h2 id="macos-intel-or-apple-silicon">macOS (Intel or Apple Silicon)</h2>
+<p>Install Python 3.11+ for your Mac architecture and Xcode command line tools
+(<code>xcode-select --install</code> if needed), then:</p>
+<pre><code class="language-sh">python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python native/build_modem.py
+.venv/bin/python main.py --modem-self-test
+.venv/bin/python main.py
+</code></pre>
+<p>The compiler produces <code>native/bin/libpropview_modem.dylib</code>. A pip installation
+of sounddevice normally includes PortAudio on macOS. Grant microphone access
+to the terminal/Python host for source runs, or to the app for packaged runs.
+Serial PTT accepts enumerated <code>/dev/cu.*</code> paths and preserves their case.
+Application data is stored in
+<code>~/Library/Application Support/APRS PropView/</code>.
+The dashboard works without a macOS menu-bar icon; the incompatible background
+tray is deliberately omitted. Use the browser dashboard and the normal OS app
+controls, or Ctrl+C when running from a terminal.</p>
+<p>Build the .app on the Mac itself:</p>
+<pre><code class="language-sh">.venv/bin/python -m pip install pyinstaller pystray
+.venv/bin/python build_macos.py
+open 'dist/APRS PropView.app'
+</code></pre>
+<p>The app includes the native modem, microphone usage declaration and audio-input
+entitlement. It uses the stable application bundle identity. An optional <code>MACOS_CODESIGN_IDENTITY</code>
+selects a signing identity; otherwise it is ad-hoc signed for local testing.
+Notarization/distribution approval is a separate release step. Intel and Apple
+Silicon builds are separate; use matching Python and compiler architectures.</p>
+<h2 id="headless-servers-and-containers">Headless servers and containers</h2>
+<p>Set <code>PROPVIEW_DEPLOYMENT=1</code> to preserve explicit <code>PROPVIEW_*</code> configuration.
+Explicit environment settings are honored by the release runtime.</p>
+<pre><code class="language-sh">export PROPVIEW_DEPLOYMENT=1
+export PROPVIEW_DATA_DIR=&quot;$HOME/propview-data&quot;
+export PROPVIEW_HOST=0.0.0.0
+export PROPVIEW_PORT=14501
+export PROPVIEW_LAUNCH_BROWSER=none
+.venv/bin/python main.py --set-operator-password
+.venv/bin/python main.py
+</code></pre>
+<p>The password command prompts on the host terminal without echoing the password.
+It writes credentials beside this deployment's config. The web dashboard remains
+subject to the existing operator authentication and CSRF protections.</p>
+<p>The Dockerfile now builds the Linux modem for the image's architecture, includes
+PortAudio, and honors <code>/data</code>, <code>0.0.0.0:14501</code> and the existing health check.
+Use <code>docker compose up --build</code> after choosing a local <code>build: .</code> configuration,
+or build explicitly with <code>docker build -t aprs-propview:dev .</code>.
+An existing published <code>latest</code> image does not acquire local source changes.
+TCP KISS works without exposing local hardware. USB serial/audio modem use needs
+explicit device access and matching group permissions, for example:</p>
+<pre><code class="language-sh">docker run --rm -p 14501:14501 -v propview-data:/data \
+  --device /dev/snd --device /dev/ttyUSB0 \
+  --group-add &quot;$(stat -c %g /dev/snd/controlC0)&quot; \
+  --group-add &quot;$(stat -c %g /dev/ttyUSB0)&quot; aprs-propview:dev
+</code></pre>
+<p>Adjust device paths to the host; this example assumes direct ALSA devices, not a
+host PipeWire/PulseAudio socket. The service template sets deployment mode and
+uses <code>/var/lib/aprs-propview</code>; adjust its user/group to your host.</p>
+<h2 id="validation">Validation</h2>
+<pre><code class="language-sh">.venv/bin/python scripts/run_tests.py
+.venv/bin/python scripts/platform_smoke.py
+.venv/bin/python main.py --modem-self-test
+</code></pre>
+<p>The smoke test checks a real isolated headless startup, configured HTTP port,
+health endpoint, dashboard and explicit database path without enabling RF.
+CI includes Windows, Linux x86-64/ARM64 and macOS Intel/Apple Silicon; configured
+jobs are not proof of success until they run. Physical USB audio and PTT tests
+remain necessary on each intended radio/interface/platform combination.</p>
+<p><a href="/static/documentation.html">Full user guide</a> Ã‚Â· <a href="/">Dashboard</a></p></main></body></html>

@@ -1,4 +1,4 @@
-/* ── APRS PropView — Dark Theme Stylesheet ─────────────────────── */
+/* â”€â”€ APRS PropView â€” Dark Theme Stylesheet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 :root {
     color-scheme: dark;
@@ -107,7 +107,7 @@ body {
     text-rendering: optimizeLegibility;
 }
 
-/* ── Scrollbar ──────────────────────────────────────────────────── */
+/* â”€â”€ Scrollbar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 ::-webkit-scrollbar {
     width: 8px;
@@ -123,7 +123,7 @@ body {
     background: #484f58;
 }
 
-/* ── Header ─────────────────────────────────────────────────────── */
+/* â”€â”€ Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 #header {
     display: flex;
@@ -175,6 +175,9 @@ body {
     min-width: 0;
     line-height: 1.05;
 }
+
+.header-image-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.header-image-controls input { min-width: 0; max-width: 100%; }
 
 .header-brand-title {
     color: var(--text-primary);
@@ -598,7 +601,7 @@ html.visual-condition-backdrop .prop-gauge.ambient-excellent {
 }
 
 .source-health-button[data-state="healthy"] .source-health-dot { background: var(--accent-green); }
-.source-health-button[data-state="delayed"] .source-health-dot { background: var(--accent-orange); }
+.source-health-button[data-state="delayed"] .source-health-dot { background: #e3b341; }
 .source-health-button[data-state="attention"] .source-health-dot { background: var(--accent-red); }
 
 .source-health-button b {
@@ -641,12 +644,14 @@ html.visual-condition-backdrop .prop-gauge.ambient-excellent {
 .source-health-header small { color: var(--text-muted); font-size: 9px; font-weight: 500; }
 .source-health-list { max-height: 390px; overflow-y: auto; }
 .source-health-item { display: grid; grid-template-columns: 10px 1fr; gap: 9px; padding: 9px 12px; border-bottom: 1px solid rgba(48, 54, 61, .65); }
+.source-health-item.listening .source-health-state-dot,
+.source-health-item.listening .source-health-state-dot,
 .source-health-item.live .source-health-state-dot { background: var(--accent-green); }
 .source-health-item.delayed .source-health-state-dot,
 .source-health-item.waiting .source-health-state-dot,
 .source-health-item.configured .source-health-state-dot { background: var(--accent-orange); }
-.source-health-item.offline .source-health-state-dot,
-.source-health-item.stale .source-health-state-dot { background: var(--accent-red); }
+.source-health-item.stale .source-health-state-dot { background: #e3b341; }
+.source-health-item.offline .source-health-state-dot { background: var(--accent-red); }
 .source-health-item.disabled .source-health-state-dot { background: var(--text-muted); }
 .source-health-state-dot { margin-top: 4px; }
 .source-health-copy > div { display: flex; justify-content: space-between; gap: 10px; }
@@ -804,7 +809,7 @@ html.visual-condition-backdrop .prop-gauge.ambient-excellent {
     line-height: 1.1;
 }
 
-/* ── Main Content ───────────────────────────────────────────────── */
+/* â”€â”€ Main Content â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 #main-content {
     display: flex;
@@ -812,7 +817,7 @@ html.visual-condition-backdrop .prop-gauge.ambient-excellent {
     overflow: hidden;
 }
 
-/* ── Map Panel ──────────────────────────────────────────────────── */
+/* â”€â”€ Map Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 #map-panel {
     flex: 1;
@@ -1103,7 +1108,7 @@ html.visual-condition-backdrop .prop-gauge.ambient-excellent {
     text-align: right;
 }
 
-/* Leaflet overrides for dark theme — only when .dark-tiles is on the map */
+/* Leaflet overrides for dark theme â€” only when .dark-tiles is on the map */
 .dark-tiles .leaflet-tile-pane {
     filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(1.1);
 }
@@ -1436,7 +1441,7 @@ html.visual-condition-backdrop .prop-gauge.ambient-excellent {
     justify-self: start;
 }
 
-/* ── Side Panel ─────────────────────────────────────────────────── */
+/* â”€â”€ Side Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 #side-panel {
     width: 400px;
@@ -1465,7 +1470,7 @@ html.visual-condition-backdrop .prop-gauge.ambient-excellent {
     display: none;
 }
 
-/* Sidebar toggle button — inside #map-panel, right edge */
+/* Sidebar toggle button â€” inside #map-panel, right edge */
 #sidebar-toggle {
     position: absolute;
     right: 0;
@@ -1583,7 +1588,7 @@ html.ui-theme-light #tab-messages.active {
     box-shadow: 0 18px 50px rgba(31, 35, 40, 0.2);
 }
 
-/* ── Filter Bar ─────────────────────────────────────────────────── */
+/* â”€â”€ Filter Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .filter-bar {
     display: flex;
@@ -1634,7 +1639,7 @@ html.ui-theme-light #tab-messages.active {
     color: var(--text-primary);
 }
 
-/* ── Station List ───────────────────────────────────────────────── */
+/* â”€â”€ Station List â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .station-list {
     flex: 1;
@@ -1809,7 +1814,7 @@ html.ui-theme-light #tab-messages.active {
     color: var(--text-muted);
 }
 
-/* ── Packet List ────────────────────────────────────────────────── */
+/* â”€â”€ Packet List â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .packet-list {
     flex: 1;
@@ -1874,7 +1879,7 @@ html.ui-theme-light #tab-messages.active {
     color: var(--text-secondary);
 }
 
-/* ── Propagation Detail ─────────────────────────────────────────── */
+/* â”€â”€ Propagation Detail â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .prop-detail {
     flex: 1;
@@ -2026,7 +2031,7 @@ canvas {
     background: #1a1a2e;
 }
 
-/* ── Footer ─────────────────────────────────────────────────────── */
+/* â”€â”€ Footer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 #footer {
     display: flex;
@@ -2067,7 +2072,7 @@ canvas {
     color: #e3b341;
 }
 
-/* ── Responsive ─────────────────────────────────────────────────── */
+/* â”€â”€ Responsive â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 @media (max-width: 1300px) {
     .header-stats {
@@ -2237,7 +2242,7 @@ canvas {
     }
 }
 
-/* ── Map Legend ──────────────────────────────────────────────────── */
+/* â”€â”€ Map Legend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .map-legend {
     position: absolute;
@@ -2381,7 +2386,7 @@ canvas {
     color: #fff;
 }
 
-/* ── Animations ─────────────────────────────────────────────────── */
+/* â”€â”€ Animations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 @keyframes pulse {
     0% { opacity: 1; }
@@ -2394,7 +2399,7 @@ canvas {
     background: rgba(88, 166, 255, 0.1);
 }
 
-/* ── APRS Emoji Map Markers ──────────────────────────────────────── */
+/* â”€â”€ APRS Emoji Map Markers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .aprs-icon-wrapper {
     background: transparent !important;
@@ -2418,11 +2423,11 @@ canvas {
     justify-content: center;
 }
 
-/* ── Sprite icon helpers ─────────────────────────────────────── */
+/* â”€â”€ Sprite icon helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .aprs-sprite {
     display: inline-block;
-    image-rendering: pixelated;      /* keep 16×16 art crisp when scaled */
+    image-rendering: pixelated;      /* keep 16Ã—16 art crisp when scaled */
     image-rendering: -moz-crisp-edges;
     vertical-align: middle;
     flex-shrink: 0;
@@ -2510,10 +2515,10 @@ canvas {
 
 /* Propagation line styling */
 .prop-line {
-    /* Static dashed lines — CSS animation removed for performance */
+    /* Static dashed lines â€” CSS animation removed for performance */
 }
 
-/* ── Help Modal ──────────────────────────────────────────────────── */
+/* â”€â”€ Help Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 body.quick-start-open {
     overflow: hidden;
 }
@@ -2790,7 +2795,7 @@ body.quick-start-open {
     font-size: 16px;
 }
 
-/* ── Map Control Divider & Line Time Filter ─────────────────────── */
+/* â”€â”€ Map Control Divider & Line Time Filter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .map-control-divider {
     width: 1px;
@@ -2875,7 +2880,7 @@ body.quick-start-open {
     background: var(--bg-tertiary);
 }
 
-/* ── Map Type Filter Checkbox Dropdown ──────────────────────────── */
+/* â”€â”€ Map Type Filter Checkbox Dropdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 #map-controls .line-style-popover select {
     width: 100%;
@@ -2972,7 +2977,7 @@ body.quick-start-open {
     margin: 4px 0;
 }
 
-/* ── Settings Panel ─────────────────────────────────────────────── */
+/* â”€â”€ Settings Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .settings-panel {
     display: flex;
@@ -4256,7 +4261,7 @@ body.quick-start-open {
 }
 
 .first-run-item.done::before {
-    content: "✓";
+    content: "âœ“";
     color: var(--accent-green);
 }
 
@@ -4310,7 +4315,7 @@ body.quick-start-open {
     line-height: 1.4;
 }
 
-/* ── Modal Overlay ──────────────────────────────────────────────── */
+/* â”€â”€ Modal Overlay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .modal-overlay {
     position: fixed;
@@ -4369,7 +4374,7 @@ body.quick-start-open {
     color: var(--text-secondary);
 }
 
-/* ── Icon Picker ────────────────────────────────────────────────── */
+/* â”€â”€ Icon Picker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .inline-field-actions {
     display: flex;
@@ -4556,7 +4561,7 @@ body.quick-start-open {
     color: var(--accent-cyan);
 }
 
-/* ── Analytics Tab ──────────────────────────────────────────────── */
+/* â”€â”€ Analytics Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .analytics-panel {
     padding: 12px;
@@ -4729,7 +4734,7 @@ body.quick-start-open {
 .external-propagation-card.stale { opacity: .7; border-style: dashed; }
 .external-propagation-card p { margin: 10px 0 0; color: var(--text-secondary); font-size: 10px; line-height: 1.4; }
 
-/* ── Rotating club display ─────────────────────────────────────── */
+/* â”€â”€ Rotating club display â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 body.kiosk-mode {
     cursor: default;
     background:
@@ -5295,7 +5300,7 @@ body.kiosk-paused .kiosk-progress { width: 100%; opacity: .25; }
     margin: 12px 0 6px;
 }
 
-/* ── Leaderboard ────────────────────────────────────────────────── */
+/* â”€â”€ Leaderboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .leaderboard-table {
     font-size: 12px;
@@ -5383,7 +5388,7 @@ body.kiosk-paused .kiosk-progress { width: 100%; opacity: .25; }
     font-size: 11px;
 }
 
-/* ── Heatmap ────────────────────────────────────────────────────── */
+/* â”€â”€ Heatmap â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .heatmap-legend {
     display: flex;
@@ -5404,7 +5409,7 @@ body.kiosk-paused .kiosk-progress { width: 100%; opacity: .25; }
     background: linear-gradient(to right, #1a1e2e, #1e3a5f, #0d7377, #3fb950, #d29922, #f85149);
 }
 
-/* ── Reliability ────────────────────────────────────────────────── */
+/* â”€â”€ Reliability â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .reliability-table {
     font-size: 12px;
@@ -5482,7 +5487,7 @@ body.kiosk-paused .kiosk-progress { width: 100%; opacity: .25; }
     font-size: 11px;
 }
 
-/* ── Best Time of Day ───────────────────────────────────────────── */
+/* â”€â”€ Best Time of Day â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .best-hours-cards {
     display: flex;
@@ -5548,7 +5553,7 @@ body.kiosk-paused .kiosk-progress { width: 100%; opacity: .25; }
     color: var(--text-secondary);
 }
 
-/* ── Alerts ─────────────────────────────────────────────────────── */
+/* â”€â”€ Alerts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .alert-badge {
     font-size: 11px;
@@ -5604,7 +5609,7 @@ body.kiosk-paused .kiosk-progress { width: 100%; opacity: .25; }
     line-height: 1.4;
 }
 
-/* ── Anomaly Card ───────────────────────────────────────────────── */
+/* â”€â”€ Anomaly Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .anomaly-card {
     background: var(--bg-card);
@@ -5637,7 +5642,7 @@ body.kiosk-paused .kiosk-progress { width: 100%; opacity: .25; }
     color: var(--text-primary);
 }
 
-/* ── Bearing Sectors ────────────────────────────────────────────── */
+/* â”€â”€ Bearing Sectors â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 #bearing-radar-chart {
     display: block;
@@ -5690,7 +5695,7 @@ body.kiosk-paused .kiosk-progress { width: 100%; opacity: .25; }
     white-space: nowrap;
 }
 
-/* ── Sporadic-E ─────────────────────────────────────────────────── */
+/* â”€â”€ Sporadic-E â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .es-card {
     background: var(--bg-card);
@@ -5750,7 +5755,7 @@ body.kiosk-paused .kiosk-progress { width: 100%; opacity: .25; }
     font-size: 11px;
 }
 
-/* ── First Heard ────────────────────────────────────────────────── */
+/* â”€â”€ First Heard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .first-heard-table {
     font-size: 12px;
@@ -5822,7 +5827,7 @@ body.kiosk-paused .kiosk-progress { width: 100%; opacity: .25; }
     accent-color: var(--accent-blue);
 }
 
-/* ── Export ──────────────────────────────────────────────────────── */
+/* â”€â”€ Export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .export-buttons {
     display: flex;
@@ -5863,7 +5868,7 @@ body.kiosk-paused .kiosk-progress { width: 100%; opacity: .25; }
     border-color: var(--accent-blue);
 }
 
-/* ── Ducting Indicator ──────────────────────────────────────────── */
+/* â”€â”€ Ducting Indicator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .wx-ducting {
     display: inline-flex;
@@ -6061,7 +6066,7 @@ body.kiosk-paused .kiosk-progress { width: 100%; opacity: .25; }
     }
 }
 
-/* ── Alert notif banner ─────────────────────────────────────────── */
+/* â”€â”€ Alert notif banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .alert-notification {
     position: fixed;
@@ -6107,7 +6112,7 @@ body.kiosk-paused .kiosk-progress { width: 100%; opacity: .25; }
     to { transform: translateX(-50%) translateY(0); opacity: 1; }
 }
 
-/* ── Message Alert Banner ───────────────────────────────────────── */
+/* â”€â”€ Message Alert Banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .msg-alert-banner {
     display: flex;
@@ -6214,7 +6219,7 @@ body.kiosk-paused .kiosk-progress { width: 100%; opacity: .25; }
     50% { background: linear-gradient(135deg, #1e40af, #60a5fa); }
 }
 
-/* ── Messages Tab ───────────────────────────────────────────────── */
+/* â”€â”€ Messages Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .msg-compose-bar {
     display: flex;
@@ -6576,7 +6581,7 @@ body.kiosk-paused .kiosk-progress { width: 100%; opacity: .25; }
     }
 }
 
-/* ── Weather Banner ─────────────────────────────────────────── */
+/* â”€â”€ Weather Banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 #wx-banner {
     display: none;
@@ -6672,7 +6677,7 @@ body.kiosk-paused .kiosk-progress { width: 100%; opacity: .25; }
     border-color: var(--accent-blue);
 }
 
-/* ── Severe Weather Alerts ──────────────────────────────────── */
+/* â”€â”€ Severe Weather Alerts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 #wx-alerts-container {
     display: flex;
@@ -7022,7 +7027,7 @@ body.kiosk-paused .kiosk-progress { width: 100%; opacity: .25; }
     }
 }
 
-/* ── Weather Settings ───────────────────────────────────────── */
+/* â”€â”€ Weather Settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .wx-location-row {
     display: flex;
@@ -7188,7 +7193,7 @@ body.kiosk-paused .kiosk-progress { width: 100%; opacity: .25; }
     transition: opacity 220ms linear;
 }
 
-/* ── About Tab ───────────────────────────────────────────────── */
+/* â”€â”€ About Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .about-panel {
     padding: 24px 20px;
@@ -7468,7 +7473,7 @@ body.kiosk-paused .kiosk-progress { width: 100%; opacity: .25; }
 
 .external-context, .external-low-confidence { display: inline-block; margin: 3px 5px 0 0; padding: 1px 5px; border: 1px solid #b66ee8; border-radius: 3px; color: #dba6ff !important; }
 
-/* ── Cross-theme layout polish ────────────────────────────────────
+/* â”€â”€ Cross-theme layout polish â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Structural rules live here so skins can change materials and color
    without changing alignment, responsive behavior, or readable sizing. */
 
@@ -7616,3 +7621,12 @@ body.settings-pane-open #tab-settings { z-index: 2400; }
     .help-section li,
     .help-table td { font-size: 12px; }
 }
+
+.update-install-progress {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    z-index: 100000; width: min(640px, calc(100vw - 40px)); padding: 16px 20px;
+    border: 1px solid var(--accent-blue, #58a6ff); border-radius: 8px;
+    background: var(--bg-card, #161b22); color: var(--text-primary, #e6edf3);
+    box-shadow: 0 4px 24px #0008;
+}
+#btn-install-update[aria-busy="true"] { cursor: progress; }

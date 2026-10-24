@@ -1,0 +1,131 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>docker</title><style>body{margin:0;background:#101820;color:#e5edf3;font:16px/1.65 system-ui,sans-serif}main{max-width:980px;margin:auto;padding:32px 24px 70px}h1,h2,h3{line-height:1.25;color:#fff}h2{margin-top:2.3em;border-bottom:1px solid #405361;padding-bottom:10px;scroll-margin-top:18px}a{color:#79c9ff}code{background:#243441;padding:2px 5px;border-radius:3px}li{margin:.5em 0}nav{padding:18px 24px;background:#1a2b38;border:1px solid #405361;border-radius:10px}nav ul{columns:2;padding-left:20px}nav li{break-inside:avoid}p,li{overflow-wrap:anywhere}@media(max-width:600px){nav ul{columns:1}main{padding:18px}}</style></head><body><main><nav aria-label="Contents"><strong>Contents</strong><ul><li><a href="#quick-start">Quick Start</a></li><li><a href="#image">Image</a></li><li><a href="#environment-variables">Environment Variables</a></li><li><a href="#rf-input">RF Input</a></li><li><a href="#usb-serial-tncs">USB Serial TNCs</a></li><li><a href="#truenas-scale-custom-app">TrueNAS SCALE Custom App</a></li><li><a href="#updating">Updating</a></li><li><a href="#portainer-stack">Portainer Stack</a></li><li><a href="#unraid">Unraid</a></li></ul></nav><h1>Docker and App Registry Installs</h1>
+<p>APRS PropView can run as a container with all writable state in one persistent
+data directory. This is the recommended path for TrueNAS SCALE, Portainer,
+Unraid, CasaOS, ZimaOS, and other app-registry style systems.</p>
+<h2 id="quick-start">Quick Start</h2>
+<pre><code class="language-bash">docker compose up -d
+</code></pre>
+<p>Open <code>http://localhost:14501</code>.</p>
+<p>The default compose file stores persistent data in <code>./data</code>:</p>
+<ul>
+<li><code>config.toml</code></li>
+<li><code>propview.db</code></li>
+<li><code>map_tile_cache/</code></li>
+<li><code>user_audio/</code></li>
+</ul>
+<p>Back up that directory to preserve the full install.</p>
+<h2 id="image">Image</h2>
+<p>Published release images are intended to use:</p>
+<pre><code class="language-text">ghcr.io/rf-yvy/aprs-propview:latest
+ghcr.io/rf-yvy/aprs-propview:&lt;version&gt;
+</code></pre>
+<p>The image exposes port <code>14501</code> and includes a Docker health check against
+<code>/api/health</code>.</p>
+<h2 id="environment-variables">Environment Variables</h2>
+<p>These variables are useful for containers and app registries:</p>
+<p>| Variable | Default | Purpose |
+| --- | --- | --- |
+| <code>PROPVIEW_DATA_DIR</code> | <code>/data</code> in Docker | Base directory for persistent state. |
+| <code>PROPVIEW_CONFIG</code> | <code>$PROPVIEW_DATA_DIR/config.toml</code> | Exact config file path. |
+| <code>PROPVIEW_DB</code> | <code>$PROPVIEW_DATA_DIR/propview.db</code> | Exact SQLite database path. |
+| <code>PROPVIEW_HOST</code> | <code>0.0.0.0</code> in Docker | Web bind host. |
+| <code>PROPVIEW_PORT</code> | <code>14501</code> | Web bind port. |
+| <code>PROPVIEW_LAUNCH_BROWSER</code> | empty | Keep empty in containers. |
+| <code>PROPVIEW_UPDATE_CHECKS</code> | config value | Set <code>false</code> to disable release checks. |
+| <code>PROPVIEW_APRS_IS_ENABLED</code> | config value | Set <code>false</code> for RF-only/offline container starts. |
+| <code>PROPVIEW_KISS_TCP_ENABLED</code> | config value | Enable the legacy KISS TCP input at startup. |
+| <code>PROPVIEW_KISS_TCP_HOST</code> | config value | KISS TCP host, commonly <code>direwolf</code> in Compose. |
+| <code>PROPVIEW_KISS_TCP_PORT</code> | config value | KISS TCP port, commonly <code>8001</code>. |
+| <code>PROPVIEW_CALLSIGN</code> | config value | Override station callsign for first-run containers. |
+| <code>PROPVIEW_SSID</code> | config value | Override station SSID, 0-15. |
+| <code>PROPVIEW_LATITUDE</code> | config value | Override station latitude. |
+| <code>PROPVIEW_LONGITUDE</code> | config value | Override station longitude. |
+| <code>PROPVIEW_MAP_TILE_CACHE_DIR</code> | <code>$PROPVIEW_DATA_DIR/map_tile_cache</code> | Override map tile cache location. |
+| <code>PROPVIEW_USER_AUDIO_DIR</code> | <code>$PROPVIEW_DATA_DIR/user_audio</code> | Override alert audio upload location. |</p>
+<p>Environment variables are applied every time the container starts. If you set a
+variable such as <code>PROPVIEW_HOST</code>, <code>PROPVIEW_PORT</code>, <code>PROPVIEW_CALLSIGN</code>, or
+<code>PROPVIEW_KISS_TCP_HOST</code> in TrueNAS, Portainer, or Compose, that value wins over
+what is saved in the web UI after the next restart. For settings you want to
+manage from PropView itself, leave the matching environment variable unset.</p>
+<h2 id="rf-input">RF Input</h2>
+<p>For containers, TCP KISS is the smoothest setup. A common pattern is Direwolf on
+the host or another container, with PropView configured for KISS TCP.</p>
+<p>Example RF port settings in the PropView web UI:</p>
+<ul>
+<li>Type: <code>TCP</code></li>
+<li>Host: the Direwolf host or container name</li>
+<li>Port: <code>8001</code></li>
+<li>Protocol: <code>KISS</code></li>
+</ul>
+<p>If PropView and Direwolf are in the same compose project, use the service name
+as the host, for example <code>direwolf</code>.</p>
+<p>A reference Compose pattern is included at
+<code>deploy/docker/docker-compose.direwolf.yml</code>. If your Direwolf image or config
+layout differs, keep the PropView environment values and adjust only the
+Direwolf service.</p>
+<pre><code class="language-mermaid">flowchart LR
+    Radio[&quot;Radio / Sound Card&quot;] --&gt; Direwolf[&quot;Direwolf KISS TCP :8001&quot;]
+    Direwolf --&gt; PropView[&quot;APRS PropView :14501&quot;]
+    PropView --&gt; Browser[&quot;Browser UI&quot;]
+</code></pre>
+<h2 id="usb-serial-tncs">USB Serial TNCs</h2>
+<p>Serial passthrough works, but it depends on the host OS and device permissions.
+For Docker Compose:</p>
+<pre><code class="language-yaml">services:
+  aprs-propview:
+    image: ghcr.io/rf-yvy/aprs-propview:latest
+    devices:
+      - /dev/ttyUSB0:/dev/ttyUSB0
+</code></pre>
+<p>Then configure the RF serial port in PropView as <code>/dev/ttyUSB0</code>.</p>
+<h2 id="truenas-scale-custom-app">TrueNAS SCALE Custom App</h2>
+<p>In TrueNAS SCALE, create a Custom App with:</p>
+<p>| Setting | Value |
+| --- | --- |
+| Image repository | <code>ghcr.io/rf-yvy/aprs-propview</code> |
+| Image tag | <code>latest</code> or a release version |
+| Container port | <code>14501</code> |
+| Published port | <code>14501</code> |
+| Storage mount | host path such as <code>/mnt/tank/apps/aprs-propview/data</code> to <code>/data</code> |
+| Environment | <code>PROPVIEW_DATA_DIR=/data</code>, <code>PROPVIEW_HOST=0.0.0.0</code>, <code>PROPVIEW_PORT=14501</code>, <code>PROPVIEW_LAUNCH_BROWSER=</code> |</p>
+<p>A reference values file is included at
+<code>deploy/docker/truenas-scale-custom-app.yaml</code>.</p>
+<p>Make sure the storage mount is a persistent host path or dataset mounted to
+<code>/data</code>. If <code>/data</code> is not mounted, settings can appear to save inside the
+running container but disappear when TrueNAS recreates it. To verify the active
+paths, open <code>/api/health?full=true</code> and confirm that <code>paths.config</code> points to
+<code>/data/config.toml</code>.</p>
+<p>If a saved setting reverts after Stop/Start, check the Custom App environment
+variables first. TrueNAS reapplies those values on every container start.</p>
+<p>For TrueNAS, TCP KISS is strongly recommended. Run Direwolf on the host, another
+container, or another machine on the LAN, then point PropView at that TCP KISS
+endpoint.</p>
+<h2 id="updating">Updating</h2>
+<pre><code class="language-bash">docker compose pull
+docker compose up -d
+</code></pre>
+<p>The container image can be replaced safely as long as <code>/data</code> is preserved.</p>
+<h2 id="portainer-stack">Portainer Stack</h2>
+<p>Use the repository <code>docker-compose.yml</code>, import
+<code>deploy/docker/portainer-stack.yml</code>, or paste this stack:</p>
+<pre><code class="language-yaml">services:
+  aprs-propview:
+    image: ghcr.io/rf-yvy/aprs-propview:latest
+    restart: unless-stopped
+    ports:
+      - &quot;14501:14501&quot;
+    environment:
+      PROPVIEW_DATA_DIR: /data
+      PROPVIEW_HOST: 0.0.0.0
+      PROPVIEW_PORT: 14501
+      PROPVIEW_LAUNCH_BROWSER: &quot;&quot;
+    volumes:
+      - aprs-propview-data:/data
+
+volumes:
+  aprs-propview-data:
+</code></pre>
+<h2 id="unraid">Unraid</h2>
+<p>A starter Unraid template is included at <code>deploy/docker/unraid-template.xml</code>.
+Map <code>/data</code> to an appdata path and use TCP KISS for the cleanest RF input.</p>
+<p><a href="/static/documentation.html">Full user guide</a> Ã‚Â· <a href="/">Dashboard</a></p></main></body></html>

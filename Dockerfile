@@ -11,9 +11,18 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PROPVIEW_DATA_DIR=/data \
     PROPVIEW_HOST=0.0.0.0 \
     PROPVIEW_PORT=14501 \
-    PROPVIEW_LAUNCH_BROWSER=
+    PROPVIEW_LAUNCH_BROWSER=none \
+    PROPVIEW_DEPLOYMENT=1
 
 WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends g++ libstdc++6 libportaudio2 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY native/propview_modem.cpp native/build_modem.py ./native/
+RUN python native/build_modem.py \
+    && apt-get purge -y --auto-remove g++
 
 RUN addgroup --system propview \
     && adduser --system --ingroup propview --home /app propview \

@@ -1,6 +1,12 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.11.1** | October 14, 2026
+**Version 1.13.0**
+
+See the [complete changelog since v1.11.1](CHANGELOG.md), [User Guide](docs/USER_GUIDE.md) and [cross-platform setup](docs/CROSS_PLATFORM_SETUP.md).
+
+**Experimental built-in modem:** further testing is needed on Linux, Raspberry Pi and macOS. Performance may vary by platform and audio interface.
+
+Web dashboard: `http://localhost:14501/`. Mobile: `http://localhost:14501/mobile`. For LAN/Tailscale access, use the host address instead of localhost.
 
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/RF-YVY/APRS-PropView/total)
@@ -29,6 +35,14 @@ Version 1.9.0 added live packet-flow animation to the APRS map, including statio
 
 Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs/linux-raspberry-pi.md).
 Docker, TrueNAS SCALE, Portainer, and app-registry installs are covered in [docs/docker.md](docs/docker.md).
+
+## 1.12.0
+
+- Public viewers remain read-only; browser-specific operator sessions protect settings and manual RF/APRS-IS actions.
+- Browsers opened by the local application or tray menu sign in automatically using a single-use local launch token. Other viewers never inherit that session.
+- A friendly password window opens on first desktop launch. Set or recover the remote operator password from the tray or Start menu; no hosted accounts are needed.
+- Added a versioned **What's new** dialog shown once after upgrading, with dismissal remembered by this installation.
+- Added radar visibility and loop/static toolbar controls, key-free mobile map tiles, clearer updater progress, and installer relaunch/browser refresh fixes.
 
 ## 1.11.1
 
@@ -166,7 +180,7 @@ The mobile PIN/access model is unchanged in this release.
 - **Click to Reply** — Click any received message to auto-populate the TO callsign for quick reply
 - **Message Log** — Filterable message history (All / Sent / Received)
 - **Message Sort Order** — Switch messages between newest-first and oldest-first ordering
-- **Sibling SSID Inbox Option** — Optionally receive messages addressed to the same base callsign with another SSID, such as `K5YVY-7` while running `K5YVY-1`
+- **Sibling SSID Inbox Option** — Optionally receive messages addressed to the same base callsign with another SSID, such as `W1AW-7` while running `W1AW-1`
 - **Packet Sort and Digipeat Filter** — The Packets tab loads recent packet history, sorts newest or oldest first, and can show packets your station digipeated
 - **Mobile Message Refresh** — Mobile UI includes a manual message refresh button and closer parity with desktop message behavior
 - **RF + IS Routing** — Messages sent on both RF and APRS-IS simultaneously
@@ -527,3 +541,32 @@ Official project support: [Give Thanks via PayPal](https://www.paypal.com/ncp/pa
 
 **Wicker Made, LLC**\
 Contact: [k5yvy.radio@gmail.com](mailto:k5yvy.radio@gmail.com)
+
+## Public dashboard and operator login
+
+The dashboard is public/read-only by default. Settings, manual RF/APRS-IS
+transmissions, messages, configuration exports, and updates require an operator
+session in that browser. Remote sessions last 15 minutes, 1 hour (default), or
+8 hours. Browsers opened by the host app sign in automatically for 8 hours;
+this can be disabled in the local password window. Signing in never unlocks
+other viewers, even behind the same VPN or proxy.
+
+A password window opens on first desktop launch. Choose **Set/reset operator
+password** in the PropView tray or Start menu to change or recover it later.
+No hosted authentication or recovery server is needed.
+See [Public hosting and operator access](docs/PUBLIC_HOSTING.md) for setup,
+password recovery, reverse-proxy guidance, and upgrade notes.
+
+### Send OTA Activity Spot
+
+Signed-in operators can open **Send OTA Activity Spot** beside Transmit Beacon. Select POTA, SOTA, WWFF or SIOTA, then enter the activity reference, operating frequency in MHz, mode and optional comment. Activity profiles supply the supported modes, recipient and APRS command formatting. The editable operator callsign defaults to the configured station call without its SSID. Each request transmits with that operator as its APRS sender; the station configuration and APRS-IS login remain unchanged. This lets multiple operators at an activation send their own spots.
+
+Automatic routing prefers a transmit-enabled RF interface, then a verified APRS-IS connection. Expand **+ more options** to override the route, simulate a spot without publishing, inspect the packet, request current POTA/SOTA/WWFF spots with a mode filter and optional result count, or request general/type/activity help (APRS, SMS or Winlink examples). Help requests are sent over APRS, not through an SMS or email gateway. Only fields needed for the selected feature are shown.
+
+The formatter enforces the 67-character APRS message limit. Test mode adds `aptest`; APSPOT treats any posting message containing `test` as a simulation. Responses for recently used operator calls appear in Messages, and the APRS-IS reply filter includes those calls for the running session. A successful transport send does not guarantee publication: destination services may require registration, and RF replies depend on a return path.
+
+Spotting service and format credit: [APSPOT by Josh, VK2MES](https://apspot.radio/). [Command documentation](https://apspot.radio/getting-started/).
+
+## Maintaining the user documentation
+
+Edit `docs/USER_GUIDE.md`, then run `python build_user_guide.py` with the optional documentation dependency `markdown-it-py` installed. The generator updates in-app help, `static/documentation.html`, and HTML copies of the public-hosting, modem, Linux and Docker companion guides. It does not change release-history documents.

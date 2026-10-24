@@ -79,7 +79,7 @@
         }
     }
 
-    function bind() {
+    async function bind() {
         const ui = elements();
         if (!ui.modal || !ui.pages.length) return;
 
@@ -114,7 +114,8 @@
             close();
         }, true);
 
-        if (!wasSeen()) {
+        await window.pvWhatsNew?.ready;
+        if (!wasSeen() && window.pvOperator?.authenticated && !window.pvWhatsNew?.showing) {
             window.setTimeout(() => open({ firstRun: true }), 650);
         }
     }

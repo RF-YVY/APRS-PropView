@@ -182,7 +182,7 @@ textarea,
 }
 
 :root[data-ui-skin="mission-control"] .settings-section > h3::before {
-    content: "◉ ";
+    content: "â—‰ ";
     color: var(--mission-cyan);
     font-size: 0.72em;
     text-shadow: 0 0 10px rgba(var(--mission-cyan-rgb), 0.7);
@@ -757,7 +757,7 @@ textarea,
 }
 
 :root[data-ui-skin="industrial"] .settings-section h3::before {
-    content: "▰ ";
+    content: "â–° ";
     color: var(--industrial-rust);
 }
 
@@ -1114,7 +1114,7 @@ textarea,
 }
 
 :root[data-ui-skin="neon-grid"] .settings-section h3::before {
-    content: "◇ ";
+    content: "â—‡ ";
     color: var(--neon-cyan);
     text-shadow: 0 0 8px rgba(var(--neon-cyan-rgb), .85);
 }
@@ -1832,8 +1832,7 @@ textarea,
 :root[data-ui-skin="terminal-green"] .aprs-sprite,
 :root[data-ui-skin="terminal-green"] .aprs-emoji-fallback,
 :root[data-ui-skin="terminal-green"] .legend-emoji,
-:root[data-ui-skin="terminal-green"] .legend-swatch,
-:root[data-ui-skin="terminal-green"] .header-logo {
+:root[data-ui-skin="terminal-green"] .legend-swatch {
     display: none !important;
 }
 
@@ -2878,7 +2877,7 @@ textarea,
     }
 }
 
-/* ── Unified information architecture and density system ─────────
+/* â”€â”€ Unified information architecture and density system â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Shared by every visual skin so theme changes never alter usability. */
 :root[data-ui-skin] {
     --ui-space-1: 4px;
@@ -2988,13 +2987,13 @@ textarea,
 }
 
 .map-control-group > summary::-webkit-details-marker { display: none; }
-.map-control-group > summary::after { content: "⌄"; margin-left: 6px; color: var(--text-muted); }
+.map-control-group > summary::after { content: "âŒ„"; margin-left: 6px; color: var(--text-muted); }
 .map-control-group[open] > summary {
     border-color: color-mix(in srgb, var(--user-accent) 55%, var(--border));
     background: color-mix(in srgb, var(--user-accent) 12%, var(--button-bg-muted, var(--bg-secondary)));
     color: var(--text-primary);
 }
-.map-control-group[open] > summary::after { content: "⌃"; }
+.map-control-group[open] > summary::after { content: "âŒƒ"; }
 
 .map-control-group-body {
     position: absolute;
@@ -3184,10 +3183,11 @@ body.weather-panel-user-hidden.lightning-panel-user-hidden #wx-banner { display:
 .alert-badge {
     font-variant-numeric: tabular-nums;
 }
+.source-health-item.listening .source-health-copy span,
 .source-health-item.live .source-health-copy span { color: var(--accent-green); }
 .source-health-item.delayed .source-health-copy span,
 .source-health-item.waiting .source-health-copy span { color: var(--accent-orange); }
-.source-health-item.stale .source-health-copy span,
+.source-health-item.stale .source-health-copy span { color: #e3b341; }
 .source-health-item.offline .source-health-copy span { color: var(--accent-red); }
 
 @media (max-width: 1100px) {
@@ -3418,3 +3418,8 @@ body.weather-panel-user-hidden.lightning-panel-user-hidden #wx-banner { display:
     border-color: var(--user-accent);
     color: var(--text-primary);
 }
+
+/* Expand line controls inside Appearance instead of stacking nested popovers. */
+.map-control-group-body #line-style-wrap { display: contents; grid-column: auto; }
+.map-control-group-body #line-style-popover { grid-column: 1 / -1; position: static; width: 260px; max-width: calc(100vw - 58px); margin-top: 7px; box-sizing: border-box; box-shadow: none; }
+.map-control-group-body #line-style-popover small { color: var(--text-secondary); font-size: 11px; line-height: 1.4; }

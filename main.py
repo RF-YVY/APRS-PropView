@@ -4,7 +4,7 @@
 Launch this to start the application. The web interface opens automatically.
 """
 
-APP_VERSION = "1.11.1"
+APP_VERSION = "1.13.0"
 
 import asyncio
 import sys
@@ -26,6 +26,25 @@ if getattr(sys, 'frozen', False):
 else:
     EXE_DIR = Path(__file__).parent
     BASE_DIR = Path(__file__).parent
+
+def _runtime_environment():
+    """Keep explicit deployment settings and use stable platform data locations."""
+    configured = os.environ.get('PROPVIEW_DATA_DIR')
+    if configured:
+        data = Path(configured).expanduser().resolve()
+    elif sys.platform == 'darwin':
+        data = Path.home() / 'Library/Application Support/APRS PropView'
+    elif sys.platform.startswith('linux'):
+        data = Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local/share'))) / 'aprs-propview'
+    else:
+        data = EXE_DIR
+    data.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault('PROPVIEW_DATA_DIR', str(data))
+    os.environ.setdefault('PROPVIEW_CONFIG', str(data / 'config.toml'))
+    if os.environ.get('PROPVIEW_DEPLOYMENT', '').lower() in {'1','true','yes'}:
+        os.environ.setdefault('PROPVIEW_LAUNCH_BROWSER', 'none')
+    os.chdir(data)
+
 
 # Add project root to path
 sys.path.insert(0, str(BASE_DIR))
@@ -202,13 +221,17 @@ def _web_port_available(host: str, port: int) -> bool:
 
 # ── System Tray ─────────────────────────────────────────────────────
 
-def _start_tray(url: str, config: Config, shutdown_event: asyncio.Event, loop):
+def _start_tray(url: str, config: Config, shutdown_event: asyncio.Event, loop, open_dashboard=None):
     """Start a pystray system-tray icon in a background thread."""
+    # macOS requires the Cocoa loop on the main thread; the browser dashboard
+    # remains fully functional without a tray. Headless servers have no tray.
+    if sys.platform == 'darwin' or (sys.platform != 'win32' and not (os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY'))):
+        return None
     try:
         import pystray
         from PIL import Image
-    except ImportError:
-        logger.debug("pystray or Pillow not available — skipping system tray")
+    except Exception:
+        logger.debug("System tray unavailable — continuing with browser dashboard", exc_info=True)
         return None
 
     ico_path = EXE_DIR / "ico" / "favicon.ico"
@@ -221,8 +244,15 @@ def _start_tray(url: str, config: Config, shutdown_event: asyncio.Event, loop):
         image = Image.new("RGB", (64, 64), "#58a6ff")
 
     def on_open(icon, item):
-        launch_browser = "" if config.web.launch_browser == "none" else config.web.launch_browser
-        open_url(url, launch_browser)
+        if open_dashboard:
+            loop.call_soon_threadsafe(open_dashboard)
+        else:
+            launch_browser = "" if config.web.launch_browser == "none" else config.web.launch_browser
+            open_url(url, launch_browser)
+
+    def on_password(icon, item):
+        from server.desktop_access import launch_password_dialog
+        launch_password_dialog()
 
     def on_quit(icon, item):
         icon.stop()
@@ -230,6 +260,7 @@ def _start_tray(url: str, config: Config, shutdown_event: asyncio.Event, loop):
 
     menu = pystray.Menu(
         pystray.MenuItem("Open PropView", on_open, default=True),
+        pystray.MenuItem("Set/reset operator password…", on_password),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Quit", on_quit),
     )
@@ -262,12 +293,15 @@ async def main():
     # Load or create config
     config_path = _resolve_config_path(data_dir)
     config_path.parent.mkdir(parents=True, exist_ok=True)
+    existing_installation = config_path.exists()
     if not config_path.exists():
         Config.create_default(config_path)
         print(f"  Created default configuration: {config_path}")
         print("  Starting with default settings \u2014 open the web UI to configure.\n")
 
     config = Config.load(config_path)
+    from server.release_notes import migrate_network_settings
+    migrate_network_settings(config, config_path, APP_VERSION)
     _apply_env_overrides(config, data_dir)
     logger.info(f"Station: {config.station.full_callsign}")
     logger.info(
@@ -277,6 +311,9 @@ async def main():
     # ── Initialize components ───────────────────────────────────────
 
     if not _web_port_available(config.web.host, config.web.port):
+        from server.desktop_launch import open_existing_dashboard
+        if open_existing_dashboard(config_path):
+            return
         logger.error(
             "Web interface cannot start because %s:%s is already in use.",
             config.web.host,
@@ -289,6 +326,17 @@ async def main():
         print("  Close the other APRS PropView window/process, or change [web].port in config.toml.\n")
         _pause_for_packaged_error()
         return
+
+    from server.operator_auth import OperatorAuth
+    auth = OperatorAuth(config_path.with_name('operator-auth.json'))
+    auth.reload()
+    password_configured_now = False
+    if auth.record is None:
+        from server.desktop_access import show_password_dialog
+        password_configured_now = show_password_dialog(auth.path)
+
+    from server.release_notes import ReleaseNotes
+    release_notes = ReleaseNotes(config_path.with_name('release-state.json'), APP_VERSION, existing_installation)
 
     db = Database(config.database.path)
     await db.initialize()
@@ -474,10 +522,8 @@ async def main():
     scheduled_transmitter = ScheduledPacketTransmitter(config, handler)
 
     update_checker = UpdateChecker(APP_VERSION)
-    update_checker.configure(
-        config.web.update_check_enabled,
-        max(1, int(config.web.update_check_interval_hours)) * 3600,
-    )
+    update_checker.configure(config.web.update_check_enabled,
+                             max(1, int(config.web.update_check_interval_hours)) * 3600)
 
     # ── MQTT Publisher (optional) ──────────────────────────────────
 
@@ -535,6 +581,7 @@ async def main():
         app_version=APP_VERSION,
         shutdown_event=shutdown_event,
         config_path=config_path,
+        release_notes=release_notes,
     )
 
     # ── Start background tasks ──────────────────────────────────────
@@ -586,16 +633,34 @@ async def main():
     )
     server = uvicorn.Server(uvi_config)
 
-    # Open browser after a short delay
+    def open_dashboard(automatic=False):
+        if automatic and config.web.launch_browser == 'none':
+            return
+        launch_browser = '' if config.web.launch_browser == 'none' else config.web.launch_browser
+        open_url(app.state.operator_auth.local_dashboard_url(url), launch_browser)
+
+    app.state.desktop_open = open_dashboard
+
+    # Open the local browser only after the backend is ready.
     async def open_browser():
-        await asyncio.sleep(1.5)
-        open_url(url, config.web.launch_browser)
+        while not server.started:
+            await asyncio.sleep(0.25)
+        from server.desktop_launch import register_desktop_launcher
+        try:
+            app.state.desktop_secret = register_desktop_launcher(config_path, url)
+        except OSError:
+            logger.warning('Could not register the local shortcut. Use Open PropView from the tray.')
+        # The original tab polls and reloads after an in-app update.
+        # Older browser UIs cannot refresh/sign in themselves on the first
+        # security upgrade. After initial password setup open the new local UI.
+        if '--update-relaunch' not in sys.argv or password_configured_now:
+            open_dashboard(automatic=True)
 
     tasks.append(asyncio.create_task(open_browser()))
 
     # ── System tray icon ────────────────────────────────────────────
 
-    tray_icon = _start_tray(url, config, shutdown_event, asyncio.get_event_loop())
+    tray_icon = _start_tray(url, config, shutdown_event, asyncio.get_event_loop(), open_dashboard)
 
     print(f"\n  APRS PropView running at {url}")
     if tray_icon:
@@ -626,8 +691,21 @@ async def main():
 
 
 if __name__ == "__main__":
+    if '--modem-self-test' in sys.argv:
+        from server.modem_self_test import run
+        import json
+        print(json.dumps(run()))
+        raise SystemExit(0)
+    _runtime_environment()
     try:
-        asyncio.run(main())
+        if '--set-operator-password' in sys.argv:
+            from server.desktop_access import set_console_password
+            set_console_password(_resolve_config_path(_runtime_data_dir()).with_name('operator-auth.json'))
+        elif '--operator-password-dialog' in sys.argv:
+            from server.desktop_access import show_password_dialog
+            show_password_dialog(_resolve_config_path(_runtime_data_dir()).with_name('operator-auth.json'))
+        else:
+            asyncio.run(main())
     except KeyboardInterrupt:
         print("\n  Goodbye. 73!")
     except SystemExit as exc:

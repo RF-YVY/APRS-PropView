@@ -105,7 +105,7 @@ def kiss_unescape(data: bytes) -> bytes:
 def make_kiss_frame(ax25_data: bytes, port: int = 0) -> bytes:
     """Wrap AX.25 data in a KISS frame."""
     cmd = (port << 4) | CMD_DATA
-    return bytes([FEND, cmd]) + kiss_escape(ax25_data) + bytes([FEND])
+    return bytes([FEND]) + kiss_escape(bytes([cmd]) + ax25_data) + bytes([FEND])
 
 
 class KISSFrameParser:

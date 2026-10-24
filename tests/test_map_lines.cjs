@@ -1,0 +1,16 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const layer={items:new Set(),addLayer(x){this.items.add(x)},removeLayer(x){this.items.delete(x)},hasLayer(x){return this.items.has(x)}};
+const makeLine=(points,style)=>({points,style,addTo(l){l.addLayer(this);return this},setLatLngs(p){this.points=p},setStyle(s){this.style=s},bindTooltip(t){this.tooltip=t;return this}});
+const ctx={window:{pvUI:{directPath:()=>true}},document:{getElementById:()=>null},console,Date,Set,Map,setTimeout,clearTimeout,L:{polyline:makeLine}};
+vm.createContext(ctx);vm.runInContext(fs.readFileSync('static/js/map.js','utf8'),ctx);
+const m=ctx.window.pvMap;m._escapeHtml=String;m.myPosition={lat:35,lng:-79};m.lineLayer=layer;m._saveUIState=()=>{};m._createArrowheads=()=>[];m.visualizations.pathReveal=false;m.map={addLayer(){},removeLayer(){}};
+m.stationMeta.TEST={source:'rf',category:'other'};
+m._updateLine('TEST',36,-80,100,Date.now()/1000,'');
+assert(layer.hasLayer(m.rfLines.TEST));
+m.setLineStyle({colorMode:'custom',customColor:'#123456',weight:5,pattern:'dot'});assert.equal(m.rfLines.TEST.style.color,'#123456');assert.equal(m.rfLines.TEST.style.weight,5);
+m.setLineStyle({enabled:false});assert(!layer.hasLayer(m.rfLines.TEST));m.setLineStyle({enabled:true});assert(layer.hasLayer(m.rfLines.TEST));
+m.showRF=false;m.applyAllLineTimeFilters();assert(!layer.hasLayer(m.rfLines.TEST));m.showRF=true;m.applyAllLineTimeFilters();assert(layer.hasLayer(m.rfLines.TEST));
+m.setLineTimeFilter(1);m.rfLineData.TEST.last_heard=Date.now()/1000-7200;m.applyAllLineTimeFilters();assert(!layer.hasLayer(m.rfLines.TEST));m.setLineTimeFilter(0);assert(layer.hasLayer(m.rfLines.TEST));
+m.typeFilters=new Set(['weather']);m.applyAllLineTimeFilters();assert(!layer.hasLayer(m.rfLines.TEST));m.typeFilters=new Set();
+m._getStationPosition=()=>null;m._updateLine('RFTEST',37,-81,200,Date.now()/1000,'UNKNOWN*');assert(!m.rfLines.RFTEST);
+console.log('PASS: RF line on/off, source/time/type filters, style redraw, unknown hop suppression');

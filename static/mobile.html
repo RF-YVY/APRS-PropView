@@ -593,10 +593,17 @@ html, body {
 :root[data-ui-skin="hackr"] #m-map {
     background: #000;
 }
+/* Filter only the base tiles so station symbols and weather retain their colors. */
+#m-map .mobile-dark-tiles {
+    filter: invert(1) hue-rotate(180deg) brightness(.8) contrast(.9);
+}
 :root[data-ui-skin="hackr"] #m-map .leaflet-tile-pane {
     filter: invert(1) grayscale(1) sepia(1) hue-rotate(72deg) saturate(4.2) brightness(.52) contrast(1.85);
 }
 </style>
+<link rel="stylesheet" href="/static/css/operator-auth.css?v=1">
+<script src="/static/js/operator-auth.js?v=2"></script>
+<script defer src="/static/js/whats-new.js?v=1"></script>
 </head>
 <body>
 <!-- PIN gate overlay (hidden if no PIN configured) -->
@@ -779,62 +786,8 @@ html, body {
    Single-file SPA connecting to the same backend WebSocket + REST.
    ================================================================ */
 
-// ── PIN Gate ───────────────────────────────────────────────
-(async function pinGate() {
-    try {
-        const r = await fetch('/api/mobile/pin-required');
-        const d = await r.json();
-        if (!d.required) {
-            // No PIN — show app directly
-            document.getElementById('m-app').style.display = 'flex';
-            return;
-        }
-        // Check if already unlocked this session
-        if (sessionStorage.getItem('pvMobileUnlocked') === '1') {
-            document.getElementById('m-app').style.display = 'flex';
-            return;
-        }
-        // Show PIN gate
-        const gate = document.getElementById('pin-gate');
-        gate.style.display = 'flex';
-
-        const input = document.getElementById('pin-input');
-        const btn = document.getElementById('pin-submit');
-        const err = document.getElementById('pin-error');
-
-        async function tryPin() {
-            const pin = input.value.trim();
-            if (!pin) { input.focus(); return; }
-            err.textContent = '';
-            btn.disabled = true;
-            try {
-                const vr = await fetch('/api/mobile/verify-pin', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ pin }),
-                });
-                const vd = await vr.json();
-                if (vd.success) {
-                    sessionStorage.setItem('pvMobileUnlocked', '1');
-                    gate.style.display = 'none';
-                    document.getElementById('m-app').style.display = 'flex';
-                } else {
-                    err.textContent = vd.message || 'Incorrect PIN.';
-                    input.value = '';
-                    input.focus();
-                }
-            } catch { err.textContent = 'Network error.'; }
-            finally { btn.disabled = false; }
-        }
-
-        btn.addEventListener('click', tryPin);
-        input.addEventListener('keydown', e => { if (e.key === 'Enter') tryPin(); });
-        input.focus();
-    } catch {
-        // If check fails, show app anyway
-        document.getElementById('m-app').style.display = 'flex';
-    }
-})();
+// Public viewing is always read-only; operator sessions are enforced by the backend.
+document.getElementById('m-app').style.display = 'flex';
 
 // ── State ──────────────────────────────────────────────────
 const MOBILE_TAB_KEY = 'pvMobileTab';
@@ -932,6 +885,7 @@ function syncMsgFilterButtons() {
 
 // ── Tab switching ──────────────────────────────────────────
 function activateTab(tab) {
+    if (tab === 'mtab-messages' && !window.pvOperator?.authenticated) tab = 'mtab-home';
     S.activeTab = tab;
     localStorage.setItem(MOBILE_TAB_KEY, tab);
 
@@ -1292,11 +1246,12 @@ function initMap() {
     const lng = S.myPos ? S.myPos[1] : -98.6;
     const zoom = S.myPos ? 8 : 4;
 
-    S.map = L.map('m-map', { zoomControl: false, attributionControl: false }).setView([lat, lng], zoom);
+    S.map = L.map('m-map', { zoomControl: false, attributionControl: true }).setView([lat, lng], zoom);
     L.control.zoom({ position: 'topright' }).addTo(S.map);
     const tileCfg = getMapTileConfig();
     const tileOpts = {
         maxZoom: tileCfg.maxZoom,
+        className: tileCfg.className || '',
         attribution: tileCfg.attribution,
     };
     if (tileCfg.url.includes('{s}')) tileOpts.subdomains = tileCfg.subdomains;
@@ -1329,19 +1284,12 @@ function getMapTileConfig() {
             subdomains: 'abc',
         };
     }
-    if (S.mapTheme === 'light') {
-        return {
-            url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-            attribution: '&copy; OpenStreetMap contributors',
-            maxZoom: 19,
-            subdomains: 'abc',
-        };
-    }
+    // Both themes use the key-free OSM service; dark styling is local.
     return {
-        url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-        attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+        url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
         maxZoom: 19,
-        subdomains: 'abcd',
+        className: S.mapTheme === 'light' ? '' : 'mobile-dark-tiles',
     };
 }
 
@@ -1365,6 +1313,7 @@ function applyMobileMapTheme() {
     const tileCfg = getMapTileConfig();
     const tileOpts = {
         maxZoom: tileCfg.maxZoom,
+        className: tileCfg.className || '',
         attribution: tileCfg.attribution,
     };
     if (tileCfg.url.includes('{s}')) tileOpts.subdomains = tileCfg.subdomains;
@@ -2031,6 +1980,7 @@ function toggleMobileGps() {
 
 // ── Init ───────────────────────────────────────────────────
 async function init() {
+    await window.pvOperator.ready;
     applySavedUITheme();
     S.activeTab = localStorage.getItem(MOBILE_TAB_KEY) || S.activeTab;
     if (!['mtab-home', 'mtab-messages', 'mtab-map', 'mtab-stations', 'mtab-prop', 'mtab-about'].includes(S.activeTab)) {

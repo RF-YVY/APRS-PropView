@@ -50,13 +50,16 @@
     <link rel="stylesheet" href="/static/css/themes.css?v=__ASSET_VERSION__" />
     <!-- Leaflet JS -->
     <script defer src="/static/vendor/leaflet/leaflet.js"></script>
+    <link rel="stylesheet" href="/static/css/operator-auth.css?v=__ASSET_VERSION__">
+    <script src="/static/js/operator-auth.js?v=__ASSET_VERSION__"></script>
+    <script defer src="/static/js/whats-new.js?v=__ASSET_VERSION__"></script>
 </head>
 <body>
     <!-- ── Header Bar ─────────────────────────────────────────── -->
     <header id="header">
         <div class="header-left">
             <div class="header-brand" aria-label="APRS PropView version __APP_VERSION__">
-                <img src="/static/img/app-icon.webp?v=__ASSET_VERSION__" alt="" class="header-logo" decoding="async" fetchpriority="high">
+                <img id="header-custom-image" src="/api/header-image" alt="" class="header-logo" decoding="async" fetchpriority="high">
                 <div class="header-brand-copy">
                     <span class="header-brand-title">APRS <strong>PropView</strong></span>
                     <span class="header-brand-version">v__APP_VERSION__</span>
@@ -246,6 +249,7 @@
             <div id="map"></div>
             <button id="sidebar-toggle" title="Toggle sidebar">▶</button>
             <div id="map-controls">
+                <button id="btn-aprs-spot" class="map-wide-control" type="button" data-operator-only>Send OTA Activity Spot</button>
                 <details class="map-control-group">
                     <summary>View</summary>
                     <div class="map-control-group-body">
@@ -276,6 +280,8 @@
                     <summary>Layers</summary>
                     <div class="map-control-group-body">
                         <button id="btn-toggle-lines" title="Toggle propagation lines" class="active">📏 Paths</button>
+                        <button id="btn-toggle-radar" type="button" aria-pressed="false" title="Show or hide weather radar">Radar: Off</button>
+                        <button id="btn-toggle-radar-loop" type="button" aria-pressed="false" title="Switch radar between loop and latest static frame">Radar: Static</button>
                         <button id="btn-toggle-maidenhead" class="map-wide-control" title="Show Maidenhead grid; click a square to use it in the watched-path builder">Grid</button>
                         <select id="line-time-filter" title="Filter paths by time">
                             <option value="1">1h paths</option><option value="6">6h paths</option><option value="12">12h paths</option><option value="24" selected>24h paths</option><option value="0">All paths</option>
@@ -298,8 +304,10 @@
                     </div>
                         </div>
                         <div id="line-style-wrap">
-                    <button id="line-style-btn" class="map-wide-control" type="button" title="Line style options">Line</button>
+                    <button id="line-style-btn" class="map-wide-control" type="button" title="Station line visibility and style" aria-expanded="false" aria-controls="line-style-popover">Lines</button>
                     <div id="line-style-popover" class="line-style-popover">
+                        <label class="line-style-check"><span>Show RF lines</span><input id="line-enabled" type="checkbox" checked></label>
+                        <small>Persistent lines show RF reception paths only. APRS-IS packet animations remain temporary. The line time filter controls RF path history.</small>
                         <label>
                             <span>Color</span>
                             <select id="line-color-mode">
@@ -1050,6 +1058,15 @@
                             <input type="text" id="cfg-comment" placeholder="APRS PropView">
                         </div>
                         <div class="settings-row">
+                            <label for="cfg-header-image">Header icon</label>
+                            <div class="header-image-controls">
+                                <input type="file" id="cfg-header-image" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/x-icon,image/vnd.microsoft.icon">
+                                <button type="button" id="cfg-header-image-reset" class="btn-secondary">Restore default icon</button>
+                            </div>
+                        </div>
+                        <p class="settings-help">Choose a PNG, JPEG, WebP, GIF, BMP or ICO image (up to 10 MB). Large images automatically fit the header without stretching. Changes save immediately.</p>
+                        <p id="cfg-header-image-status" role="status" aria-live="polite"></p>
+                        <div class="settings-row">
                             <label for="cfg-beacon-interval">Beacon Interval (min)</label>
                             <input type="number" id="cfg-beacon-interval" min="0" max="1440" step="1" value="30">
                         </div>
@@ -1257,8 +1274,13 @@
                     </div>
 
                     <!-- RF Ports -->
-                    <div class="settings-section" data-settings-key="rf-ports" data-summary="Multiple named serial and TCP KISS RF ports.">
+                    <div class="settings-section" data-settings-key="rf-ports" data-summary="Built-in soundcard modem and named serial/TCP RF ports.">
                         <h3>RF Ports</h3>
+                        <div class="settings-row settings-row-stacked">
+                            <label>Built-in soundcard modem (experimental)</label>
+                            <button id="btn-software-modem" class="settings-toolbar-btn" type="button" data-operator-only>Configure Built-in Modem</button>
+                            <p class="settings-note">Set up radio audio input, receive decoding, transmit output and PTT here. Modem changes apply directly in its setup window.</p>
+                        </div>
                         <div id="cfg-rf-ports-list" class="rf-ports-list"></div>
                         <div class="rf-ports-actions">
                             <button type="button" class="settings-toolbar-btn" id="btn-rf-port-add-serial">Add Serial Port</button>
@@ -2127,7 +2149,7 @@
                             <div class="weather-overlay-title">NOAA Space Weather Context</div>
                             <div class="settings-row"><label for="cfg-space-weather-enabled">Show SWPC Context</label><input type="checkbox" id="cfg-space-weather-enabled"></div>
                             <div class="settings-row"><label for="cfg-space-weather-alert-enabled">Geomagnetic Alert</label><input type="checkbox" id="cfg-space-weather-alert-enabled"></div>
-                            <div class="settings-row"><label for="cfg-space-weather-min-kp">Minimum Kp</label><input type="number" id="cfg-space-weather-min-kp" min="0" max="9" step="0.33" value="5"></div>
+                            <div class="settings-row"><label for="cfg-space-weather-min-kp">Minimum Kp</label><input type="number" id="cfg-space-weather-min-kp" min="0" max="9" step="0.01" value="5.00"></div>
                             <div class="settings-row"><label for="cfg-space-weather-cooldown">Cooldown (minutes)</label><input type="number" id="cfg-space-weather-cooldown" min="5" max="1440" value="60"></div>
                             <div class="weather-overlay-title weather-overlay-subtitle">Space Weather Destinations</div>
                             <div class="settings-row"><label for="cfg-space-weather-discord">Discord</label><input type="checkbox" id="cfg-space-weather-discord"></div>
@@ -2405,7 +2427,7 @@
                         </form>
                         <div class="about-donate-divider" role="separator">or</div>
                         <div class="about-coffee">
-                            <script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="K5YVY" data-color="#5F7FFF" data-emoji="" data-font="Cookie" data-text="Buy me a Coffee" data-outline-color="#000000" data-font-color="#ffffff" data-coffee-color="#FFDD00"></script>
+                            <a href="https://www.buymeacoffee.com/K5YVY" target="_blank" rel="noopener noreferrer">Buy me a Coffee</a>
                         </div>
                     </div>
                     <div id="about-documentation-actions" class="about-section about-doc-actions">
@@ -2550,7 +2572,7 @@
                         <svg viewBox="0 0 520 250" role="img" aria-label="Station and location settings with callsign and map pin">
                             <rect class="qs-card" x="45" y="28" width="300" height="194" rx="12"/>
                             <text class="qs-heading" x="67" y="57">Station &amp; Location</text>
-                            <text class="qs-label" x="67" y="86">CALLSIGN</text><rect class="qs-input" x="67" y="94" width="250" height="30" rx="5"/><text class="qs-input-text" x="80" y="114">K5YVY</text>
+                            <text class="qs-label" x="67" y="86">CALLSIGN</text><rect class="qs-input" x="67" y="94" width="250" height="30" rx="5"/><text class="qs-input-text" x="80" y="114">W1AW</text>
                             <text class="qs-label" x="67" y="146">POSITION</text><rect class="qs-input" x="67" y="154" width="115" height="30" rx="5"/><rect class="qs-input" x="202" y="154" width="115" height="30" rx="5"/>
                             <text class="qs-small" x="78" y="174">34.5000</text><text class="qs-small" x="213" y="174">-89.0000</text>
                             <path class="qs-pin" d="M420 63c-31 0-55 24-55 55 0 43 55 103 55 103s55-60 55-103c0-31-24-55-55-55z"/>
@@ -2662,184 +2684,104 @@
                 <button id="help-modal-close" class="modal-close">&times;</button>
             </div>
             <div class="help-body">
-
-                <section class="help-section">
-                    <h3>Overview</h3>
-                    <p>APRS PropView is a real-time APRS digipeater and Internet Gateway (IGate) application focused on visualizing VHF propagation conditions. It decodes APRS packets from RF (via a TNC) and APRS-IS, plots stations on a live map, draws signal paths, scores propagation quality, and adds weather radar plus configurable NWS alert overlays for faster storm awareness.</p>
-                    <p><button id="btn-help-quick-start" class="btn-primary">🚀 Open Illustrated Quick Start</button></p>
-                    <p><a href="https://www.youtube.com/watch?v=OyX6RaNevUk&t=76s" target="_blank" class="about-link" rel="noreferrer">Watch the APRS PropView video guide</a></p>
-                </section>
-
-                <section class="help-section">
-                    <h3>🗺️ Map</h3>
-                    <p>The central map shows your station (blue dot), RF stations (red border), APRS-IS stations (blue border), saved APRS objects, and optional weather overlays. Propagation lines animate between heard stations with directional arrows and can be color-coded by distance:</p>
-                    <ul>
-                        <li><b style="color:#f85149;">Red</b> — &lt; 31 mi (50 km)</li>
-                        <li><b style="color:#d29922;">Orange</b> — 31–62 mi (50–100 km)</li>
-                        <li><b style="color:#3fb950;">Green</b> — 62–124 mi (100–200 km)</li>
-                        <li><b style="color:#bc8cff;">Purple</b> — &gt; 124 mi (200 km) — DX!</li>
-                    </ul>
-                    <p>Small white dots along a path indicate known digipeater hops. Direct-heard stations draw a line straight to your station; digipeated stations draw through known digipeater waypoints. If a used digipeater position is unknown, no line is drawn so the contact is not mistaken for direct reception.</p>
-                    <p>If a moving station was last heard by your RF station and later appears from APRS-IS at a newer, different position, PropView removes the stale RF map marker and keeps the newer network position so one callsign does not appear in two places.</p>
-                </section>
-
-                <section class="help-section">
-                    <h3>🎛️ Map Controls</h3>
-                    <table class="help-table">
-                        <tr><td>📍</td><td><b>Center Map</b> — Re-center on your station.</td></tr>
-                        <tr><td>📏</td><td><b>Toggle Lines</b> — Show/hide propagation path lines.</td></tr>
-                        <tr><td>🔴</td><td><b>Toggle RF</b> — Show/hide RF station markers.</td></tr>
-                        <tr><td>Direct RF</td><td><b>Direct RF Only</b> — Show only RF stations heard directly, hiding digipeated RF and APRS-IS stations.</td></tr>
-                        <tr><td>🔵</td><td><b>Toggle APRS-IS</b> — Show/hide Internet-heard stations.</td></tr>
-                        <tr><td>🌙 / ☀️</td><td><b>Theme</b> — Toggle dark/light map tiles.</td></tr>
-                        <tr><td>🏷️</td><td><b>Callsign Labels</b> — Show/hide callsign text above each station icon.</td></tr>
-                        <tr><td>🔎</td><td><b>Auto-Fit</b> — Automatically zoom to fit all visible stations. Turns off when you manually pan or zoom; click again to re-enable.</td></tr>
-                        <tr><td>Cache</td><td><b>Cache Visible Tiles</b> - Downloads the currently visible base-map tiles at the current zoom into <code>map_tile_cache/</code>. Use it while online before field/offline operation, and repeat at each zoom level you need.</td></tr>
-                        <tr><td>⏱️</td><td><b>Line Time Filter</b> — Only show path lines from stations heard within the selected window (1h, 6h, 12h, 24h, or all time).</td></tr>
-                        <tr><td>Line</td><td><b>Line Style</b> - Choose distance or custom color, line weight, opacity, solid/dashed/dotted patterns, and show/hide watched VHF path lines. Bidirectional arrows are offset so opposing paths remain readable.</td></tr>
-                        <tr><td>Size</td><td><b>Station Symbol Size</b> - Scale map station symbols from compact to large for dense desktop views, touch screens, or presentation displays.</td></tr>
-                        <tr><td>Obj</td><td><b>Create APRS Object</b> - Click a map location, enter object details, choose the transmit route/path, and save it to the scheduled APRS object list.</td></tr>
-                        <tr><td>🏷️ Types ▾</td><td><b>Type Filter</b> — Check/uncheck station categories (Digipeater, Weather, House, Car, etc.) to control which types appear on the map.</td></tr>
-                        <tr><td>Search</td><td><b>Callsign Search</b> — Expand the search box, enter a callsign, press Enter or Find to jump to that marker, and press Esc to collapse the search.</td></tr>
-                    </table>
-                    <p>Weather radar and NWS polygons are managed from Settings - Weather. While APRS object creation is active, alert polygons temporarily stop intercepting clicks so any point inside a watch or warning remains selectable; normal alert popups resume after placement or cancellation. Base map tiles are served through PropView's tile proxy, so cached default OSM or custom XYZ tiles can be reused when the upstream tile source is unavailable. All map toggle states, zoom level, position, and filter selections are saved automatically and persist across restarts. Expanded weather alert banners rise above map controls and scroll when alert text is long; use the X on an alert banner to clear that alert from view.</p>
-                    <p>Application update checks are managed from Settings - Web Interface. You can disable release checks entirely or choose how often the app rechecks GitHub while it stays running. Windows setup installs can download and launch newer setup installers from the About tab; Linux, Raspberry Pi, and macOS installs show release notices without the Windows-only installer button.</p>
-                </section>
-
-                <section class="help-section">
-                    <h3>📻 RF Stations &amp; 🌐 APRS-IS Tabs</h3>
-                    <p>Scrollable lists of stations heard on RF or via the APRS-IS network. Each entry shows the station's APRS icon, callsign, distance, heading, last heard time, and packet count. Use the filter dropdowns to narrow by time window, distance range, station type, source, callsign text, and direct/via-digipeater RF path.</p>
-                </section>
-
-                <section class="help-section">
-                    <h3>📦 Packets Tab</h3>
-                    <p>A live feed of decoded APRS packets. Each entry shows the source (RF port, APRS-IS, transmitted packet, or RF digipeat), timestamp, raw packet contents, and decoded fields. Use the source filter to show packets digipeated by your station, choose newest-first or oldest-first sorting, or clear the local packet list.</p>
-                </section>
-
-                <section class="help-section">
-                    <h3>💬 Messages Tab</h3>
-                    <p>Send and receive APRS messages. Type a destination callsign and message text (max 67 characters), then click Send. Incoming messages appear with ack/rej status indicators. Click any received message's callsign to auto-fill the To field for a quick reply.</p>
-                    <p>Messages addressed to sibling SSIDs can optionally appear in the inbox. For example, a station running as <code>W1AW-1</code> can show messages sent to <code>W1AW-7</code> or <code>W1AW-9</code>; only exact station-ID messages are auto-ACKed.</p>
-                    <p>Use the sort selector to view newest-to-oldest or oldest-to-newest. The mobile UI includes the same ordering behavior and a manual refresh button.</p>
-                    <p>Message notification channels (Discord, Email, SMS) are configured separately from band-opening alert channels in Settings → Alerts.</p>
-                </section>
-
-                <section class="help-section">
-                    <h3>📊 Propagation Tab</h3>
-                    <p>Real-time propagation scoring with stat cards: RF stations (1h/6h/24h), max distance, average distance, and APRS-IS count. Includes a distance distribution histogram, a 24-hour propagation history chart, a VHF DXView link centered on your configured station location, and the Solar-Terrestrial source image.</p>
-                </section>
-
-                <section class="help-section">
-                    <h3>📊 Analytics Tab</h3>
-                    <p>Advanced analysis subtabs:</p>
-                    <ul>
-                        <li><b>Longest Paths</b> — Leaderboard of the greatest distances reached.</li>
-                        <li><b>Heatmap</b> — Time-of-day vs. distance heatmap showing when propagation peaks.</li>
-                        <li><b>Station Reliability</b> — Which stations are heard most consistently.</li>
-                        <li><b>Best Times</b> — Hourly chart showing the best time of day for propagation.</li>
-                        <li><b>Sporadic-E</b> — Select 6h, 24h, or 7d windows and review RF station counts, strongest stations, candidate gates, and path-weighted Es scores.</li>
-                        <li><b>Weather Dashboard</b> — Pop out current weather gauges, records, charts, forecast tiles, and map context from the Weather Graphs section.</li>
-                        <li><b>Alerts</b> — History of band-opening alerts triggered by the system.</li>
-                    </ul>
-                </section>
-
-                <section class="help-section">
-                    <h3>⚙️ Settings</h3>
-                    <p>All settings are saved to <code>config.toml</code> next to the executable. The category rail and search box replace the older single scrolling list. Modified sections pulse yellow, the sticky save action shows the number of changed sections, and each section can be restored to its last saved values.</p>
-                    <p>After saving, PropView clearly reports whether settings applied immediately, require a browser refresh, or require a full application restart. Restart warnings name only settings whose values actually changed.</p>
-                    <p>In Docker and TrueNAS installs, mount persistent storage to <code>/data</code>. Environment variables set in the container platform are startup overrides, so matching values saved in the web UI can be replaced when the app is stopped and started again.</p>
-                    <p>The Overview category includes a first-run checklist, settings import/export buttons for safe experimentation, and a last-transmitted history panel for station, WXnow, status, MHeard, and weather-alert beacons.</p>
-                    <h4>Station</h4>
-                    <p>Your callsign, SSID, latitude/longitude (or use the 📌 map picker), APRS symbol, status comment, beacon interval (minutes), and beacon path (e.g. <code>WIDE1-1</code>). Use <b>Preview Station Beacon</b> to inspect the exact packet text before using <b>Transmit Station Now</b>.</p>
-                    <h4>Smart Beaconing</h4>
-                    <p>Smart beaconing uses GPS speed to choose between a slow/parked beacon interval and a faster moving interval. Enable GPS ingestion first, then set the slow interval, fast interval, and speed threshold for mobile or portable operation.</p>
-                    <h4>GPS Ingestion</h4>
-                    <p>GPS ingestion lets APRS PropView use a live position instead of only the saved station latitude/longitude. Turn on <b>GPS Ingestion</b>, choose a source, then choose whether GPS should only move your map marker or also update the station latitude/longitude fields.</p>
-                    <p><b>LOCK</b> prevents active GPS from changing the saved station latitude/longitude. Leave it enabled when you want GPS to move the map marker during mobile use without changing your configured home/base station position.</p>
-                    <ul>
-                        <li><b>This browser/device</b> - Uses browser geolocation from the current desktop or mobile browser. Use this when running the app from a phone, tablet, laptop, or remote browser that can provide location permission.</li>
-                        <li><b>Own APRS position packets</b> - Uses your own heard APRS position packets as the live GPS source. Use this when a radio/TNC, tracker, or Mobilink-style setup is already transmitting your current position into APRS PropView.</li>
-                        <li><b>NMEA serial GPS</b> - Reads NMEA GPS sentences from a local serial port such as a USB GPS puck, GPS-enabled TNC, or serial feed from another device.</li>
-                        <li><b>NMEA TCP stream</b> - Connects to a TCP host/port that provides NMEA sentences. Use this with network GPS bridges, companion software, or devices that expose GPS over TCP.</li>
-                        <li><b>NMEA UDP listener</b> - Listens for NMEA sentences sent to the configured UDP bind address and port. Use this when another app or device broadcasts GPS updates over the LAN.</li>
-                        <li><b>gpsd daemon</b> - Connects to a local or network gpsd service and consumes JSON TPV fixes. On most Linux/Pi systems gpsd listens on <code>127.0.0.1:2947</code>.</li>
-                        <li><b>Any source</b> - Accepts the latest valid GPS fix from any supported source. This is useful for testing, mixed mobile/base setups, or fallback workflows, but selecting a specific source gives clearer status messages when a device is missing.</li>
-                    </ul>
-                    <p><b>Move my map marker from GPS</b> controls whether the live GPS fix moves your station marker on the map. <b>Update station latitude/longitude</b> also writes the live coordinates into Settings when unlocked; save the configuration if you want those coordinates kept after restart.</p>
-                    <h4>Digipeater</h4>
-                    <p>Enable/disable the digipeater. Configure which aliases to respond to (<code>WIDE1-1, WIDE2-1</code>) and the de-duplication window to prevent re-digipeating the same packet.</p>
-                    <h4>IGate</h4>
-                    <p>Enable/disable Internet gateway. Choose RF→IS (gate heard RF packets to APRS-IS), IS→RF (gate APRS-IS packets to local RF), or both.</p>
-                    <h4>APRS-IS</h4>
-                    <p>Server/port (default: <code>rotate.aprs2.net:14580</code>), your APRS-IS passcode, fixed or moving range filter mode, range in miles, and any extra filter expressions. Fixed stations generate filters like <code>r/35/-79/80</code>; moving/mobile clients can use <code>m/80</code>. Extra javAPRS filters such as <code>b/CALL</code>, <code>t/poimqstunw</code>, or <code>-p/CW</code> are appended as entered. Private/local APRS-IS-style servers that do not send a banner or <code>logresp</code> can still populate receive traffic; without login verification PropView keeps that connection read-only.</p>
-                    <h4>RF Ports</h4>
-                    <p>Add one or more named serial or TCP ports. Serial ports can use binary KISS frames or receive-only TNC2 monitor text for older radios. Kenwood TH-D7/TH-D7E users commonly need PACKET mode, 9600 bps PC speed, and Xon/Xoff flow control. Legacy single serial/TCP controls have been replaced by this multi-port list, but old saved config is imported automatically.</p>
-                    <h4>Tracking Blocklist</h4>
-                    <p>Use <code>CALL-SSID</code> to reject one station identifier or a base <code>CALL</code> to reject every SSID. Blocked packets are ignored before station, packet, message, propagation, and history updates.</p>
-                    <h4>Watched VHF Paths</h4>
-                    <p>Watched Paths alerts when direct-heard RF enhancement near the target station area reaches or exceeds the distance to a selected station. Stations heard through another digipeater are excluded. Enter a callsign and use Callook, HamDB, optional QRZ XML, or HamQTH lookup to populate a starting location, then correct the grid or coordinates if the operating site differs from the license address.</p>
-                    <p>Select band, mode, frequency, and confidence, then enter local/target antenna height, transmit power, and antenna gain. PropView shows radio-horizon, EIRP, and capability context while still requiring matching live propagation evidence. Watched path lines can be shown or hidden from the map Line options.</p>
-                    <h4>Status, Dynamic, MHeard, and Weather Alert Beacons</h4>
-                    <p>Status/DX can transmit a compact propagation summary, rotate preset dynamic messages in sequence or randomly, send a direct-heard RF MHeard list, or beacon severe weather alert text when active. Use <b>Preview Next Beacon</b> and the weather-alert preview before one-shot transmit or enabling periodic beaconing.</p>
-                    <h4>Bulletins and APRS Objects</h4>
-                    <p>Scheduled bulletins send APRS <code>BLN</code> messages at a configured interval. Scheduled APRS objects transmit named object packets with position, symbol, comment, route, and path. Use previews before enabling periodic transmit, or use the map <b>Obj</b> control to create object entries from a clicked location.</p>
-                    <h4>WXnow Transmit</h4>
-                    <p>WXnow can send APRS weather packets from a local <code>WXnow.txt</code>, with optional position included in the packet. When positionless weather is selected, PropView can seed a matching weather-symbol position packet and then transmit the positionless WX report. Use <b>Preview WXnow</b> before <b>Transmit Now</b>.</p>
-                    <h4>Web Interface</h4>
-                    <p><b>Host/Port</b> — Bind address and port for the web UI (default <code>127.0.0.1:14501</code>). Use <code>0.0.0.0</code> to allow network access.</p>
-                    <p><b>Opening Browser</b> &mdash; Choose which browser APRS PropView opens at startup, or choose <b>Do not open automatically</b> for headless Pi/VM/service deployments where browser auto-open is not desired.</p>
-                    <p><b>Font</b> — Choose a display font for the entire UI.</p>
-                    <p><b>UI Theme and Density</b> — Choose interface brightness, a visual skin, an accent color, and Comfortable, Compact, or Wallboard density independently from the map tile theme. Mission Control, Industrial, Neon Grid, Radio, iVIEW, and HackR alter panel materials and controls. iVIEW uses translucent liquid-glass surfaces; HackR uses a compact intelligence-console layout and night-vision map. Radio uses transceiver-style dual analog propagation meters whose needles follow the current direct and regional scores. Terminal Green Screen replaces the graphical dashboard with a numbered text console: use 1–8 for menus, F1 for help, F3/F12 to close, F5 to refresh, and F9 to switch between text and map views.</p>
-                    <p><b>Dashboard Layout</b> — Map tools are grouped into View, Stations, Layers, and Appearance menus. On narrow screens, open the Status drawer for beacon, connection, source-health, notification, and theme controls. Map &amp; Display → Visualizations also lets you hide optional weather, lightning, alert, source-health, watched-path, and propagation-context panels for this browser.</p>
-                    <p><b>Visualizations</b> — Independently enable the propagation aura, new-path reveal, map color harmony, condition backdrops, expressive home marker, watched-path flow, quiet direct-heard activity moments, and Off/Basic/Enhanced live packet animation.</p>
-                    <p><b>Units</b> — Choose Imperial or Metric for distance, map weather temperature, APRS WX station temperature, wind, and precipitation displays.</p>
-                    <p><b>Map Tiles</b> — Use the default online OpenStreetMap tiles or point PropView at a custom XYZ tile URL such as a local MBTiles/XYZ server. Custom URLs must include <code>{z}</code>, <code>{x}</code>, and <code>{y}</code>.</p>
-                    <p><b>Ghost After (min)</b> — Stations not heard within this time will fade (pulsing dashed border, reduced opacity). Set to 0 to disable ghosting.</p>
-                    <p><b>Expire After (min)</b> — Stations not heard within this time are completely removed from the map. Set to 0 to never auto-expire. Ghost time should be shorter than expiry time so stations fade before disappearing.</p>
-                    <p><b>Update Checks</b> - Enable or disable automatic GitHub release checks and set how often the app should poll for a newer published version during long-running uptime.</p>
-                    <h4>Tracking</h4>
-                    <p><b>Max Station Age</b> — How long (minutes) to keep a station in the database before cleanup removes it. <b>Cleanup Interval</b> — How often (minutes) to run the cleanup process.</p>
-                    <h4>Alerts — Band Opening Channels</h4>
-                    <p>Trigger an alert when propagation exceeds thresholds (min RF stations + min distance). Cooldown prevents repeated alerts. Quiet hours suppress alerts during specified times. Channels: Discord webhook, Email (SMTP), and SMS via email gateway.</p>
-                    <p>The Alert Tuning Helper analyzes recent RF path history as rolling one-hour windows and recommends direct/regional station count, distance, and cooldown values that sit above your normal local baseline.</p>
-                    <p>Use <b>Send Test Alert</b> to send a preformatted test message to selected Discord, Email, and SMS destinations without waiting for a real alert trigger.</p>
-                    <h4>Alerts — Message Notification Channels</h4>
-                    <p>Separate channel toggles for forwarding incoming APRS messages to Discord, Email, or SMS — independent from band-opening channels.</p>
-                    <h4>Weather</h4>
-                    <p>Enable weather with a US zip code or ICAO airport code. Current conditions use Open-Meteo. Alert sources can be automatic, Weatherbit with a user API key, or disabled. Auto uses NWS for US stations and Open-Meteo risk indicators outside the US.</p>
-                    <p>When using WXnow as the current conditions source, the Open-Meteo condition fallback can still provide general condition text and icon while temperature, wind, humidity, and pressure come from your local station.</p>
-                    <p><b>Weather Alert Distances</b> - Banner range controls local warning banners, weather-alert beacons, and alert symbol behavior when using radius scope. Polygon range controls the wider map-only NWS alert overlay.</p>
-                    <p><b>Map Overlays</b> - Turn radar and alert polygons on or off, adjust radar opacity, enable radar animation, and choose which alert categories should be drawn on the map. When NWS alerts do not include native polygon geometry, PropView can use affected county/zone geometry as a fallback for drawable overlays.</p>
-                    <p><b>Alert Polling</b> - NWS county/zone UGC scope is available for US locations. Other alert sources use point-based or provider-defined coverage.</p>
-                    <p><b>Adaptive Severe Weather Polling</b> - When one of your configured trigger events, such as <code>Tornado Watch</code> or <code>Severe Thunderstorm Watch</code>, becomes active, alert polling automatically speeds up to the elevated interval so newly issued warnings are detected more quickly. After the trigger clears, polling stays elevated through the configured cooldown before returning to normal.</p>
-                    <h4>MQTT Integration</h4>
-                    <p>MQTT is for sending APRS PropView events and propagation status to other systems. It is not needed for normal APRS, digipeater, IGate, mapping, or messaging operation; enable it when you have an MQTT broker such as Mosquitto, Home Assistant, Node-RED, EMQX, or another dashboard/automation system that should receive PropView data.</p>
-                    <p>Common use cases include showing current propagation level on a wall dashboard, triggering Home Assistant or Node-RED automations when a band opening alert fires, logging propagation metrics into another time-series system, or bridging PropView status to a shack display without scraping the web UI.</p>
-                    <p>Configure the broker host, port, topic prefix, optional username/password, Home Assistant device identity, and optional watched callsigns. The default topic prefix is <code>aprs/propview</code>. APRS PropView publishes retained propagation metrics on <code>aprs/propview/propagation</code>, retained summary values on <code>aprs/propview/score</code> and <code>aprs/propview/level</code>, retained Home Assistant status on <code>aprs/propview/ha/status</code>, watched station state on <code>aprs/propview/watched/&lt;callsign&gt;</code>, and alert/event payloads on aggregate and typed event topics. MQTT reconnects live after saving settings.</p>
-                </section>
-
-                <section class="help-section">
-                    <h3>📱 Mobile View</h3>
-                    <p>Access <code>/mobile</code> from a phone browser (e.g. via Tailscale) for a touch-optimized interface with Messages, Map, Stations, Propagation, and About tabs. The mobile <b>Share GPS</b> button can feed the phone's browser location into GPS ingestion when the source is set to <b>This browser/device</b> or <b>Any source</b>.</p>
-                    <h4>Using Tailscale or another VPN</h4>
-                    <p>To use the mobile companion away from your home network, run APRS PropView on your shack PC, Raspberry Pi, or VM and join that machine plus your phone to the same private VPN such as Tailscale. Set Settings &rarr; Web Interface &rarr; Host to <code>0.0.0.0</code>, save, restart APRS PropView, then open <code>http://TAILSCALE-IP:14501/mobile</code> from the phone. Keep the port private to your VPN; avoid exposing the dashboard directly to the public internet.</p>
-                    <p>For mobile GPS, set GPS source to <b>This browser/device</b> or <b>Any source</b>, open the mobile page over the VPN, tap <b>Share GPS</b>, and allow browser location permission. Leave <b>LOCK</b> enabled unless you intentionally want the phone GPS to overwrite saved station latitude/longitude.</p>
-                </section>
-
-                <section class="help-section">
-                    <h3>⌨️ Tips</h3>
-                    <ul>
-                        <li>Units can be changed in Settings → Web Interface. The map legend distance toggle also switches the same Imperial/Metric preference.</li>
-                        <li>All map UI preferences (toggles, filters, zoom, position, map theme) are saved automatically to your browser and restored on next launch.</li>
-                        <li>The desktop UI light/dark theme is saved separately from the map light/dark theme.</li>
-                        <li>Ghost + Expire work together: set Ghost to 60 min and Expire to 180 min, for example, so stations fade at 1 hour and vanish at 3 hours.</li>
-                        <li>Auto-Fit zoom (🔎) will keep all visible stations in view and zoom back in as stations expire. It turns off when you manually pan or zoom — click the button again to re-enable.</li>
-                        <li>The propagation score is calculated from RF station count, maximum distance, and average distance within the last hour.</li>
-                        <li>If you want faster warning pickup for a surrounding county, switch alert scope from <b>Station point</b> to <b>County/Zone UGC</b> and enable elevated polling triggers in Settings → Weather.</li>
-                        <li>For mobile operation, keep station latitude/longitude locked if you only want GPS to move your map marker. Unlock it only when you intentionally want the live GPS fix to update your saved station coordinates.</li>
-                        <li>Use settings export before changing host, port, APRS-IS, or RF port settings so you can quickly restore a known-good configuration.</li>
-                    </ul>
-                </section>
+<p><button id="btn-help-quick-start" class="btn-primary">Open Illustrated Quick Start</button> <a href="/static/documentation.html" target="_blank" rel="noopener">Open full documentation</a></p><h3>APRS PropView User Guide</h3>
+<p>Current version: <strong>1.13.0</strong>. This guide covers the desktop dashboard, mobile companion, settings and built-in modem.</p>
+<h3 id="help-guide-getting-started">Getting started</h3>
+<p>Install the application, launch it, and complete the operator-password window on the host computer. Set your callsign, SSID, symbol and coordinates under <strong>Settings â†’ Station &amp; Location</strong>. Coordinates can be typed, picked on the map or supplied by the configured GPS source. Use your actual licensed station identity before transmitting.</p>
+<p>Open <strong>Settings â†’ Radio &amp; TNC â†’ RF Ports</strong> to configure an external TNC or the built-in experimental modem. APRS-IS is an independent internet feed; configure it in the same category if needed. Start with reception, verify the RF/APRS-IS indicators and packet list, then enable the transmit functions you intend to use. Weather and lightning require their own enable switches under <strong>Alerts &amp; Weather</strong>; setting station coordinates alone does not enable them.</p>
+<p>Settings offers <strong>Show Advanced / Show Basic</strong>, category navigation, search, collapsible sections, guided setup, connection diagnostics, operating-mode presets, a configuration-readiness summary and transmit-setting protection. Presets stage changes for review; save them to apply. Settings with a restart requirement identify it in the save feedback. Export a configuration backup before changing network or interface settings.</p>
+<h3 id="help-guide-operator-access-and-public-viewing">Operator access and public viewing</h3>
+<p>Click the small <strong>lock icon in the toolbar below the map</strong> to see whether this browser is a local operator, a signed-in operator or a public viewer, and the remaining session time. The popover provides <strong>Extend session / Operator sign in</strong> and <strong>Lock now</strong>. Extend session opens the password form again. Choose 15 minutes, one hour or eight hours when signing in. Click outside the popover or press Escape to close it.</p>
+<p>Authentication belongs to the browser session that signed in. Signing in on the host or through a private VPN does not unlock anyone else's public browser. Public viewers can observe the dashboard; settings, private messages, transmissions, configuration exports and update operations require operator access. Lock now revokes this browser's session. Expiry returns it to read-only viewing; it does not stop the backend modem or previously configured station functions.</p>
+<p>The host's password setup window can enable automatic sign-in for browsers opened by the local application. A manually entered dashboard address does not receive that local-launch access automatically. Passwords must be <strong>6â€“256 characters</strong>. For a forgotten password, use <strong>Set/reset operator password</strong> from the host's tray or Start menu. The local GUI sets a replacement password and revokes existing sessions; no email or hosted recovery server is required.</p>
+<p>For public hosting, use HTTPS through your reverse proxy and retain operator authentication. A private VPN is another option for remote use. Set the listening host/port as needed and restart when requested. Only expose the intended web interface. See the separate public-hosting guide for session and proxy details.</p>
+<h3 id="help-guide-dashboard-map-and-toolbars">Dashboard, map and toolbars</h3>
+<p>The header shows station identity, direct and regional propagation evidence, RF/APRS-IS/browser connection indicators, Data source health and notifications. Theme controls change the UI separately from the map background. The sidebar contains RF stations, APRS-IS stations, packet history, propagation, analytics, operator messages/settings and About/Help. Collapse the sidebar for more map area.</p>
+<p>The bottom map toolbar provides <strong>Send OTA Activity Spot</strong>, <strong>View</strong>, <strong>Stations</strong>, <strong>Layers</strong>, <strong>Appearance</strong> and the operator lock button. The built-in modem is configured in <strong>Settings â†’ Radio &amp; TNC â†’ RF Ports</strong>, not from this toolbar.</p>
+<ul>
+<li><strong>View:</strong> center on your station, enable the local scope/range rings, fit visible stations or create an APRS object. Auto-fit stops after manual map movement; enable it again to resume.</li>
+<li><strong>Stations:</strong> show RF and APRS-IS sources, direct RF only, callsign labels and station-type filters. Station lists also filter age, distance, callsign, category and path, and offer sorting.</li>
+<li><strong>Layers:</strong> use the available map overlays, radar visibility and loop/static controls, and the RF line-history time window. Weather layers also have provider and opacity settings.</li>
+<li><strong>Appearance:</strong> map light/dark theme, tile caching, station symbol size and <strong>Lines</strong>. Lines is the same size as the adjacent buttons and expands its controls inside Appearance.</li>
+</ul>
+<p>In <strong>Appearance â†’ Lines</strong>, <strong>Show RF lines</strong> switches persistent RF paths on or off. Color can follow distance or use a custom color; weight, solid/dash/dot/dash-dot pattern and opacity adjust the drawing. <strong>VHF Paths</strong> independently controls watched-path lines. These preferences are saved in this browser, along with map position, zoom and filters.</p>
+<p>Persistent paths describe RF reception only. Direct stations connect to your station; relayed stations follow known used digipeater positions. When a required digipeater position is missing, the path is suppressed rather than drawn as a direct contact. APRS-IS packet animations remain temporary and are not evidence that your radio heard the station. With only APRS-IS stations visible, no persistent RF paths are expected. The line time filter and source/type filters can also hide RF lines.</p>
+<p>Click a station for position, distance, bearing, path, source, last-heard and available packet/weather information. Overlapping stations can spread out for selection. Ghosting fades old markers; expiry removes them. Direct-RF-only filtering excludes APRS-IS and relayed RF. Units, font, theme/skin, density, activity effects and dashboard-panel visibility are configurable. Club Display provides a presentation-oriented rotating display with its own layout options.</p>
+<h3 id="help-guide-map-sources-and-offline-use">Map sources and offline use</h3>
+<p>Default OpenStreetMap tiles work without a map API key on desktop and mobile. Optional custom/local tile sources have their own URL and attribution requirements; some providers require keys. A tile template needs the appropriate zoom/x/y placeholders. Cache the visible map area while online when planning offline use. Cached tiles and APRS reception do not provide offline weather, radar, internet APRS or other external feeds.</p>
+<h3 id="help-guide-external-rf-interfaces-digipeater-and-igate">External RF interfaces, digipeater and IGate</h3>
+<p>RF Ports supports multiple named serial and TCP interfaces. Serial KISS, TCP KISS and TCP AGWPE server ports are transmit-capable when enabled and connected; TNC2 monitor reception is receive-only. Select the TCP protocol that matches your server. Serial options include flow control and supported initialization profiles/commands. Select the correct COM device, speed or TCP endpoint and any receive-only restrictions. Names appear in packet/station information. TCP interfaces expose connection, error and retry information and reconnect automatically. A green browser connection only confirms the dashboard link, not a radio link.</p>
+<p>Digipeater settings control whether received packets may be repeated, including path/deduplication behavior. IGate settings control RF-to-APRS-IS and optional APRS-IS-to-RF traffic, subject to route restrictions. Review paths and station settings before enabling these functions. A receive-only interface is never a transmit path. The built-in modem continues to block APRS-IS-to-RF gating even when its own RF transmit is enabled.</p>
+<p>Manual <strong>Transmit Beacon</strong> uses the selected RF, APRS-IS or combined route and requires a valid station position. Connected RF reception and RF transmit availability are separate: the modem can receive while TX is disabled. Scheduled beacon intervals and smart beaconing are station functions, independent of whether a browser is currently open.</p>
+<p><strong>Experimental modem:</strong> further radio and hardware testing is needed on Linux, Raspberry Pi and macOS. Performance may vary by platform and audio interface.</p>
+<h3 id="help-guide-built-in-modem-reception">Built-in modem: reception</h3>
+<p>This development-only original Bell 202 modem handles 1200-baud AFSK APRS. Open <strong>Settings â†’ Radio &amp; TNC â†’ RF Ports â†’ Configure Built-in Modem</strong>. Select the radio's audio input and left/mono or right channel, then <strong>Start receiving</strong>. Use actual local receiver audio for operating the radio. Avoid microphone noise suppression, automatic gain processing, feedback and clipping. Open squelch is supported; ordinary receiver hiss should not count as an APRS carrier.</p>
+<p>Successful RX setup is saved for automatic reception on subsequent application launches. Saved audio devices are matched by name and host API rather than assuming their numeric device IDs are unchanged. If a saved device is unavailable, startup reports an error instead of choosing an unrelated input or output. Refresh devices and reconfigure it. <strong>Stop</strong> reception disables RX automatic startup and stops TX. Closing the modem window leaves the backend operating; quitting releases the devices while preserving the configured startup choices.</p>
+<p><strong>Test with a WAV recording</strong> decodes 16-bit PCM WAV, mono or stereo, 8â€“96 kHz, up to five minutes and 32 MB. Choose the intended audio channel. The generated test WAV is an offline reference. Imported recording results stay out of the live map and cannot cause gating, digipeating or message acknowledgements. A recording decoding successfully while live input does not usually calls for checking the selected input and audio routing.</p>
+<h4>Reading modem diagnostics</h4>
+<ul>
+<li><strong>AFSK:</strong> audio-frequency shift keying; APRS data switches between 1200 and 2200 Hz tones. <strong>RX/TX</strong> mean receive/transmit.</li>
+<li><strong>dBFS RMS / peak:</strong> average and maximum digital audio level. Full scale is 1.0. Green level alone confirms audio is present, not that it contains decodable APRS.</li>
+<li><strong>CRC failures:</strong> candidate frames failed the checksum and are discarded. Multiple decoder lanes try different timing/decision settings, so failures are not a count of unique lost packets. Some failures alongside successful reception are normal.</li>
+<li><strong>Clipped samples:</strong> samples near full scale; a rising count suggests lowering input level. <strong>Audio overflows</strong> and <strong>dropped blocks</strong> indicate missing input data or queue pressure.</li>
+<li><strong>DSP milliseconds:</strong> processing time for each 20 ms audio block. <strong>Channel busy/clear</strong> is the modem's tone/carrier estimate, independent of whether channel waiting is enabled.</li>
+</ul>
+<h3 id="help-guide-built-in-modem-transmission-and-nomic">Built-in modem: transmission and NOMIC</h3>
+<p>Start reception first. In <strong>Transmit setup</strong>, explicitly select the soundcard output wired to the radio interface and the output channel. Choose RIGblaster NOMIC RTS, generic serial RTS, serial DTR or radio VOX. For NOMIC select its USB serial COM port and the soundcard output connected to it. The selected RTS line keys PTT and the unused DTR line is held low. VOX uses audio keying without a serial port. The NOMIC's USB/serial connection is not a substitute for selecting the audio output used by your wiring.</p>
+<p>Set audio amplitude, TX delay/lead-in and tail, check <strong>Enable RF transmission</strong>, then <strong>Apply transmit settings</strong>. Initial defaults are amplitude 0.20, lead-in 300 ms and tail 50 ms. Amplitude adjusts audio, not transmitter power; set the radio's deviation using appropriate test equipment or another receiver. Lead-in allows radio/receiver settling. Tail sends closing flags before releasing serial PTT.</p>
+<p><strong>Wait for clear channel</strong> defaults on. Unchecking it applies immediately and saves across restarts; TX status shows <strong>Channel wait OFF</strong>. It bypasses carrier waiting for test packets, beacons, messages, spots and other permitted modem transmissions. Carrier diagnostics still display busy/clear. If waiting is on and busy persists, the packet can fail without keying. Check quiet-channel noise, hum, feedback and tone detection, or turn off the option when deliberately testing without carrier waiting.</p>
+<p><strong>Send RF test packet</strong> sends one identified APRS status packet without a digipeater path. Start with a dummy load and a second receiver. The modem cannot confirm over-the-air reception merely because audio/PTT completed. Successful TX setup restores the enabled transmit state at application launch; existing scheduled transmissions can then operate. <strong>Stop TX / disable</strong> aborts output, releases serial RTS/DTR and saves TX disabled. Locking a browser is not a radio stop control.</p>
+<p>The transmit watchdog bounds audio/serial PTT to ten seconds per packet; VOX release also depends on the radio's own hang time. Output/serial failures disable TX until corrected and reapplied. Reception decoding pauses during local transmission and resynchronizes afterward. The modem remains experimental: verify operation with your actual radio/interface, including open squelch and long-running reception. Separate development settings, executable, port and data preserve stable v1.12.0.</p>
+<h3 id="help-guide-aprs-is-and-packet-interpretation">APRS-IS and packet interpretation</h3>
+<p>Configure callsign, server, port, passcode and filter under <strong>Radio &amp; TNC â†’ APRS-IS</strong>. Unverified/read-only connections can receive; sending requires verification. Filter helpers support fixed station ranges, moving/my ranges and extra APRS-IS filter tokens. The packet list identifies RF versus internet source; internet reports must not be read as local radio propagation evidence.</p>
+<h3 id="help-guide-messages-contacts-and-ota-activity-spots">Messages, contacts and OTA activity spots</h3>
+<p>Operator Messages provides station conversations, sent/received history, acknowledgements, retries, route selection and contacts. Message retention and sibling-SSID reception are configurable. Select a usable route and review pending/retry states; sending is not the same as receiving an acknowledgement. Incoming-message notifications can use enabled local audio or external channels.</p>
+<p>Click <strong>Send OTA Activity Spot</strong> below the map to use APSPOT. Choose POTA, SOTA, WWFF or SIOTA, then enter the activity's required reference, frequency in MHz, supported mode and any desired comment. The operator callsign is prefilled from the station callsign without its SSID and is editable for another operator on the activation. The application constructs and validates the service message; do not type packet delimiters or destination formatting into the fields. The configured station identity remains unchanged.</p>
+<p>Expand <strong>+ more options</strong> for route selection, packet preview, a test spot without publishing, current-spot requests for POTA/SOTA/WWFF with supported filters/result count, and service-help requests with APRS/SMS/Winlink examples. These requests are sent over APRS; the form does not send SMS or Winlink mail itself. Automatic routing chooses usable RF first, otherwise verified APRS-IS, and does not duplicate a send onto another route after an attempted transmission. Replies appear in Messages. APSPOT registration and a working return path may be needed.</p>
+<p>Service credit and current service instructions: <a href="https://apspot.radio/">APSPOT by Josh, VK2MES</a> and <a href="https://apspot.radio/getting-started/">APSPOT getting started</a>.</p>
+<h3 id="help-guide-beacons-reports-bulletins-objects-and-wxnow">Beacons, reports, bulletins, objects and WXnow</h3>
+<p>Station settings control position beacons, symbol/comment, routing and interval. Smart beaconing selects intervals using GPS speed when configured. Status/DX reports can summarize activity or rotate configured messages, choose ordering and route, and issue configured weather-alert beacons with cooldowns. Preview controls show the generated packet before a test send.</p>
+<p>Bulletins and APRS objects have enabled item lists, timing and RF/APRS-IS routing. Objects can also be created from the map and saved into the scheduled list. Use the symbol picker to select primary/alternate APRS symbols. The PHG calculator helps construct station power, antenna height, gain and directivity information for the station beacon. Saved/enabled lists can transmit without an open browser when their route is ready.</p>
+<p>WXnow uses a local WXnow.txt file for current conditions and/or scheduled APRS weather packets, with file, route, path, position and preview/test settings. It expects the supported timestamp/weather-body format; stale or invalid files are reported. Optional online condition enrichment is separate from the file's sensor values. Weather beacons, object traffic and status reports share the available transmit interfaces.</p>
+<h3 id="help-guide-propagation-evidence-and-watched-paths">Propagation evidence and watched paths</h3>
+<p><strong>My Station</strong> evaluates direct RF reception. <strong>Regional</strong> includes broader RF paths. APRS-IS alone does not raise local RF evidence. Counts, distance and time windows contribute to scores; confidence, freshness and direct/relayed distinctions matter more than the score alone. Evidence views explain their observations and distinguish no data, warming up, active observations and stale history.</p>
+<p>Propagation and Analytics offer station/distance histories, longest paths, reliability/time-of-day and day-of-week patterns, heatmaps, bearing sectors, historical comparison, anomalies, first-heard stations, possible Sporadic-E, weather graphs and APRS weather-mesh context. Detection is an indication for investigation, not a guarantee of an opening. Data export supports analysis outside the application.</p>
+<p>Watched VHF paths use a callsign, coordinates or Maidenhead grid plus band, mode, frequency and confidence requirements. Bearing tolerance, probe count, target area, maximum age and cooldown govern evidence. Antenna heights, transmitter power and antenna gain add horizon/EIRP/capability context; they do not replace measured propagation evidence. Watched locations can also receive configured weather/lightning awareness within a radius. <strong>VHF Paths</strong> in Lines controls their map drawing independently of RF reception lines.</p>
+<p>NOAA space weather adds Kp/context with optional threshold alerts. The default Minimum Kp is <strong>5.00</strong>, a valid value. Optional PSK Reporter reports at 50 MHz and above supply independent digital-mode context rather than pretending to be your RF reception. External feeds have their own freshness and availability.</p>
+<h3 id="help-guide-weather-radar-alerts-and-lightning">Weather, radar, alerts and lightning</h3>
+<p>Open <strong>Settings â†’ Alerts &amp; Weather â†’ Weather</strong>. The Weather section is visible in both Basic and Advanced Settings. Check <strong>Weather Enabled</strong>, enter a ZIP/ICAO location code and use <strong>Lookup</strong>, select the appropriate current-condition source, then <strong>Save</strong>. Station coordinates alone do not supply this separate weather location. Open-Meteo current conditions require no API key; optional providers can require their own credentials. WXnow can supply local current weather when configured.</p>
+<p>Current conditions, wind, precipitation, forecast/ducting context and alerts are displayed when available and their banner/panel settings permit it. Radar visibility, animation versus static, opacity/provider/custom layers, satellite imagery and weather alert polygons have separate controls. The bottom map Layers menu provides radar show/hide and loop/static controls. Provider coverage and valid tile configuration affect availability.</p>
+<p>Weather alerts support the configured provider, point or county/zone scope, ranges/groups and optional elevated polling triggers. NWS coverage is US-focused; optional Weatherbit needs its configured key. Weather alert symbols, notifications and APRS alert beaconing are independent options.</p>
+<p>For lightning enable <strong>Show Lightning On Map</strong> and, if desired, <strong>Show Lightning Info Card</strong>. GOES GLM satellite selection can be automatic or explicit; history, opacity, stale interval and nearby-alert radius/cooldown are configurable. The card shows source, recent/retained flashes, nearest flash and feed age/error. A healthy feed can show zero nearby flashes; satellite lightning does not mean a ground strike at each plotted coordinate. Inspect Data source health before assuming a blank overlay is a display error.</p>
+<h3 id="help-guide-alerts-and-notification-delivery">Alerts and notification delivery</h3>
+<p>Propagation thresholds, anomalies, first-heard events, Sporadic-E candidates, messages, weather and lightning can use their configured alert channels. Set cooldowns and quiet hours to reduce repeated notices. The Alert Tuning Helper estimates thresholds from local historical evidence. Watched-location and message channels have their own switches; a global delivery setting alone does not enable every alert type.</p>
+<p>Local audio alerts support an output device and event-specific sound files. Discord webhooks, SMTP email and email-to-SMS gateways require working account/provider configuration. Availability of email-to-SMS delivery depends on the gateway. Header notifications retain useful in-app notices and can be cleared. Preview/test tools are available for the applicable settings.</p>
+<h3 id="help-guide-gps-mobile-display-and-remote-operation">GPS, mobile, display and remote operation</h3>
+<p>GPS sources include browser/mobile geolocation, own APRS reports, NMEA serial/TCP/UDP, gpsd and any-supported-source mode. <strong>LOCK</strong> prevents live GPS from overwriting saved station coordinates; moving the displayed marker and saving coordinates are distinct choices. Smart beaconing can use received speed. Browser geolocation requires permission and browser-compatible secure/local access.</p>
+<p>Open <strong>/mobile</strong> for the companion map, station, message, propagation and About views. It uses the no-key OSM map by default and can share browser GPS when authorized and configured. A remote phone needs its own operator session for privileged actions. Tailscale or another private VPN can connect the host and phone; use the host's configured port, not an assumed universal port.</p>
+<p>Web/Display settings include listening host/port, browser selection or no automatic browser, UI/map appearance, unit system, fonts, marker aging, display density, visualization effects, dashboard panel visibility and Club Display. Browser UI preferences are local to that browser. Server settings and station configuration are shared by all viewers subject to authentication.</p>
+<h3 id="help-guide-source-health-and-troubleshooting">Source health and troubleshooting</h3>
+<p><strong>Data â†’ Source Health</strong> separates connection state from data age. RF <strong>LISTENING</strong> means a receiver is connected but no RF packet has been recorded this session; <strong>LIVE</strong> means recent RF data; <strong>STALE</strong> means old observations; <strong>OFFLINE</strong> means unavailable; <strong>OFF</strong> means disabled. Configured tile layers are not a guarantee every external tile request succeeded. Browser live-link state is separate from backend feed health.</p>
+<ul>
+<li><strong>Weather/lightning OFF:</strong> enable their separate settings and save. If settings are missing, clear Settings search, open Alerts &amp; Weather and expand Weather. Dashboard visibility can still hide a card.</li>
+<li><strong>Modem audio but no live decode:</strong> verify input/channel/routing, avoid clipping or audio processing, and compare a recording with Test with a WAV recording. Green audio does not establish APRS content.</li>
+<li><strong>Channel busy blocks TX:</strong> inspect the active Channel wait ON/OFF status. Uncheck Wait for clear channel to bypass it immediately. Check the app version if the new control is missing.</li>
+<li><strong>RF connected but manual TX unavailable:</strong> enable/apply modem TX or check external-interface receive-only restrictions. A position beacon also requires coordinates. APRS-IS sends require verification.</li>
+<li><strong>No persistent lines:</strong> RF reception paths require RF stations and known hop positions. Enable Show RF lines, the RF source and a suitable time window. APRS-IS animations are intentionally temporary.</li>
+<li><strong>Modem startup error:</strong> reconnect the saved radio audio/COM devices, refresh and reapply settings. The application does not choose an unrelated device silently.</li>
+<li><strong>Map tiles fail:</strong> return to default OSM or check custom/local URL, required key, connectivity and attribution. Previously cached tiles only cover downloaded areas/zooms.</li>
+<li><strong>Remote changes denied:</strong> sign in using the lock button in that browser. A different computer's local session does not grant access.</li>
+<li><strong>Messages/notifications missing:</strong> check routes, verification, acknowledgements, retention, quiet hours, cooldowns and provider credentials. Use diagnostics without treating a browser connection as RF proof.</li>
+</ul>
+<h3 id="help-guide-updates-data-backups-and-deployment">Updates, data, backups and deployment</h3>
+<p>About/Help shows version/build, attribution, diagnostics, update information and guide links. <strong>What's new</strong> appears once after an application update and identifies the version and changes. Supported Windows setup releases can download an installer and show download/launch/reconnection progress. Quit or stop transmit before manually replacing a running development installation. Development builds do not automatically install stable-channel updates.</p>
+<p>Stable v1.12.0 and the modem development application use separate executables, installation/data directories and configuration. The development default dashboard is <strong>127.0.0.1:14502</strong>. Its Windows data directory is <strong>%LOCALAPPDATA%/APRSPropViewelopment</strong>. The stable/default deployment port may differ; use the address configured for that installation. Do not copy live database files during writes; use supported exports or stop the application for a full data-directory backup. Configuration export/import does not substitute for backing up credentials and the database.</p>
+<p>Source, Windows installer/portable, Linux/Raspberry Pi service, Docker and macOS workflows are documented in README and the deployment guides. Run the development modem on supported audio/serial dependencies and verify device access for the account running it. A headless server does not gain browser GPS or radio audio merely because a dashboard is open remotely.</p>
+<h3 id="help-guide-mqtt-callbook-and-integration">MQTT, callbook and integration</h3>
+<p>MQTT publishes configured propagation, station, alert/event and Home Assistant discovery/state data. Set broker, port, topic prefix, credentials, device identity and watched callsigns. Keep Home Assistant discovery identifiers stable and verify a broker subscription when diagnosing delivery. MQTT configuration reconnects live when supported by the save feedback.</p>
+<p>Callbook lookup supports configured QRZ/HamQTH credentials and provider selection. Integration availability, source health and credentials are independent of APRS packet reception. Configuration and analytics export/import support backups and external work; protect exported settings containing credentials. The HTTP dashboard/API remains subject to the same public/operator access rules.</p>
+<h3 id="help-guide-more-information">More information</h3>
+<p>Use <strong>About/Help â†’ Illustrated Quick Start</strong> for the guided tour. The in-app guide and Full HTML Documentation are generated from this guide. Source-distribution companions provide <a href="/static/guides/PUBLIC_HOSTING.html">public-hosting details</a>, <a href="/static/guides/DEVELOPMENT_MODEM.html">modem test instructions</a>, <a href="/static/guides/linux-raspberry-pi.html">Linux/Raspberry Pi deployment</a>, and <a href="/static/guides/docker.html">Docker deployment</a>. License, trademarks and bundled third-party notices remain applicable; the modem is an original implementation, not GrayWolf or Dire Wolf source.</p>
 
             </div>
         </div>
@@ -2865,9 +2807,12 @@
     <script defer src="/static/js/stations.js?v=__ASSET_VERSION__"></script>
     <script defer src="/static/js/icons.js"></script>
     <script defer src="/static/js/analytics.js?v=__ASSET_VERSION__"></script>
+    <script defer src="/static/js/software-modem.js?v=__ASSET_VERSION__"></script>
+    <script defer src="/static/js/aprs-spot.js?v=__ASSET_VERSION__"></script>
     <script defer src="/static/js/messages.js?v=__ASSET_VERSION__"></script>
     <script defer src="/static/js/weather.js?v=__ASSET_VERSION__"></script>
     <script defer src="/static/js/alert-audio.js?v=__ASSET_VERSION__"></script>
+    <script defer src="/static/js/header-image.js?v=__ASSET_VERSION__"></script>
     <script defer src="/static/js/propagation-evidence.js?v=__ASSET_VERSION__"></script>
     <script defer src="/static/js/source-health.js?v=__ASSET_VERSION__"></script>
     <script defer src="/static/js/space-weather.js?v=__ASSET_VERSION__"></script>

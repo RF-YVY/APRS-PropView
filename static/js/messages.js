@@ -149,6 +149,8 @@ window.pvMessages = (function () {
     }
 
     async function loadMessages() {
+        await window.pvOperator.ready;
+        if (!window.pvOperator.authenticated) return;
         try {
             loadReadTimestamps();
             const [resp, contactResp] = await Promise.all([
@@ -189,7 +191,7 @@ window.pvMessages = (function () {
         if (
             msg.direction === 'rx' &&
             msg.to &&
-            msg.to.toUpperCase() === myCallsign
+            isLocalReply(msg)
         ) {
             showBanner(msg.from, msg.text);
         }
@@ -236,6 +238,13 @@ window.pvMessages = (function () {
         return messages.filter(msg => conversationCall(msg) === call);
     }
 
+    function isLocalReply(msg) {
+        if (normalizeCall(msg.to) === myCallsign) return true;
+        return normalizeCall(msg.from) === 'APSPOT' && messages.some(sent =>
+            sent.direction === 'tx' && normalizeCall(sent.to) === 'APSPOT' &&
+            normalizeCall(sent.from) === normalizeCall(msg.to));
+    }
+
     function hasUnread(callsign) {
         const call = normalizeCall(callsign);
         if (!call) return false;
@@ -243,7 +252,7 @@ window.pvMessages = (function () {
         return messages.some(msg =>
             msg.direction === 'rx' &&
             conversationCall(msg) === call &&
-            normalizeCall(msg.to) === myCallsign &&
+            isLocalReply(msg) &&
             Number(msg.timestamp || 0) > readAt
         );
     }

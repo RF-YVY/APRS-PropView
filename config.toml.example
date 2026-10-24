@@ -82,7 +82,7 @@ port = 8001
 #rx_only_is = false
 
 [web]
-host = "127.0.0.1"
+host = "0.0.0.0"
 port = 14501
 # Browser used when APRS PropView opens the UI at launch.
 # Leave blank for the system default, or use "none" to disable startup browser launch.

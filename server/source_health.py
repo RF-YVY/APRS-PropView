@@ -62,14 +62,16 @@ def build_source_health(
     sources = []
 
     enabled_ports = [port for port in getattr(config, "rf_ports", []) if getattr(port, "enabled", False)]
+    runtime_interfaces = connection_status.get("rf_interfaces", [])
+    interface_count = max(len(enabled_ports), len(runtime_interfaces))
     rf_connected = bool(connection_status.get("rf_connected"))
     rf_age = _age(now, getattr(tracker, "_last_rf_packet_time", 0))
-    if not enabled_ports:
+    if not interface_count:
         rf_state = "disabled"
     elif not rf_connected:
         rf_state = "offline"
     elif rf_age is None:
-        rf_state = "waiting"
+        rf_state = "listening"
     elif rf_age <= 900:
         rf_state = "live"
     else:
@@ -78,10 +80,10 @@ def build_source_health(
         "id": "rf",
         "label": "RF receiver",
         "state": rf_state,
-        "enabled": bool(enabled_ports),
+        "enabled": bool(interface_count),
         "age_seconds": rf_age,
         "expected_seconds": None,
-        "detail": f"{sum(1 for item in connection_status.get('rf_interfaces', []) if item.get('connected'))}/{len(enabled_ports)} interfaces connected",
+        "detail": f"{sum(1 for item in connection_status.get('rf_interfaces', []) if item.get('connected'))}/{interface_count} interfaces connected" + ("; listening, no RF packets decoded this session" if rf_state == "listening" else ""),
         "error": next((str(item.get("last_error")) for item in connection_status.get("rf_interfaces", []) if item.get("last_error")), ""),
     })
 

@@ -15,7 +15,7 @@ config.toml, propview.db, map_tile_cache/, and user_audio/ in:
 """
 
 import os
-import shutil
+import plistlib
 import subprocess
 import sys
 from pathlib import Path
@@ -101,11 +101,8 @@ def build_icns() -> Path | None:
 
 
 def clean_build_dirs():
-    for name in ("build", "dist"):
-        path = PROJECT_ROOT / name
-        if path.exists():
-            shutil.rmtree(path)
-            print(f"  Cleaned {name}/")
+    """Keep other builds, installers and user data intact."""
+    (PROJECT_ROOT / 'build' / 'macos').mkdir(parents=True, exist_ok=True)
 
 
 def build():
@@ -114,6 +111,7 @@ def build():
     ensure_pyinstaller()
     ensure_runtime_dependencies()
     clean_build_dirs()
+    subprocess.check_call([sys.executable, str(PROJECT_ROOT / 'native/build_modem.py')])
     icon_file = build_icns()
 
     args = [
@@ -127,7 +125,10 @@ def build():
         "--windowed",
         "--onedir",
         "--specpath",
-        str(PROJECT_ROOT / "build"),
+        str(PROJECT_ROOT / "build" / "macos"),
+        "--workpath", str(PROJECT_ROOT / "build" / "macos" / "work"),
+        "--add-binary", f"{PROJECT_ROOT / 'native/bin/libpropview_modem.dylib'}{os.pathsep}native/bin",
+        "--hidden-import", "sounddevice",
         "--osx-bundle-identifier",
         BUNDLE_ID,
         "--add-data",
@@ -200,6 +201,11 @@ def build():
     if icon_file:
         args.extend(["--icon", str(icon_file)])
 
+    entitlements = PROJECT_ROOT / 'build' / 'macos' / 'entitlements.plist'
+    with entitlements.open('wb') as stream:
+        plistlib.dump({'com.apple.security.device.audio-input': True}, stream)
+    args.extend(['--osx-entitlements-file', str(entitlements)])
+
     codesign_identity = os.environ.get("MACOS_CODESIGN_IDENTITY", "").strip()
     if codesign_identity:
         args.extend(["--codesign-identity", codesign_identity])
@@ -217,13 +223,27 @@ def build():
         print(f"\n  Build finished, but {app_path} was not found.")
         sys.exit(1)
 
+    info_path = app_path / 'Contents' / 'Info.plist'
+    with info_path.open('rb') as stream:
+        info = plistlib.load(stream)
+    info['NSMicrophoneUsageDescription'] = 'Decode APRS radio packets from your selected radio audio input.'
+    info['CFBundleDisplayName'] = APP_NAME
+    with info_path.open('wb') as stream:
+        plistlib.dump(info, stream)
+    # Editing the bundle metadata invalidates its signature; sign the final bundle.
+    sign = ['codesign', '--force', '--deep', '--sign', codesign_identity or '-',
+            '--entitlements', str(entitlements)]
+    if codesign_identity:
+        sign.extend(['--options', 'runtime', '--timestamp'])
+    subprocess.check_call([*sign, str(app_path)])
+
     print("\n  Build successful!")
     print(f"  App bundle: {app_path}")
     print("\n  To test locally:")
     print(f"    open {app_path!s}")
     print("\n  User data will be created in:")
     print("    ~/Library/Application Support/APRS PropView/")
-    print("\n  This build is unsigned unless MACOS_CODESIGN_IDENTITY was set.\n")
+    print("\n  This build is ad-hoc signed unless MACOS_CODESIGN_IDENTITY was set.\n")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,339 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>linux-raspberry-pi</title><style>body{margin:0;background:#101820;color:#e5edf3;font:16px/1.65 system-ui,sans-serif}main{max-width:980px;margin:auto;padding:32px 24px 70px}h1,h2,h3{line-height:1.25;color:#fff}h2{margin-top:2.3em;border-bottom:1px solid #405361;padding-bottom:10px;scroll-margin-top:18px}a{color:#79c9ff}code{background:#243441;padding:2px 5px;border-radius:3px}li{margin:.5em 0}nav{padding:18px 24px;background:#1a2b38;border:1px solid #405361;border-radius:10px}nav ul{columns:2;padding-left:20px}nav li{break-inside:avoid}p,li{overflow-wrap:anywhere}@media(max-width:600px){nav ul{columns:1}main{padding:18px}}</style></head><body><main><nav aria-label="Contents"><strong>Contents</strong><ul><li><a href="#recommended-hardware">Recommended Hardware</a></li><li><a href="#install-system-packages">Install System Packages</a></li><li><a href="#get-the-source">Get The Source</a></li><li><a href="#update-to-v1-9-0">Update To v1.9.0</a></li><li><a href="#remote-mobile-companion-with-tailscale">Remote Mobile Companion With Tailscale</a></li><li><a href="#install-as-a-service">Install As A Service</a></li><li><a href="#configure">Configure</a></li><li><a href="#service-commands">Service Commands</a></li><li><a href="#troubleshooting-dependency-installs">Troubleshooting Dependency Installs</a></li><li><a href="#serial-tnc-notes">Serial TNC Notes</a></li><li><a href="#gps-ingestion-notes">GPS Ingestion Notes</a></li><li><a href="#offline-map-tiles">Offline Map Tiles</a></li><li><a href="#smart-beaconing">Smart Beaconing</a></li><li><a href="#direwolf-agwpe-or-tcp-rf-ports">Direwolf, AGWPE, Or TCP RF Ports</a></li><li><a href="#private-or-local-aprs-is-servers">Private Or Local APRS-IS Servers</a></li><li><a href="#scheduled-bulletins-and-aprs-objects">Scheduled Bulletins And APRS Objects</a></li><li><a href="#mqtt-integration">MQTT Integration</a></li><li><a href="#firewall">Firewall</a></li><li><a href="#updating">Updating</a></li><li><a href="#uninstall">Uninstall</a></li></ul></nav><h1>Linux and Raspberry Pi Install</h1>
+<p>This guide installs APRS PropView as a Python virtualenv application managed by
+systemd. It works well on Raspberry Pi OS, Debian, and Ubuntu.</p>
+<h2 id="recommended-hardware">Recommended Hardware</h2>
+<ul>
+<li>Raspberry Pi 4 or newer, Raspberry Pi 3, or any small Linux host</li>
+<li>Raspberry Pi OS 64-bit, Debian, or Ubuntu</li>
+<li>Network access for APRS-IS and the web dashboard</li>
+<li>Optional KISS TNC over USB serial, Bluetooth serial, or TCP</li>
+<li>Optional Direwolf KISS TCP or AGWPE TCP service</li>
+</ul>
+<h2 id="install-system-packages">Install System Packages</h2>
+<p>On Raspberry Pi OS, Debian, or Ubuntu:</p>
+<pre><code class="language-bash">sudo apt update
+sudo apt install -y git python3 python3-venv python3-pip rsync
+</code></pre>
+<p>APRS PropView requires Python 3.11 or newer. Raspberry Pi OS / Debian 11
+(bullseye) commonly installs Python 3.9 as <code>python3</code>; use a newer Python by
+setting <code>PYTHON_BIN</code> when running the installer, or upgrade to an OS release
+that provides Python 3.11+.</p>
+<h2 id="get-the-source">Get The Source</h2>
+<pre><code class="language-bash">git clone https://github.com/RF-YVY/APRS-PropView.git
+cd APRS-PropView
+</code></pre>
+<p>If you already have the source on the Pi, run the installer from the repository
+root.</p>
+<h2 id="update-to-v1-9-0">Update To v1.9.0</h2>
+<p>For an existing Linux or Raspberry Pi service install, update the repository,
+rerun the installer so <code>/opt/aprs-propview</code> receives the new application files,
+and restart the service:</p>
+<pre><code class="language-bash">git pull
+sudo bash ./scripts/install_linux.sh
+sudo systemctl restart aprs-propview
+</code></pre>
+<p>Version 1.9.0 adds live packet-flow animation to the APRS map, including
+station transmit bursts, directional movement, digipeater hop visualization,
+and selectable Off, Basic, and Enhanced modes. Existing <code>config.toml</code>,
+<code>propview.db</code>, cached map tiles, and user audio files are preserved by the
+installer.</p>
+<p>If you run the app as a headless Pi service and do not want browser launch
+attempts, set <code>[web].launch_browser = &quot;none&quot;</code> in <code>config.toml</code> or choose
+<code>Do not open automatically</code> in Settings - Web Interface.</p>
+<h2 id="remote-mobile-companion-with-tailscale">Remote Mobile Companion With Tailscale</h2>
+<p>For phone access away from home, install Tailscale on the Pi and on the phone,
+join both to the same tailnet, then bind PropView to all local interfaces:</p>
+<pre><code class="language-toml">[web]
+host = &quot;0.0.0.0&quot;
+port = 14501
+</code></pre>
+<p>Restart the service and open the mobile view from the phone:</p>
+<pre><code class="language-text">http://&lt;pi-tailscale-ip&gt;:14501/mobile
+</code></pre>
+<p>Use Tailscale, WireGuard, or another private VPN rather than public port
+forwarding. If mobile GPS should feed PropView, set GPS source to
+<code>browser</code> or <code>any</code>, open the mobile page, tap Share GPS, and grant browser
+location permission.</p>
+<h2 id="install-as-a-service">Install As A Service</h2>
+<pre><code class="language-bash">sudo bash ./scripts/install_linux.sh
+</code></pre>
+<p>By default this installs to <code>/opt/aprs-propview</code>, creates a virtualenv, installs
+Python dependencies, writes <code>/etc/systemd/system/aprs-propview.service</code>, enables
+the service, and adds the install user to the <code>dialout</code> group when that group
+exists.</p>
+<p>To install for a specific Linux user:</p>
+<pre><code class="language-bash">sudo APRS_PROPVIEW_USER=pi bash ./scripts/install_linux.sh
+</code></pre>
+<p>To install with a specific Python 3.11+ interpreter:</p>
+<pre><code class="language-bash">sudo PYTHON_BIN=/path/to/python3.11 bash ./scripts/install_linux.sh
+</code></pre>
+<p>Set <code>PYTHON_BIN</code> on the same <code>sudo</code> command line as shown above. Running
+<code>export PYTHON_BIN=/path/to/python3.11</code> before <code>sudo bash ...</code> may not work
+because many systems do not preserve user environment variables through <code>sudo</code>.</p>
+<p>To choose a different install directory or service name:</p>
+<pre><code class="language-bash">sudo INSTALL_DIR=/srv/aprs-propview SERVICE_NAME=aprs-propview bash ./scripts/install_linux.sh
+</code></pre>
+<h2 id="configure">Configure</h2>
+<p>The installer creates <code>/opt/aprs-propview/config.toml</code> from
+<code>config.toml.example</code> if no config exists yet.</p>
+<p>Start the service:</p>
+<pre><code class="language-bash">sudo systemctl start aprs-propview
+</code></pre>
+<p>Then open the web UI:</p>
+<pre><code class="language-text">http://&lt;pi-ip-address&gt;:14501
+</code></pre>
+<p>If the web UI should be reachable from other machines on the LAN, set this in
+<code>/opt/aprs-propview/config.toml</code>:</p>
+<pre><code class="language-toml">[web]
+host = &quot;0.0.0.0&quot;
+port = 14501
+</code></pre>
+<p>Restart after changing the file:</p>
+<pre><code class="language-bash">sudo systemctl restart aprs-propview
+</code></pre>
+<h2 id="service-commands">Service Commands</h2>
+<pre><code class="language-bash">sudo systemctl start aprs-propview
+sudo systemctl stop aprs-propview
+sudo systemctl restart aprs-propview
+sudo systemctl status aprs-propview
+journalctl -u aprs-propview -f
+</code></pre>
+<h2 id="troubleshooting-dependency-installs">Troubleshooting Dependency Installs</h2>
+<p>If <code>pip install -r requirements.txt</code> fails while building <code>uvloop</code> on a
+Raspberry Pi or other 32-bit ARM Linux system, update to the latest APRS
+PropView requirements and reinstall. <code>uvloop</code> is an optional Uvicorn performance
+extra, not required by APRS PropView.</p>
+<p>For an existing virtualenv created from older requirements:</p>
+<pre><code class="language-bash">source /opt/aprs-propview/.venv/bin/activate
+pip uninstall -y uvloop
+pip install -r /opt/aprs-propview/requirements.txt
+</code></pre>
+<h2 id="serial-tnc-notes">Serial TNC Notes</h2>
+<p>USB serial TNCs commonly appear as:</p>
+<pre><code class="language-text">/dev/ttyUSB0
+/dev/ttyACM0
+</code></pre>
+<p>Use that device path in <code>config.toml</code>:</p>
+<pre><code class="language-toml">[kiss_serial]
+enabled = true
+port = &quot;/dev/ttyUSB0&quot;
+baudrate = 9600
+mode = &quot;kiss&quot;
+flow_control = &quot;none&quot;
+</code></pre>
+<p>The installer adds the service user to the <code>dialout</code> group when available. Log
+out and back in, or reboot, if you are testing serial access manually as that
+user.</p>
+<h2 id="gps-ingestion-notes">GPS Ingestion Notes</h2>
+<p>APRS PropView can use live GPS data on Linux/Pi systems after GPS ingestion is
+enabled in Settings. The most common Pi/mobile options are:</p>
+<ul>
+<li><strong>This browser/device</strong> - Use a phone, tablet, or laptop browser that has
+location permission. This is useful when the Pi is running the service but the
+browser device is what knows the current position.</li>
+<li><strong>Own APRS position packets</strong> - Use position packets from your own radio,
+tracker, or TNC setup. This works well with mobile APRS setups where the TNC
+or radio is already feeding current position packets into APRS PropView.</li>
+<li><strong>NMEA serial GPS</strong> - Use a USB GPS puck or GPS-enabled TNC that exposes NMEA
+sentences on a serial device such as <code>/dev/ttyUSB0</code> or <code>/dev/ttyACM0</code>.</li>
+<li><strong>NMEA TCP stream</strong> - Connect to a local or network service that emits NMEA
+GPS sentences over TCP.</li>
+<li><strong>NMEA UDP listener</strong> - Listen for NMEA sentences sent over UDP from another
+app or device on the LAN.</li>
+<li><strong>gpsd daemon</strong> - Connect to gpsd on the Pi or another LAN host. This is a
+good default for Linux systems where gpsd already owns the USB GPS device.</li>
+<li><strong>Any source</strong> - Accept the latest valid fix from any supported GPS source.
+This is helpful for testing or fallback setups, but a specific source gives
+clearer status if a device is missing.</li>
+</ul>
+<p>For serial GPS on Linux, use the device path in Settings or <code>config.toml</code>:</p>
+<pre><code class="language-toml">[gps]
+enabled = true
+source = &quot;nmea_serial&quot;
+serial_port = &quot;/dev/ttyUSB0&quot;
+serial_baudrate = 9600
+map_update_enabled = true
+update_station_position = false
+station_position_locked = true
+</code></pre>
+<p>Keep <code>station_position_locked = true</code> if GPS should move only the map marker and
+not overwrite the configured station latitude/longitude.</p>
+<p>For gpsd, leave gpsd on its normal port and select <code>gpsd</code>:</p>
+<pre><code class="language-toml">[gps]
+enabled = true
+source = &quot;gpsd&quot;
+gpsd_host = &quot;127.0.0.1&quot;
+gpsd_port = 2947
+map_update_enabled = true
+update_station_position = false
+station_position_locked = true
+</code></pre>
+<h2 id="offline-map-tiles">Offline Map Tiles</h2>
+<p>The web map can use a local XYZ tile server, which is the simplest path for
+field or grid-down use after you have cached the area you care about:</p>
+<pre><code class="language-toml">[web]
+map_tile_source = &quot;custom&quot;
+map_tile_url = &quot;http://127.0.0.1:8080/tile/{z}/{x}/{y}.png&quot;
+map_tile_attribution = &quot;OpenStreetMap contributors&quot;
+map_tile_max_zoom = 14
+</code></pre>
+<p>Prepare the OpenStreetMap tiles ahead of time and keep the cached zoom range
+modest. Higher zoom levels multiply storage quickly, especially for wide-area
+mobile use.</p>
+<p>The map <strong>Cache</strong> button stores the current view and zoom in <code>map_tile_cache/</code>.
+Use it while internet is available for the areas you expect to need offline.
+PropView serves map tiles through its local <code>/api/map-tiles/{z}/{x}/{y}</code> proxy,
+so cached tiles continue to display when the upstream OSM or custom XYZ tile
+server is offline. Cache each zoom level you care about separately; already
+cached tiles are reused, while uncached missing tiles remain blank until the
+upstream source is reachable again.</p>
+<h2 id="smart-beaconing">Smart Beaconing</h2>
+<p>Smart beaconing can vary the station beacon interval from GPS speed. This is
+useful for portable and mobile Pi installs where a stopped station should beacon
+slowly, but a moving station should update more often.</p>
+<pre><code class="language-toml">[smart_beaconing]
+enabled = true
+slow_interval = 1800
+fast_interval = 120
+speed_threshold_mph = 10.0
+</code></pre>
+<p>APRS PropView keeps APRS-IS-safe minimums when saving settings. Enable GPS
+ingestion first so the app has a current speed source.</p>
+<h2 id="direwolf-agwpe-or-tcp-rf-ports">Direwolf, AGWPE, Or TCP RF Ports</h2>
+<p>For Direwolf or any TCP KISS source running on the same Pi:</p>
+<pre><code class="language-toml">[[rf_ports]]
+name = &quot;Direwolf KISS&quot;
+enabled = true
+type = &quot;tcp&quot;
+host = &quot;127.0.0.1&quot;
+tcp_port = 8001
+protocol = &quot;kiss&quot;
+rx_only_rf = false
+rx_only_is = false
+</code></pre>
+<p>For an AGWPE-compatible TCP source:</p>
+<pre><code class="language-toml">[[rf_ports]]
+name = &quot;AGWPE&quot;
+enabled = true
+type = &quot;tcp&quot;
+host = &quot;127.0.0.1&quot;
+tcp_port = 8000
+protocol = &quot;agwpe&quot;
+rx_only_rf = false
+rx_only_is = false
+</code></pre>
+<p>The legacy <code>[kiss_tcp]</code> and <code>[kiss_serial]</code> blocks still load for older configs,
+but new Linux/Pi installs should prefer <code>[[rf_ports]]</code> so multiple receivers,
+transmit-capable ports, and receive-only ports can be managed together.</p>
+<p>For APRS-IS-only operation, leave <code>[kiss_serial]</code>, <code>[kiss_tcp]</code>, and all
+<code>[[rf_ports]]</code> entries disabled.</p>
+<h2 id="private-or-local-aprs-is-servers">Private Or Local APRS-IS Servers</h2>
+<p>APRS PropView can receive from private/local APRS-IS-style servers and simple
+TNC2 TCP feeds that do not send the usual public-server banner or <code>logresp</code>.
+Packets arriving immediately after login are treated as receive traffic instead
+of being discarded.</p>
+<p>If the server does not verify the login with a <code>logresp</code>, PropView keeps the
+connection read-only. This allows local packet collection and map population
+without accidentally enabling APRS-IS transmit or IS-to-RF gating on an
+unverified private feed.</p>
+<h2 id="scheduled-bulletins-and-aprs-objects">Scheduled Bulletins And APRS Objects</h2>
+<p>Scheduled packet settings work the same on Linux and Pi as on Windows. They can
+be edited from Settings or in <code>config.toml</code>:</p>
+<pre><code class="language-toml">[bulletins]
+enabled = true
+interval = 1800
+mode = &quot;both&quot;
+path = &quot;WIDE1-1&quot;
+items = [{ id = &quot;1&quot;, text = &quot;Club net tonight 7PM&quot; }]
+
+[aprs_objects]
+enabled = true
+interval = 1800
+mode = &quot;both&quot;
+path = &quot;WIDE1-1&quot;
+items = [
+  { name = &quot;NET&quot;, latitude = 35.0000, longitude = -80.0000, symbol_table = &quot;/&quot;, symbol_code = &quot;r&quot;, comment = &quot;Weekly net&quot; }
+]
+</code></pre>
+<p>The map <code>Obj</code> control can also create and save object entries after you click a
+map location. Use preview buttons before enabling scheduled transmit.</p>
+<h2 id="mqtt-integration">MQTT Integration</h2>
+<p>MQTT is optional and is meant for external dashboards and automation systems,
+not for APRS transport. Enable it when you want APRS PropView status available
+to a broker such as Mosquitto, Home Assistant, Node-RED, EMQX, or another
+monitoring stack.</p>
+<p>The source install uses <code>requirements.txt</code>, which includes <code>paho-mqtt</code>. If an
+older virtualenv reports that <code>paho-mqtt</code> is missing, reinstall requirements
+inside the service virtualenv:</p>
+<pre><code class="language-bash">source /opt/aprs-propview/.venv/bin/activate
+pip install -r /opt/aprs-propview/requirements.txt
+</code></pre>
+<p>Common uses:</p>
+<ul>
+<li>Show propagation level or score on a shack dashboard.</li>
+<li>Trigger Home Assistant or Node-RED automations from propagation alerts.</li>
+<li>Log propagation metrics in another time-series or observability system.</li>
+<li>Feed a small LAN display without scraping the web UI.</li>
+</ul>
+<p>Example local Mosquitto install:</p>
+<pre><code class="language-bash">sudo apt install -y mosquitto mosquitto-clients
+sudo systemctl enable --now mosquitto
+</code></pre>
+<p>Example configuration:</p>
+<pre><code class="language-toml">[mqtt]
+enabled = true
+broker = &quot;127.0.0.1&quot;
+port = 1883
+topic_prefix = &quot;aprs/propview&quot;
+username = &quot;&quot;
+password = &quot;&quot;
+discovery_enabled = true
+discovery_prefix = &quot;homeassistant&quot;
+device_name = &quot;APRS PropView&quot;
+device_id = &quot;aprs_propview&quot;
+</code></pre>
+<p>With the default prefix, APRS PropView publishes:</p>
+<ul>
+<li><code>aprs/propview/propagation</code> - retained JSON propagation metrics.</li>
+<li><code>aprs/propview/score</code> - retained regional propagation score.</li>
+<li><code>aprs/propview/level</code> - retained regional propagation level.</li>
+<li><code>aprs/propview/event</code> - automation events such as <code>first_heard</code> and
+<code>new_max_distance</code>.</li>
+<li><code>aprs/propview/alert</code> - alert events such as band openings, anomalies,
+Sporadic-E, and first-heard direct RF alerts.</li>
+<li><code>aprs/propview/status</code> - retained <code>online</code>/<code>offline</code> availability for
+Home Assistant entities.</li>
+</ul>
+<p>When <code>discovery_enabled</code> is true, APRS PropView also publishes retained Home
+Assistant MQTT Discovery configs under <code>homeassistant/sensor/&lt;device_id&gt;/...</code>.
+Home Assistant will create sensors for My Station score/level, Regional
+score/level, RF stations heard in the last hour, and max RF distance. Keep
+<code>device_id</code> stable after discovery so Home Assistant does not create duplicate
+entities.</p>
+<p>MQTT settings saved from the web UI reconnect live. If you edit <code>config.toml</code>
+manually, restart APRS PropView so the running process loads those file changes.</p>
+<h2 id="firewall">Firewall</h2>
+<p>If a firewall is enabled, allow the web UI port:</p>
+<pre><code class="language-bash">sudo ufw allow 14501/tcp
+</code></pre>
+<h2 id="updating">Updating</h2>
+<p>From your source checkout:</p>
+<pre><code class="language-bash">git pull
+sudo bash ./scripts/install_linux.sh
+sudo systemctl restart aprs-propview
+</code></pre>
+<p>The installer preserves an existing <code>/opt/aprs-propview/config.toml</code>.
+New settings are added to <code>config.toml.example</code>; compare that file after
+updating if you want to adopt new sections such as smart beaconing, bulletins,
+APRS objects, gpsd, MQTT Discovery, or map tile caching in an older install.</p>
+<p>The in-app About tab can still show that a newer GitHub release exists on
+Linux and Raspberry Pi systems, but Windows setup installer actions are hidden.
+Use the source update flow above for service installs.</p>
+<h2 id="uninstall">Uninstall</h2>
+<p>Remove the service but keep config, database, and installed files:</p>
+<pre><code class="language-bash">sudo bash ./scripts/uninstall_linux.sh
+</code></pre>
+<p>Remove the service and <code>/opt/aprs-propview</code>:</p>
+<pre><code class="language-bash">sudo REMOVE_DATA=1 bash ./scripts/uninstall_linux.sh
+</code></pre>
+<p><a href="/static/documentation.html">Full user guide</a> Ã‚Â· <a href="/">Dashboard</a></p></main></body></html>

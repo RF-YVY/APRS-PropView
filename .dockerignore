@@ -19,9 +19,15 @@ dist
 map_tile_cache
 user_audio
 config.toml
+operator-auth.json
+operator-auth.json.*
 propview.db
 flows_cred.json
 node_modules
 npm-debug.log
 Thumbs.db
 .DS_Store
+
+operator-desktop.json
+release-state.json
+operator-update-session.json

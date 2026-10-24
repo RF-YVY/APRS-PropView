@@ -1,0 +1,104 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PUBLIC HOSTING</title><style>body{margin:0;background:#101820;color:#e5edf3;font:16px/1.65 system-ui,sans-serif}main{max-width:980px;margin:auto;padding:32px 24px 70px}h1,h2,h3{line-height:1.25;color:#fff}h2{margin-top:2.3em;border-bottom:1px solid #405361;padding-bottom:10px;scroll-margin-top:18px}a{color:#79c9ff}code{background:#243441;padding:2px 5px;border-radius:3px}li{margin:.5em 0}nav{padding:18px 24px;background:#1a2b38;border:1px solid #405361;border-radius:10px}nav ul{columns:2;padding-left:20px}nav li{break-inside:avoid}p,li{overflow-wrap:anywhere}@media(max-width:600px){nav ul{columns:1}main{padding:18px}}</style></head><body><main><nav aria-label="Contents"><strong>Contents</strong><ul><li><a href="#first-setup-and-lost-passwords">First setup and lost passwords</a></li><li><a href="#sign-in-once-operate-until-expiry">Sign in once, operate until expiry</a></li><li><a href="#public-hosting">Public hosting</a></li><li><a href="#upgrading-existing-installations">Upgrading existing installations</a></li><li><a href="#what-s-new-after-an-update">What&#x27;s new after an update</a></li><li><a href="#finding-operator-access">Finding operator access</a></li></ul></nav><h1>Public dashboard and operator access</h1>
+<p>The dashboard is read-only until a browser signs in as an operator. Publishing
+the dashboard does <strong>not</strong> grant viewers permission to transmit, edit settings,
+read messages/contacts, export configuration, or install updates.</p>
+<h2 id="first-setup-and-lost-passwords">First setup and lost passwords</h2>
+<p>On first desktop launch, PropView opens a <strong>Set your operator password</strong>
+window on the host computer. Enter and confirm a password of 6–256 characters.
+Use <strong>Set/reset operator password</strong> in the application's tray menu or Windows
+Start menu to change or recover it later. Recovery replaces the forgotten
+password and revokes existing sessions; the old password cannot be retrieved.
+No PowerShell commands, email service, cloud account, or public reset endpoint
+are needed. Cancelling setup leaves operator functions locked.</p>
+<p>The password window includes <strong>Automatically sign in browsers opened by this
+computer</strong> (enabled by default). Startup, the tray's <strong>Open PropView</strong>, and
+reopening the normal shortcut while PropView is running open that computer's
+browser with a single-use capability that expires after 90 seconds. The
+capability travels in a URL fragment, is immediately removed, and can be
+exchanged only once, at its intended origin, for an 8-hour browser session.
+No public HTTP endpoint returns a local login token. A protected local launcher file
+lets the ordinary shortcut ask the existing backend to open its own browser;
+the HTTP response never contains a login token or operator session.</p>
+<p>Remote browsers still need their own password login. Typing the address manually
+in another browser does not automatically sign it in. Opening the host app does
+not grant access to any public viewers or to other browser profiles.</p>
+<p>The credential verifier is stored as <code>operator-auth.json</code> beside the active
+configuration, separate from settings exports/imports. Only a salted PBKDF2-SHA256 verifier is saved. Restrict access
+to that directory to trusted host users. Back up the verifier separately if
+desired; it is deliberately excluded from Git and Docker build contexts.</p>
+<p>Resetting the password revokes all sessions, including sessions on a running
+backend. A missing or corrupt verifier leaves operator functions locked. The
+first website visitor cannot create a password. No default password exists.</p>
+<h2 id="sign-in-once-operate-until-expiry">Sign in once, operate until expiry</h2>
+<p>Choose <strong>Operator sign in</strong> in the browser. Pick <strong>15 minutes</strong>, <strong>1 hour</strong>
+(default), or <strong>8 hours</strong>. Settings and manual transmit controls become
+available until the chosen absolute expiry. Normal activity does not silently
+extend the session. <strong>Extend session</strong> requires the password again.</p>
+<p><strong>Lock now</strong> revokes only that browser session immediately. Expiry returns the
+browser to the public dashboard. Ordinary backend restarts also revoke sessions. A planned in-app update may carry over only the exact local browser session that initiated it, without extending its expiry; other viewers gain no access.
+Scheduled beacons, digipeating, IGating and other configured background work
+continue independently of browser authentication.</p>
+<p>Each password or local launch login gets a random, host-only, HttpOnly, SameSite=Strict cookie and a
+separate anti-CSRF token. The backend checks the session for every privileged
+request. No global authenticated/unlocked flag exists. An operator signing in
+on localhost or a VPN address never unlocks another visitor's browser, even
+if both browsers share an IP or use the same reverse proxy. Localhost, VPN
+addresses, and forwarding headers never bypass authentication.</p>
+<p>Tabs in the <strong>same browser profile at the same hostname</strong> share its session,
+as with ordinary website logins. A different browser/profile/device must sign
+in independently. Cookies are scoped by hostname, so signing in at localhost
+does not sign that browser in at a public hostname. Sessions are bearer
+credentials: copying a profile/cookie can copy its access. Keep host and
+browser profiles private; do not share an operator browser profile with viewers.</p>
+<h2 id="public-hosting">Public hosting</h2>
+<ul>
+<li>Publish through an HTTPS reverse proxy. Keep PropView's backend port private
+to the host/proxy, or to a trusted VPN when operating privately.</li>
+<li>Preserve the public Host and scheme. Configure trusted proxy addresses in
+your ASGI/server deployment rather than trusting arbitrary forwarding headers.
+The normal local reverse-proxy arrangement can forward HTTPS scheme to
+Uvicorn from loopback. Cookies use Secure when the app sees HTTPS.</li>
+<li>Forward cookies per client. Never inject a shared operator cookie or cache
+operator API responses. API responses use <code>Cache-Control: no-store</code> and
+<code>Vary: Cookie</code>.</li>
+<li>Forward <code>/ws</code> for live updates. Each outgoing message is checked against
+that socket's browser session, including after logout/expiry/reset.</li>
+<li>Do not expose the installation/data directory through a web server.</li>
+</ul>
+<p>Public users can view stations, non-message packet data, propagation,
+analytics, and weather; map pan/zoom, filters, theme, and radar controls remain
+browser-local. Operator-only controls are hidden, and direct API calls are
+rejected independently of the UI. Unknown/new API endpoints require operator
+access unless explicitly added to the public read allowlist.</p>
+<p>Public configuration contains display fields only. Configuration exports,
+integration credentials, host connection details, message history/contacts,
+and detailed diagnostics require login. Public WebSocket output excludes
+messages, GPS jobs, and unknown event types. Custom base-map credentials stay
+behind the tile proxy. Custom credential-bearing radar sources are disabled
+for public viewers; built-in radar sources remain available.</p>
+<h2 id="upgrading-existing-installations">Upgrading existing installations</h2>
+<p>After installing this version, complete the host password window before trying
+to change settings or transmit manually. The old mobile PIN and browser-local
+&quot;Protect transmit settings&quot; preference do not grant operator permission.
+The mobile PIN screen is replaced by operator sign-in. Existing radio and
+scheduled services continue with their saved configuration.</p>
+<p>For unattended dashboards use public viewer mode; it does not require login.
+Automation that writes the HTTP API must obtain its own expiring login cookie
+and send the returned <code>csrf_token</code> as <code>X-PropView-CSRF</code> with each write. Do not
+reuse the operator's browser cookie in a public proxy.</p>
+<h2 id="what-s-new-after-an-update">What's new after an update</h2>
+<p>The application bundles its release notes; no external service is needed to
+load them. <strong>What's new</strong> shows the installed version and its changes the first
+time an operator opens an updated installation. <strong>Got it</strong> (or Escape) records
+dismissal for that version in <code>release-state.json</code>; routine browser refreshes,
+new browser profiles, and application restarts do not show it again. Public
+viewers cannot consume or dismiss the host's pending update notice. A fresh
+installation uses the first-run setup guide instead of an update popup.</p>
+<p>The owner-only <code>operator-desktop.json</code> launcher capability must remain private,
+just like <code>operator-auth.json</code>. These files and the temporary <code>operator-update-session.json</code> handoff do not belong in a public web directory
+or a container build context. In containers/headless deployments without a
+browser, the local shortcut/tray convenience is unavailable; remote sessions
+remain authenticated and public viewing remains read-only.</p>
+<h2 id="finding-operator-access">Finding operator access</h2>
+<p>On the desktop dashboard, click the small lock icon in the map toolbar. Its popover shows public/local/remote operator status and remaining time, with Sign in or Extend session and Lock now. The mobile companion uses a compact floating lock button when the desktop toolbar is absent. Closing this popover does not end the session; Lock now does.</p>
+<p><a href="/static/documentation.html">Full user guide</a> Ã‚Â· <a href="/">Dashboard</a></p></main></body></html>

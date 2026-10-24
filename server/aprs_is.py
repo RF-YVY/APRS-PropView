@@ -43,6 +43,7 @@ class APRSISClient:
         self._last_rx = 0.0
         self._pending_rx_lines: list[str] = []
         self._handshake_timeout = 3
+        self._message_recipients = set()
 
     async def _reset_connection(self):
         """Clear connection state and close the current socket."""
@@ -72,9 +73,35 @@ class APRSISClient:
         callsign = self.config.station.full_callsign
         passcode = self.config.aprs_is.passcode
         login = f"user {callsign} pass {passcode} vers APRSPropView {self.app_version}"
-        if self.config.aprs_is.filter:
-            login += f" filter {self.config.aprs_is.filter}"
+        effective_filter = self._effective_filter()
+        if effective_filter:
+            login += f" filter {effective_filter}"
         return login
+
+    def _effective_filter(self):
+        base = (self.config.aprs_is.filter or '').strip()
+        if self._message_recipients:
+            recipients = sorted(self._message_recipients | {self.config.station.full_callsign})
+            return (base + ' g/' + '/'.join(recipients)).strip()
+        return base
+
+    async def register_message_recipient(self, callsign):
+        """Include replies to a locally selected APSPOT operator in the live filter."""
+        from server.aprs_spot import operator_callsign
+        callsign = operator_callsign(callsign)
+        if not self.connected or not self.verified or not self.writer:
+            return False
+        if callsign == self.config.station.full_callsign or callsign in self._message_recipients:
+            return True
+        self._message_recipients.add(callsign)
+        try:
+            self.writer.write(('#filter ' + self._effective_filter() + '\r\n').encode('ascii'))
+            await self.writer.drain()
+            return True
+        except Exception:
+            self._message_recipients.discard(callsign)
+            await self._reset_connection()
+            return False
 
     async def connect(self):
         """Connect to APRS-IS with auto-reconnect and exponential backoff."""

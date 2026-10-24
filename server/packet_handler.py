@@ -39,7 +39,8 @@ class PacketHandler:
     ):
         self.config = config
         self.tracker = tracker
-        self.digipeater = digipeater
+        # Keep the service available when settings enable it after startup.
+        self.digipeater = digipeater if digipeater is not None else Digipeater(config)
         self.igate = igate
         self.ws = ws_manager
         self.aprs_is = None
@@ -403,6 +404,15 @@ class PacketHandler:
         from_call = packet.from_call.upper()
         is_local_addressee = self._is_local_message_addressee(addressee)
         is_exact_addressee = addressee == my_call
+        spot_reply = from_call == 'APSPOT' and any(
+            msg.get('direction') == 'tx' and msg.get('to', '').upper() == 'APSPOT'
+            and msg.get('from', '').upper() == addressee
+            and msg.get('timestamp', 0) > time.time() - 86400
+            for msg in self._messages
+        )
+        is_local_addressee = is_local_addressee or spot_reply
+        is_exact_addressee = is_exact_addressee or spot_reply
+        ack_kwargs = {'sender_call': addressee} if spot_reply and addressee != my_call else {}
 
         # Handle ACK/REJ for messages we sent
         if packet.message_text and packet.message_text.startswith("ack"):
@@ -439,7 +449,7 @@ class PacketHandler:
         self._prune_recent_message_keys()
         if dedupe_key in self._recent_message_keys:
             if is_exact_addressee and packet.message_id:
-                await self._send_ack(packet.from_call, packet.message_id, source)
+                await self._send_ack(packet.from_call, packet.message_id, source, **ack_kwargs)
             return
 
         # Exact station messages can be ACKed. Sibling SSID messages are stored
@@ -448,7 +458,7 @@ class PacketHandler:
         if is_exact_addressee:
             # Send ACK if message has an ID
             if packet.message_id:
-                await self._send_ack(packet.from_call, packet.message_id, source)
+                await self._send_ack(packet.from_call, packet.message_id, source, **ack_kwargs)
                 msg_record["acked"] = True
 
             logger.info(
@@ -532,18 +542,29 @@ class PacketHandler:
             "data": {"from": from_call, "message_id": rej_id},
         }))
 
-    async def _send_ack(self, to_call: str, message_id: str, source: str):
+    async def _send_ack(self, to_call: str, message_id: str, source: str, sender_call: Optional[str] = None):
         """Send an ACK for a received message."""
         ack_info = make_ack_packet(to_call, message_id)
-        await self._send_aprs_message_raw(to_call, ack_info, source=source)
+        kwargs = {'source': source}
+        if sender_call:
+            kwargs['sender_call'] = sender_call
+        await self._send_aprs_message_raw(to_call, ack_info, **kwargs)
 
     async def send_message(
         self,
         to_call: str,
         text: str,
         preferred_source: Optional[str] = None,
+        require_delivery: bool = False,
+        sender_call: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Send an APRS message to another station. Returns the message record."""
+        if sender_call is not None:
+            from server.aprs_spot import operator_callsign
+            if to_call.upper() != 'APSPOT' or not require_delivery:
+                raise ValueError('Operator callsign override is available for APSPOT requests only.')
+            sender_call = operator_callsign(sender_call)
+        sender = sender_call or self.config.station.full_callsign
         msg_id = str(self._msg_id_counter)
         self._msg_id_counter += 1
 
@@ -552,7 +573,7 @@ class PacketHandler:
 
         msg_record = {
             "timestamp": time.time(),
-            "from": self.config.station.full_callsign,
+            "from": sender,
             "to": to_call.strip(),
             "text": text,
             "message_id": msg_id,
@@ -560,6 +581,16 @@ class PacketHandler:
             "direction": "tx",
             "acked": False,
         }
+
+        if require_delivery:
+            if resolved_source == 'aprs_is' and sender_call:
+                if not await self.aprs_is.register_message_recipient(sender):
+                    raise ValueError('Could not prepare the APRS-IS reply path. Check the connection before retrying.')
+            kwargs = {'source': resolved_source}
+            if sender_call:
+                kwargs['sender_call'] = sender_call
+            if not await self._send_aprs_message_raw(to_call, info, **kwargs):
+                raise ValueError("The selected transport did not accept the message. Check its connection and transmit settings.")
 
         persisted = await self.tracker.db.add_message(
             direction="tx",
@@ -576,11 +607,12 @@ class PacketHandler:
         self._messages.appendleft(msg_record)
         self.stats["messages_tx"] += 1
 
-        await self._send_aprs_message_raw(to_call, info, source=resolved_source)
+        if not require_delivery:
+            await self._send_aprs_message_raw(to_call, info, source=resolved_source)
 
         logger.info(
             f"Message TX ({resolved_source}): "
-            f"{self.config.station.full_callsign} → {to_call}: {text}"
+            f"{sender} → {to_call}: {text}"
         )
 
         # Broadcast to web clients
@@ -596,9 +628,11 @@ class PacketHandler:
         to_call: str,
         info: str,
         source: str = "both",
+        sender_call: Optional[str] = None,
     ):
-        """Send an APRS info field on the requested transport."""
-        my_call = self.config.station.full_callsign
+        """Send an APRS info field; return whether a transport accepted it."""
+        delivered = False
+        my_call = sender_call or self.config.station.full_callsign
         send_rf = source in {"rf", "both"}
         send_is = source in {"aprs_is", "both"}
 
@@ -612,14 +646,18 @@ class PacketHandler:
             frame.digipeaters = [AX25Address.from_string("WIDE1-1")]
             frame.info = info.encode("latin-1")
             if await self._transmit_rf(frame):
+                delivered = True
                 await self._record_tx_packet(frame.to_aprs_string(), "RF TX")
 
         # Send on APRS-IS
         if send_is and self.aprs_is and self.aprs_is.connected:
             is_packet = f"{my_call}>APPRPV,TCPIP*:{info}"
             if await self.aprs_is.send(is_packet):
+                delivered = True
                 self.stats["is_tx"] += 1
                 await self._record_tx_packet(is_packet, "APRS-IS TX")
+
+        return delivered
 
     def get_messages(self, limit: int = 100) -> List[Dict[str, Any]]:
         """Return recent messages (newest first)."""

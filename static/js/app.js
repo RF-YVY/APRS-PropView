@@ -91,6 +91,8 @@
     }
 
     async function loadBrowserOptions() {
+        await window.pvOperator.ready;
+        if (!window.pvOperator.authenticated) return;
         const select = document.getElementById('cfg-web-launch-browser');
         if (!select) return;
         const saved = serverConfig?.web?.launch_browser || '';
@@ -389,6 +391,7 @@
     // ── Tab switching ──────────────────────────────────────────
 
     function _activateDesktopTab(tabId, persist = true) {
+        if (['tab-settings', 'tab-messages'].includes(tabId) && !window.pvOperator?.authenticated) tabId = 'tab-rf';
         const btn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
         if (!btn) return;
 
@@ -1798,7 +1801,8 @@
         const modeEl = document.getElementById('manual-beacon-mode');
         if (!btn || !statusEl || !modeEl) return;
 
-        const beacon = status?.beacon || null;
+        const rawBeacon = status?.beacon || null;
+        const beacon = rawBeacon ? { ...rawBeacon, rf_available: rawBeacon.rf_tx_available ?? rawBeacon.rf_available } : null;
         const mode = modeEl.value || 'both';
         const canTransmit =
             !!beacon?.has_position &&
@@ -2405,33 +2409,68 @@
         });
     }
 
+    let updateInstallPending = false;
     async function installUpdate() {
+        if (updateInstallPending) return;
+        updateInstallPending = true;
         const btn = document.getElementById('btn-install-update');
-        const detailEl = document.getElementById('about-update-detail');
-        if (btn) btn.disabled = true;
-        if (detailEl) detailEl.textContent = 'Downloading update installer...';
-        let updateHandoffStarted = false;
+        const detail = document.getElementById('about-update-detail');
+        const notice = document.createElement('div');
+        notice.className = 'update-install-progress';
+        notice.setAttribute('role', 'status');
+        document.body.appendChild(notice);
+        const report = (text, label) => {
+            notice.textContent = text;
+            if (detail) detail.textContent = text;
+            if (btn) btn.textContent = label;
+        };
+        if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true'); }
+        report('Checking the release and preparing your update...', 'Preparing...');
+        let handoff = false, stopped = false, timer, originalInstance;
+        const started = Date.now();
+        const poll = async () => {
+            try {
+                const response = await fetch('/api/update-install-status', {
+                    cache: 'no-store', signal: AbortSignal.timeout(5000),
+                });
+                if (response.ok) {
+                    const status = await response.json();
+                    if (!originalInstance) originalInstance = status.instance;
+                    if (handoff && originalInstance && status.instance !== originalInstance) {
+                        stopped = true;
+                        report('Update complete. Refreshing this tab...', 'Refreshing...');
+                        window.location.reload();
+                        return;
+                    }
+                    if (!handoff && status.phase === 'downloading') {
+                        const mb = (status.downloaded_bytes / 1048576).toFixed(1);
+                        const progress = status.total_bytes > 0
+                            ? `${Math.min(100, Math.round(status.downloaded_bytes * 100 / status.total_bytes))}% (${mb} MB)`
+                            : `${mb} MB received`;
+                        report(`Downloading update: ${progress}. Please keep this tab open.`, 'Downloading...');
+                    }
+                }
+            } catch (_) { /* Backend is expected to be unavailable during setup. */ }
+            if (!stopped && Date.now() - started < 20 * 60 * 1000) {
+                timer = setTimeout(poll, 2000);
+            } else if (!stopped) {
+                report('Still waiting for APRS PropView. Finish setup with Launch APRS PropView selected. If needed, launch the desktop shortcut and refresh this tab.', 'Waiting for app...');
+            }
+        };
+        await poll();
         try {
             const resp = await fetch('/api/update-install', { method: 'POST' });
             const data = await resp.json().catch(() => ({}));
-            if (!resp.ok || !data.success) {
-                throw new Error(data.message || `Update installer failed with HTTP ${resp.status}`);
-            }
-            updateHandoffStarted = true;
-            if (detailEl) detailEl.textContent = data.message || 'Update installer launched.';
+            if (!resp.ok || !data.success) throw new Error(data.message || `Update failed with HTTP ${resp.status}`);
+            originalInstance = originalInstance || data.instance;
+            handoff = true;
+            report('Download complete. Closing APRS PropView and opening setup; this can take a minute or more on slower PCs. Complete setup with Launch APRS PropView selected. This tab will refresh when the app is ready.', 'Waiting for setup...');
         } catch (e) {
-            console.error('Failed to launch update installer:', e);
-            const message = String(e?.message || '');
-            if (message.includes('Failed to fetch') || message.includes('NetworkError')) {
-                updateHandoffStarted = true;
-                if (detailEl) {
-                    detailEl.textContent = 'APRS PropView is closing for the update. If setup does not appear, open the downloaded installer from your temp APRSPropViewUpdates folder or GitHub releases.';
-                }
-            } else if (detailEl) {
-                detailEl.textContent = e.message || 'Could not launch update installer.';
-            }
-        } finally {
-            if (btn) btn.disabled = updateHandoffStarted;
+            stopped = true;
+            clearTimeout(timer);
+            updateInstallPending = false;
+            report(`Could not complete the update request: ${e.message}. If setup has opened, finish it and refresh this tab; otherwise retry.`, 'Retry update');
+            if (btn) { btn.disabled = false; btn.removeAttribute('aria-busy'); }
         }
     }
 
@@ -2474,6 +2513,8 @@
     }
 
     async function loadUpdateStatus(force) {
+        await window.pvOperator.ready;
+        if (!window.pvOperator.authenticated) return;
         if (updateCheckPending) return;
         updateCheckPending = true;
 
@@ -2485,7 +2526,7 @@
         const installButtonEl = document.getElementById('btn-install-update');
 
         if (buttonEl) buttonEl.disabled = true;
-        if (installButtonEl && force) installButtonEl.style.display = 'none';
+        if (installButtonEl && force && !updateInstallPending) installButtonEl.style.display = 'none';
         if (messageEl && force) messageEl.textContent = 'Checking GitHub releases...';
         if (detailEl && force) detailEl.textContent = '';
 
@@ -2519,7 +2560,7 @@
 
         if (linkEl) linkEl.href = releaseUrl;
         syncUpdateBanner(data);
-        if (installButtonEl) {
+        if (installButtonEl && !updateInstallPending) {
             const canInstallUpdate = data?.update_available && data?.installer_url && data?.installer_install_supported;
             installButtonEl.style.display = canInstallUpdate ? 'inline-flex' : 'none';
             installButtonEl.title = data?.installer_name
@@ -2527,6 +2568,7 @@
                 : 'Download and run the setup installer';
         }
 
+        if (updateInstallPending) return;
         if (data?.update_available) {
             if (messageEl) messageEl.textContent = `Update available: v${latestVersion}`;
             if (detailEl) {
@@ -3301,7 +3343,7 @@
             // Tracking
             setVal('cfg-packet-retention', cfg.database?.packet_retention_days || 7);
             setVal('cfg-history-retention', cfg.database?.history_retention_days || 30);
-            fetch('/api/storage').then(r => r.json()).then(s => { const el = document.getElementById('storage-status'); if (el) el.textContent = `Database: ${(s.size_bytes/1048576).toFixed(1)} MB; ${(s.reusable_bytes/1048576).toFixed(1)} MB reusable. Detailed history: ${s.history_retention_days} days.`; }).catch(() => {});
+            if (window.pvOperator.authenticated) fetch('/api/storage').then(r => r.json()).then(s => { const el = document.getElementById('storage-status'); if (el) el.textContent = `Database: ${(s.size_bytes/1048576).toFixed(1)} MB; ${(s.reusable_bytes/1048576).toFixed(1)} MB reusable. Detailed history: ${s.history_retention_days} days.`; }).catch(() => {});
             setVal('cfg-track-age', Math.round((cfg.tracking?.max_station_age || 0) / 60));
             setVal('cfg-track-cleanup', Math.round((cfg.tracking?.cleanup_interval || 0) / 60));
             setVal('cfg-track-blocked-callsigns', (cfg.tracking?.blocked_callsigns || []).join('\n'));
@@ -4081,7 +4123,7 @@
                 weather_alert_symbol_enabled: getChk('cfg-wx-alert-symbol'),
                 space_weather_enabled: getChk('cfg-space-weather-enabled'),
                 space_weather_alert_enabled: getChk('cfg-space-weather-alert-enabled'),
-                space_weather_alert_min_kp: parseFloat(getVal('cfg-space-weather-min-kp')) || 5,
+                space_weather_alert_min_kp: Number.isFinite(parseFloat(getVal('cfg-space-weather-min-kp'))) ? parseFloat(getVal('cfg-space-weather-min-kp')) : 5,
                 space_weather_alert_cooldown_minutes: parseInt(getVal('cfg-space-weather-cooldown')) || 60,
                 space_weather_alert_discord_enabled: getChk('cfg-space-weather-discord'),
                 space_weather_alert_email_enabled: getChk('cfg-space-weather-email'),
@@ -4329,6 +4371,8 @@
     }
 
     async function loadTransmitHistory() {
+        await window.pvOperator.ready;
+        if (!window.pvOperator.authenticated) return;
         const list = document.getElementById('transmit-history-list');
         if (!list) return;
         try {
@@ -4430,6 +4474,8 @@
     }
 
     async function refreshScheduledControls() {
+        await window.pvOperator.ready;
+        if (!window.pvOperator.authenticated) return;
         const bln = document.getElementById('cfg-bulletins-preview');
         const obj = document.getElementById('cfg-objects-preview');
         try {
@@ -4632,6 +4678,8 @@
     }
 
     async function refreshStatusDxPreview() {
+        await window.pvOperator.ready;
+        if (!window.pvOperator.authenticated) return;
         const preview = document.getElementById('cfg-status-preview');
         const alertPreview = document.getElementById('cfg-status-alert-preview');
         if (!preview) return;
@@ -4715,6 +4763,8 @@
     }
 
     async function refreshWxNowStatus() {
+        await window.pvOperator.ready;
+        if (!window.pvOperator.authenticated) return;
         const status = document.getElementById('cfg-wxnow-status');
         if (!status) return;
         try {
