@@ -1,0 +1,56 @@
+name: Attach release assets
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing draft release tag
+        required: true
+        default: v1.13.0
+      platform_run:
+        description: Successful platform compatibility run ID
+        required: true
+permissions:
+  contents: write
+  actions: read
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      PLATFORM_RUN: ${{ inputs.platform_run }}
+    steps:
+      - name: Wait for tested platform builds
+        run: gh run watch "$PLATFORM_RUN" --repo "$GITHUB_REPOSITORY" --exit-status --interval 15
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.platform_run }}
+          pattern: native-*
+          path: assets
+      - name: Attach tested Linux and macOS archives
+        run: |
+          mapfile -t archives < <(find assets -type f -name 'APRSPropView-*.tar.gz')
+          test "${#archives[@]}" -eq 4
+          gh release upload "$RELEASE_TAG" "${archives[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+  windows:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r requirements.txt pyinstaller
+      - run: python build_exe.py
+      - run: dist/APRSPropView.exe --modem-self-test
+      - name: Build installer
+        run: |
+          if (!(Test-Path 'C:/Program Files (x86)/Inno Setup 6/ISCC.exe')) { choco install innosetup -y --no-progress }
+          python build_installer.py --skip-exe-build
+      - name: Attach Windows release binaries
+        run: |
+          $version = $env:RELEASE_TAG.TrimStart('v')
+          gh release upload $env:RELEASE_TAG dist/APRSPropView.exe "dist/APRSPropViewSetup-$version.exe" --repo $env:GITHUB_REPOSITORY --clobber
