@@ -1,10 +1,12 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>APRS PropView 1.14.1 changelog</title><style>body{margin:0;background:#101820;color:#e5edf3;font:16px/1.65 system-ui,sans-serif}main{max-width:980px;margin:auto;padding:32px 24px 70px}h1,h2,h3{line-height:1.25;color:#fff}h2{margin-top:2.3em;border-bottom:1px solid #405361;padding-bottom:10px;scroll-margin-top:18px}a{color:#79c9ff}code{background:#243441;padding:2px 5px;border-radius:3px}li{margin:.5em 0}nav{padding:18px 24px;background:#1a2b38;border:1px solid #405361;border-radius:10px}nav ul{columns:2;padding-left:20px}nav li{break-inside:avoid}p,li{overflow-wrap:anywhere}@media(max-width:600px){nav ul{columns:1}main{padding:18px}}</style></head><body><main><nav aria-label="Contents"><strong>Contents</strong><ul><li><a href="#v1-14-1-one-aprs-is-to-rf-control">v1.14.1 — one APRS-IS to RF control</a></li><li><a href="#v1-14-0-enhanced-receiver-and-clearer-operating-controls">v1.14.0 — enhanced receiver and clearer operating controls</a></li><li><a href="#v1-13-1-text-encoding-correction">v1.13.1 — text encoding correction</a></li><li><a href="#v1-13-0-changes-since-v1-11-1">v1.13.0 — changes since v1.11.1</a></li><li><a href="#v1-11-1-previous-published-baseline">v1.11.1 — previous published baseline</a></li></ul></nav><h1>APRS PropView changelog</h1>
 <h2 id="v1-14-1-one-aprs-is-to-rf-control">v1.14.1 — one APRS-IS to RF control</h2>
+<p>Released: October 24, 2026.</p>
 <ul>
 <li>[FIX] Removed the duplicate APRS-IS → RF checkbox from the built-in modem. Settings → Radio &amp; TNC → IGate is the single place to enable or disable gating.</li>
 <li>[FIX] Built-in modem routing now follows the IGate controls and its general RF transmit enable. Old modem-specific gating flags no longer block or override the IGate setting.</li>
 <li>[FIX] IGate master and direction changes apply live, including when IGate was disabled at startup. Both gating directions stop when the IGate master switch is off.</li>
 <li>[FIX] Updated setup guidance and documentation to match the single control. New installations still default APRS-IS → RF to off; saved IGate choices are retained.</li>
+<li>[FIX] Corrected the About release date and current documentation; About now receives its date from release metadata when documentation is generated.</li>
 </ul>
 <h2 id="v1-14-0-enhanced-receiver-and-clearer-operating-controls">v1.14.0 — enhanced receiver and clearer operating controls</h2>
 <ul>

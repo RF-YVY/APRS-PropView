@@ -4,6 +4,14 @@ from server.igate import IGate
 
 
 class SingleIGateControlTests(unittest.TestCase):
+    def test_current_release_date_is_consistent_in_about_and_documentation(self):
+        from pathlib import Path
+        from main import APP_RELEASE_DATE, APP_VERSION
+        root=Path(__file__).resolve().parents[1]
+        self.assertIn(f'<span id="about-date">{APP_RELEASE_DATE}</span>',(root/'static/index.html').read_text(encoding='utf-8'))
+        for name in ['README.md','docs/USER_GUIDE.md','static/documentation.html',f'docs/release-v{APP_VERSION}.md',f'static/releases/v{APP_VERSION}.html']:
+            self.assertIn(APP_RELEASE_DATE,(root/name).read_text(encoding='utf-8'),name)
+
     def test_one_live_controller_obeys_master_and_direction_switches(self):
         config=Config()
         config.station.callsign='W1AW'

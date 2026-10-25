@@ -2,10 +2,13 @@
 
 ## v1.14.1 — one APRS-IS to RF control
 
+Released: October 24, 2026.
+
 - [FIX] Removed the duplicate APRS-IS → RF checkbox from the built-in modem. Settings → Radio & TNC → IGate is the single place to enable or disable gating.
 - [FIX] Built-in modem routing now follows the IGate controls and its general RF transmit enable. Old modem-specific gating flags no longer block or override the IGate setting.
 - [FIX] IGate master and direction changes apply live, including when IGate was disabled at startup. Both gating directions stop when the IGate master switch is off.
 - [FIX] Updated setup guidance and documentation to match the single control. New installations still default APRS-IS → RF to off; saved IGate choices are retained.
+- [FIX] Corrected the About release date and current documentation; About now receives its date from release metadata when documentation is generated.
 
 
 ## v1.14.0 — enhanced receiver and clearer operating controls

@@ -2,6 +2,8 @@
 
 Current version: **1.14.1**. This guide covers the desktop dashboard, mobile companion, settings and built-in modem.
 
+Release date: October 24, 2026.
+
 ## Getting started
 
 Install the application, launch it, and complete the operator-password window on the host computer. Set your callsign, SSID, symbol and coordinates under **Settings → Station & Location**. Coordinates can be typed, picked on the map or supplied by the configured GPS source. Use your actual licensed station identity before transmitting.

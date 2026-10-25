@@ -5,6 +5,7 @@ Launch this to start the application. The web interface opens automatically.
 """
 
 APP_VERSION = "1.14.1"
+APP_RELEASE_DATE = "October 24, 2026"
 
 import asyncio
 import sys

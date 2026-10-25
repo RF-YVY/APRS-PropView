@@ -2,6 +2,8 @@
 
 **Version 1.14.1**
 
+Release date: October 24, 2026.
+
 See the [complete changelog since v1.11.1](CHANGELOG.md), [User Guide](docs/USER_GUIDE.md) and [cross-platform setup](docs/CROSS_PLATFORM_SETUP.md).
 
 **Experimental built-in modem:** further testing is needed on Linux, Raspberry Pi and macOS. Performance may vary by platform and audio interface.

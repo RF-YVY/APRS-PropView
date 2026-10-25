@@ -2,6 +2,7 @@ from pathlib import Path
 import re,html
 from markdown_it import MarkdownIt
 ROOT=Path(__file__).resolve().parent
+RELEASE_DATE=re.search(r'^APP_RELEASE_DATE = "([^"]+)"', (ROOT/'main.py').read_text(encoding='utf-8'), re.M).group(1)
 MD=MarkdownIt('commonmark',{'html':False})
 CSS="body{margin:0;background:#101820;color:#e5edf3;font:16px/1.65 system-ui,sans-serif}main{max-width:980px;margin:auto;padding:32px 24px 70px}h1,h2,h3{line-height:1.25;color:#fff}h2{margin-top:2.3em;border-bottom:1px solid #405361;padding-bottom:10px;scroll-margin-top:18px}a{color:#79c9ff}code{background:#243441;padding:2px 5px;border-radius:3px}li{margin:.5em 0}nav{padding:18px 24px;background:#1a2b38;border:1px solid #405361;border-radius:10px}nav ul{columns:2;padding-left:20px}nav li{break-inside:avoid}p,li{overflow-wrap:anywhere}@media(max-width:600px){nav ul{columns:1}main{padding:18px}}"
 def render(text):
@@ -30,7 +31,9 @@ help_body='<p><button id="btn-help-quick-start" class="btn-primary">Open Illustr
 index=ROOT/'static/index.html';source=index.read_text(encoding='utf-8')
 start=source.index('            <div class="help-body">')+len('            <div class="help-body">')
 end=source.index('\n            </div>\n        </div>\n    </div>\n\n    <!--',start)
-index.write_text(source[:start]+'\n'+help_body+source[end:],encoding='utf-8')
+updated_index=source[:start]+'\n'+help_body+source[end:]
+updated_index=re.sub(r'(<span id="about-date">)[^<]*(</span>)',lambda match:match[1]+html.escape(RELEASE_DATE)+match[2],updated_index)
+index.write_text(updated_index,encoding='utf-8')
 folder=ROOT/'static/guides';folder.mkdir(exist_ok=True)
 for name in ['PUBLIC_HOSTING','DEVELOPMENT_MODEM','linux-raspberry-pi','docker','CROSS_PLATFORM_SETUP']:
     content,headings=render((ROOT/('docs/'+name+'.md')).read_text(encoding='utf-8'))
