@@ -2310,11 +2310,13 @@
 
     function updateUptime() {
         if (!uptimeStart) return;
-        const seconds = Math.floor(Date.now() / 1000 - uptimeStart);
-        const h = Math.floor(seconds / 3600);
+        const seconds = Math.max(0, Math.floor(Date.now() / 1000 - uptimeStart));
+        const days = Math.floor(seconds / 86400);
+        const h = Math.floor((seconds % 86400) / 3600);
         const m = Math.floor((seconds % 3600) / 60);
         const s = seconds % 60;
-        const str = `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        const clock = [h, m, s].map(value => String(value).padStart(2, '0')).join(':');
+        const str = days ? `${String(days).padStart(2, '0')}:${clock}` : clock;
         setTextById('footer-uptime', `Uptime: ${str}`);
     }
 

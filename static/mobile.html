@@ -1716,11 +1716,13 @@ async function loadLeaderboard() {
 // ── Uptime ─────────────────────────────────────────────────
 function updateUptime() {
     if (!S.startTime) return;
-    const diff = Math.floor(Date.now() / 1000 - S.startTime);
-    const h = Math.floor(diff / 3600);
+    const diff = Math.max(0, Math.floor(Date.now() / 1000 - S.startTime));
+    const days = Math.floor(diff / 86400);
+    const h = Math.floor((diff % 86400) / 3600);
     const m = Math.floor((diff % 3600) / 60);
     const el = $('m-uptime');
-    if (el) el.textContent = h > 0 ? `${h}h ${m}m` : `${m}m`;
+    const clock = [h, m, diff % 60].map(value => String(value).padStart(2, '0')).join(':');
+    if (el) el.textContent = days ? `${String(days).padStart(2, '0')}:${clock}` : clock;
 }
 
 // ── Weather ────────────────────────────────────────────────

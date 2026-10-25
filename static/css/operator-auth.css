@@ -26,7 +26,7 @@ html:not(.operator-authenticated) #m-btn-gps { display: none !important; }
 #operator-session-info[hidden] { display: none; }
 .operator-session-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 #operator-access.operator-access-floating { position: fixed; right: 12px; bottom: 12px; z-index: 10050; }
-#map-controls #operator-session-toggle { display: inline-flex; align-items: center; justify-content: center; width: 34px; min-width: 34px; height: 30px; padding: 0; }
+#map-controls #operator-session-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: auto; min-width: 76px; height: 30px; padding: 0 9px; }
 #map-controls #operator-session-info button { width: auto; height: auto; min-height: 30px; padding: 6px 9px; }
 #operator-access button, #operator-login-dialog button {
     cursor: pointer; background: #253b52; color: #fff; border: 1px solid #748ba1;
@@ -100,6 +100,11 @@ html:not(.operator-authenticated) #m-btn-gps { display: none !important; }
 #software-modem-dialog button:disabled { opacity:.5; cursor:default; }
 #software-modem-dialog meter { width:100%; height:24px; }
 #software-modem-dialog .modem-note { color:#b5c4d4; font-size:12px; line-height:1.5; }
+#software-modem-dialog .modem-primary-controls { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; margin:16px 0; padding:14px; border:2px solid #65bfff; border-radius:9px; background:#123049; }
+#software-modem-dialog .modem-primary-controls .modem-check { display:flex; flex-direction:row; align-items:center; gap:12px; margin:0; padding:8px; font-size:16px; font-weight:700; cursor:pointer; }
+#software-modem-dialog .modem-primary-controls input[type="checkbox"] { flex:0 0 24px; width:24px; height:24px; accent-color:#63d4b4; }
+#software-modem-dialog .modem-primary-controls small { display:block; margin-top:5px; color:#c2d8e8; font-size:12px; font-weight:400; }
+#software-modem-dialog .modem-primary-controls label:focus-within { outline:2px solid #fff; outline-offset:3px; border-radius:4px; }
 #software-modem-dialog a,#software-modem-dialog summary { color:#8ecaff; }
 #software-modem-dialog summary { cursor:pointer; }
 #software-modem-dialog pre { white-space:pre-wrap; overflow-wrap:anywhere; background:#0d1117; padding:12px; max-height:180px; overflow:auto; }

@@ -5,7 +5,7 @@ on:
       tag:
         description: Existing draft release tag
         required: true
-        default: v1.13.1
+        default: v1.14.0
       platform_run:
         description: Successful platform compatibility run ID
         required: true
@@ -22,6 +22,11 @@ jobs:
     steps:
       - name: Wait for tested platform builds
         run: gh run watch "$PLATFORM_RUN" --repo "$GITHUB_REPOSITORY" --exit-status --interval 15
+      - name: Verify artifacts match the release commit
+        run: |
+          tested=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PLATFORM_RUN" --jq .head_sha)
+          release=$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)
+          test "$tested" = "$release"
       - uses: actions/download-artifact@v4
         with:
           github-token: ${{ github.token }}
@@ -40,6 +45,8 @@ jobs:
       RELEASE_TAG: ${{ inputs.tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'

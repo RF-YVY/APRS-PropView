@@ -1,6 +1,6 @@
 # APRS PropView User Guide
 
-Current version: **1.13.1**. This guide covers the desktop dashboard, mobile companion, settings and built-in modem.
+Current version: **1.14.0**. This guide covers the desktop dashboard, mobile companion, settings and built-in modem.
 
 ## Getting started
 
@@ -45,7 +45,7 @@ Default OpenStreetMap tiles work without a map API key on desktop and mobile. Op
 
 RF Ports supports multiple named serial and TCP interfaces. Serial KISS, TCP KISS and TCP AGWPE server ports are transmit-capable when enabled and connected; TNC2 monitor reception is receive-only. Select the TCP protocol that matches your server. Serial options include flow control and supported initialization profiles/commands. Select the correct COM device, speed or TCP endpoint and any receive-only restrictions. Names appear in packet/station information. TCP interfaces expose connection, error and retry information and reconnect automatically. A green browser connection only confirms the dashboard link, not a radio link.
 
-Digipeater settings control whether received packets may be repeated, including path/deduplication behavior. IGate settings control RF-to-APRS-IS and optional APRS-IS-to-RF traffic, subject to route restrictions. Review paths and station settings before enabling these functions. A receive-only interface is never a transmit path. The built-in modem continues to block APRS-IS-to-RF gating even when its own RF transmit is enabled.
+Digipeater settings control whether received packets may be repeated, including path/deduplication behavior. IGate settings control RF-to-APRS-IS and optional APRS-IS-to-RF traffic, subject to route restrictions. Review paths and station settings before enabling these functions. A receive-only interface is never a transmit path. Built-in modem APRS-IS-to-RF gating is off by default. Enable Allow APRS-IS → RF gating and apply transmit settings to opt in; modem TX and IGate IS→RF must also be enabled.
 
 Manual **Transmit Beacon** uses the selected RF, APRS-IS or combined route and requires a valid station position. Connected RF reception and RF transmit availability are separate: the modem can receive while TX is disabled. Scheduled beacon intervals and smart beaconing are station functions, independent of whether a browser is currently open.
 
@@ -53,11 +53,13 @@ Manual **Transmit Beacon** uses the selected RF, APRS-IS or combined route and r
 
 ## Built-in modem: reception
 
+The enhanced 1200-baud Bell 202 receiver uses 132 decision and timing lanes in one native engine. Production does not run a comparison decoder or retry uncertain bits. Filtering, tone-balance hypotheses and adaptive timing improve reception on some signals; additional weak-signal recovery is not guaranteed. Windows, Linux/ARM64 and macOS share the same portable C++17 engine. Physical Raspberry Pi audio performance still needs hardware validation.
+
+
 This development-only original Bell 202 modem handles 1200-baud AFSK APRS. Open **Settings → Radio & TNC → RF Ports → Configure Built-in Modem**. Select the radio's audio input and left/mono or right channel, then **Start receiving**. Use actual local receiver audio for operating the radio. Avoid microphone noise suppression, automatic gain processing, feedback and clipping. Open squelch is supported; ordinary receiver hiss should not count as an APRS carrier.
 
 Successful RX setup is saved for automatic reception on subsequent application launches. Saved audio devices are matched by name and host API rather than assuming their numeric device IDs are unchanged. If a saved device is unavailable, startup reports an error instead of choosing an unrelated input or output. Refresh devices and reconfigure it. **Stop** reception disables RX automatic startup and stops TX. Closing the modem window leaves the backend operating; quitting releases the devices while preserving the configured startup choices.
 
-**Test with a WAV recording** decodes 16-bit PCM WAV, mono or stereo, 8–96 kHz, up to five minutes and 32 MB. Choose the intended audio channel. The generated test WAV is an offline reference. Imported recording results stay out of the live map and cannot cause gating, digipeating or message acknowledgements. A recording decoding successfully while live input does not usually calls for checking the selected input and audio routing.
 
 ### Reading modem diagnostics
 
@@ -140,7 +142,7 @@ Web/Display settings include listening host/port, browser selection or no automa
 **Data → Source Health** separates connection state from data age. RF **LISTENING** means a receiver is connected but no RF packet has been recorded this session; **LIVE** means recent RF data; **STALE** means old observations; **OFFLINE** means unavailable; **OFF** means disabled. Configured tile layers are not a guarantee every external tile request succeeded. Browser live-link state is separate from backend feed health.
 
 - **Weather/lightning OFF:** enable their separate settings and save. If settings are missing, clear Settings search, open Alerts & Weather and expand Weather. Dashboard visibility can still hide a card.
-- **Modem audio but no live decode:** verify input/channel/routing, avoid clipping or audio processing, and compare a recording with Test with a WAV recording. Green audio does not establish APRS content.
+- **Modem audio but no live decode:** verify input/channel/routing, avoid clipping or audio processing, and check the signal using modem diagnostics. Green audio does not establish APRS content.
 - **Channel busy blocks TX:** inspect the active Channel wait ON/OFF status. Uncheck Wait for clear channel to bypass it immediately. Check the app version if the new control is missing.
 - **RF connected but manual TX unavailable:** enable/apply modem TX or check external-interface receive-only restrictions. A position beacon also requires coordinates. APRS-IS sends require verification.
 - **No persistent lines:** RF reception paths require RF stations and known hop positions. Enable Show RF lines, the RF source and a suitable time window. APRS-IS animations are intentionally temporary.
@@ -166,3 +168,5 @@ Callbook lookup supports configured QRZ/HamQTH credentials and provider selectio
 ## More information
 
 Use **About/Help → Illustrated Quick Start** for the guided tour. The in-app guide and Full HTML Documentation are generated from this guide. Source-distribution companions provide [public-hosting details](PUBLIC_HOSTING.md), [modem test instructions](DEVELOPMENT_MODEM.md), [Linux/Raspberry Pi deployment](linux-raspberry-pi.md), and [Docker deployment](docker.md). License, trademarks and bundled third-party notices remain applicable; the modem is an original implementation, not GrayWolf or Dire Wolf source.
+
+The map-toolbar lock button includes **Login**. Desktop and mobile uptime show **HH:MM:SS** for the first day and **DD:HH:MM:SS** after 24 hours.

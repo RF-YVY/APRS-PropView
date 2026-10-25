@@ -22,8 +22,11 @@ jobs:
       - run: python -m pip install -r requirements.txt pytest
       - run: python native/build_modem.py
       - run: python -m pytest -q
+      - run: node --test tests/test_modem_setup_guidance.cjs tests/test_release_ui.cjs
       - run: python main.py --modem-self-test
       - run: python scripts/platform_smoke.py
+      - name: Measure receiver processing cost
+        run: python scripts/benchmark_modem.py --seconds 5
       - name: Build Linux executable
         if: runner.os == 'Linux'
         run: |

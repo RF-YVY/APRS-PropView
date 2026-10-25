@@ -5,6 +5,9 @@
     const VIEW_KEY = 'pvSettingsComplexityV1';
     const TRANSMIT_PROTECTION_KEY = 'pvProtectTransmitSettingsV1';
     let savedTransmitConfig = null;
+    let modemStatus = null;
+    const modemReceiving = () => !!(modemStatus?.running && modemStatus?.connected);
+    const modemTransmitting = () => modemReceiving() && !!modemStatus?.transmit?.enabled;
     const ADVANCED_SECTIONS = new Set([
         'smart-beaconing', 'bulletins', 'aprs-objects', 'digipeater', 'igate',
         'tracking', 'messaging', 'status-dx', 'wxnow', 'mqtt',
@@ -309,9 +312,10 @@
         const gps = readBool('cfg-gps-enabled');
         const smart = readBool('cfg-smart-enabled');
         const beaconMinutes = Number(readValue('cfg-beacon-interval')) || 0;
-        const rfBeaconRoute = rfCards.some((card) => !rfCardField(card, 'rx_only_rf')?.checked);
+        const rfBeaconRoute = modemTransmitting() || rfCards.some((card) => !rfCardField(card, 'rx_only_rf')?.checked);
         const beaconRoutes = [rfBeaconRoute ? 'RF' : '', aprs ? 'APRS-IS' : ''].filter(Boolean);
         const roles = [];
+        if (modemReceiving()) roles.push(`Built-in modem (${modemTransmitting() ? 'RX + TX' : 'RX only'})`);
         if (rfCards.length) roles.push(`${rfCards.length} RF port${rfCards.length === 1 ? '' : 's'}`);
         if (digipeater) roles.push('Digipeater');
         if (rfToIs) roles.push('RF→IS iGate');
@@ -323,12 +327,14 @@
         summary.innerHTML = `<span class="setup-config-state">${state}</span><strong>${escapeHTML(matchedPreset.title)}</strong><span>${escapeHTML(roles.join(' · ') || 'No receive source enabled')}</span>`;
 
         const items = [];
-        const needsRf = rfCards.length > 0 || digipeater || igate || !aprs || matchedPreset !== CUSTOM_PRESET;
+        const needsRf = modemReceiving() || rfCards.length > 0 || digipeater || igate || !aprs || matchedPreset !== CUSTOM_PRESET;
         if (needsRf) {
-            const rfDetail = rfCards.length
+            const externalDetail = rfCards.length
                 ? rfCards.map(rfPortDescription).join(' · ')
                 : (allRfCards.length ? 'RF ports exist, but none is enabled.' : 'Choose Serial for a directly attached TNC or TCP for KISS/AGWPE software.');
-            items.push(setupGuideItem(rfCards.length ? 'done' : 'needed', 'Radio / TNC connection', rfDetail, 'radio', 'rf-ports'));
+            const modemDetail = modemReceiving() ? `Built-in modem receiving · ${modemTransmitting() ? 'RF TX enabled' : 'RX only; enable TX in Configure Built-in Modem if needed'}` : '';
+            const rfDetail = [modemDetail, rfCards.length || !modemDetail ? externalDetail : ''].filter(Boolean).join(' · ');
+            items.push(setupGuideItem(modemReceiving() || rfCards.length ? 'done' : 'needed', 'Radio / TNC connection', rfDetail, 'radio', 'rf-ports'));
         }
 
         if (aprs || igate) {
@@ -344,20 +350,20 @@
         if (igate || readBool('cfg-igate-rf2is') || readBool('cfg-igate-is2rf')) {
             const directions = [rfToIs ? 'RF→IS on' : 'RF→IS off', isToRf ? 'IS→RF on' : 'IS→RF off'].join(' · ');
             const hasDirection = rfToIs || isToRf;
-            const gatedTx = rfCards.some((card) => !rfCardField(card, 'rx_only_is')?.checked);
+            const gatedTx = (modemTransmitting() && modemStatus?.transmit?.settings?.allow_is_to_rf === true) || rfCards.some((card) => !rfCardField(card, 'rx_only_is')?.checked);
             const isToRfReady = !isToRf || gatedTx;
             const detail = !igate
                 ? 'Direction selected while the IGate itself is disabled.'
-                : `${directions}${isToRf && !gatedTx ? ' · no enabled port permits gated RF transmit' : ''}`;
+                : `${directions}${isToRf && !gatedTx ? (modemReceiving() ? ' · enable RF transmission and Allow APRS-IS → RF gating in Configure Built-in Modem, or choose an external gated-transmit port' : ' · no enabled port permits gated RF transmit') : ''}`;
             const state = igate && hasDirection && isToRfReady ? (isToRf ? 'review' : 'done') : 'needed';
             items.push(setupGuideItem(state, 'IGate directions', detail, 'radio', 'igate'));
         }
 
         if (digipeater) {
             const aliases = readValue('cfg-digi-aliases');
-            const rfTx = rfCards.some((card) => !rfCardField(card, 'rx_only_rf')?.checked);
+            const rfTx = modemTransmitting() || rfCards.some((card) => !rfCardField(card, 'rx_only_rf')?.checked);
             const complete = !!aliases && rfTx;
-            const detail = `${aliases ? `Aliases ${aliases}` : 'Aliases not set'} · ${rfTx ? 'RF transmit port available' : 'No enabled RF transmit port'}`;
+            const detail = `${aliases ? `Aliases ${aliases}` : 'Aliases not set'} · ${modemTransmitting() ? 'Built-in modem RF transmit available' : rfTx ? 'RF transmit port available' : modemReceiving() ? 'Built-in modem is RX only; enable TX in Configure Built-in Modem' : 'No enabled RF transmit port'}`;
             items.push(setupGuideItem(complete ? 'review' : 'needed', 'Digipeater', detail, 'radio', 'digipeater'));
         }
 
@@ -476,7 +482,7 @@
         const transmitRf = readBool('cfg-digi-enabled') || readBool('cfg-igate-is2rf') || rfCards.some((card) => !card.querySelector('[data-field="rx_only_rf"]')?.checked);
         if (!call || ['N0CALL', 'NOCALL', 'MYCALL', 'TEST'].includes(call)) blockers.push(['Station callsign is still a placeholder.', 'station', 'station']);
         if (!Number.isFinite(lat) || !Number.isFinite(lon) || (lat === 0 && lon === 0)) blockers.push(['Station location is not set.', 'station', 'station']);
-        if (!rfCards.length && !aprs) blockers.push(['No receive source is enabled.', 'radio', 'rf-ports']);
+        if (!rfCards.length && !modemReceiving() && !aprs) blockers.push(['No receive source is enabled.', 'radio', 'rf-ports']);
         if (aprs && (!filter || filter === '—')) warnings.push(['APRS-IS has no range filter; traffic may be empty or broader than intended.', 'radio', 'aprsis']);
         if ((readBool('cfg-igate-enabled') || readBool('cfg-igate-is2rf')) && (!pass || pass === '-1')) blockers.push(['IGate operation needs a valid APRS-IS passcode.', 'radio', 'aprsis']);
         if (transmitRf) warnings.push(['At least one RF transmit-capable function is staged. Review paths and local coordination.', 'radio', 'rf-ports']);
@@ -756,5 +762,10 @@
         updateReadiness();
     });
 
+    document.addEventListener('pvmodemstatus', (event) => {
+        modemStatus = event.detail;
+        syncPresetToConfiguration();
+        updateReadiness();
+    });
     document.addEventListener('DOMContentLoaded', initialize);
 })();

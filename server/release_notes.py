@@ -8,6 +8,12 @@ from server.config_io import atomic_write
 logger = logging.getLogger('propview.release')
 
 RELEASES = {
+    '1.14.0': [
+        '[NEW] Enhanced 132-lane Bell 202 receiver with one native receive engine and bounded memory; no reference decoder or bit repair runs in production.',
+        '[NEW] Optional built-in modem APRS-IS to RF gating, disabled by default and subject to existing IGate routing checks.',
+        '[FIX] RF transmit and clear-channel controls are prominent and adjacent; removed the offline WAV test section from the modem window.',
+        '[FIX] Setup guidance recognizes built-in modem RX/TX; uptime shows days after 24 hours and the toolbar lock button includes Login.',
+    ],
     '1.13.1': [
         'Fixed corrupted characters in toolbar icons, application text, Markdown guides and generated changelogs.',
         'Added explicit UTF-8 handling and encoding regression checks; rebuilt all platform packages.',
@@ -94,7 +100,8 @@ class ReleaseNotes:
         except (OSError, ValueError):
             state = {}
         previous = state.get('version')
-        self.pending = bool(state.get('pending')) if previous == version else bool(version.startswith('1.13.') or previous or existing_installation)
+        full_changelog = (Path(__file__).resolve().parents[1] / 'static' / 'releases' / f'v{version}.html').exists()
+        self.pending = bool(state.get('pending')) if previous == version else bool(full_changelog or previous or existing_installation)
         self._save()
 
     def _save(self):
@@ -117,7 +124,7 @@ class ReleaseNotes:
 
     def snapshot(self, operator=False):
         return {'version': self.version, 'changes': RELEASES.get(self.version, []),
-                'changelog_url': f'/static/releases/v{self.version}.html' if self.version.startswith('1.13.') else None,
+                'changelog_url': f'/static/releases/v{self.version}.html' if (Path(__file__).resolve().parents[1] / 'static' / 'releases' / f'v{self.version}.html').exists() else None,
                 'should_show': bool(operator and self.pending)}
 
 

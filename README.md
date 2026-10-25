@@ -1,6 +1,6 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.13.1**
+**Version 1.14.0**
 
 See the [complete changelog since v1.11.1](CHANGELOG.md), [User Guide](docs/USER_GUIDE.md) and [cross-platform setup](docs/CROSS_PLATFORM_SETUP.md).
 

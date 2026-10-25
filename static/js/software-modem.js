@@ -1,4 +1,4 @@
-/* Experimental original soundcard modem receive and transmit setup. */
+/* Built-in enhanced soundcard modem receive and transmit setup. */
 (() => {
     'use strict';
     document.addEventListener('DOMContentLoaded', () => {
@@ -6,8 +6,8 @@
         if(!button)return;
         const dialog=document.createElement('dialog');dialog.id='software-modem-dialog';
         dialog.setAttribute('aria-labelledby','modem-title');
-        dialog.innerHTML=`<h2 id="modem-title">Built-in Modem <small>EXPERIMENTAL</small></h2>
-            <p>Original PropView 1200-baud AFSK decoder. Saved reception and enabled transmission start automatically with the application. Configure the radio interface below.</p>
+        dialog.innerHTML=`<h2 id="modem-title">Built-in Modem <small>ENHANCED RECEIVER</small></h2>
+            <p>PropView 1200-baud AFSK receiver. Saved reception and enabled transmission start automatically with the application. Configure the radio interface below.</p>
             <div class="modem-grid"><label>Radio audio input<select id="modem-device"></select></label>
             <label>Audio channel<select id="modem-channel"><option value="0">Left / mono</option><option value="1">Right (stereo input)</option></select></label></div>
             <div class="modem-actions"><button id="modem-refresh" type="button">Refresh devices</button><button id="modem-start" type="button">Start receiving</button><button id="modem-stop" type="button">Stop</button><button id="modem-tx-emergency" type="button">Stop TX / disable</button></div>
@@ -30,12 +30,16 @@
                 </dl>
                 <p class="modem-note">Counters reset when you start receiving again. Healthy audio counters do not measure how many transmissions were missed. Compare the same recording with another decoder to assess reception performance.</p>
             </details>
-            <p class="modem-note">Connect receiver audio to the selected input. Avoid clipping, microphone noise suppression and automatic gain effects. Live decoded packets enter the station map.</p>
-            <p class="modem-note">Experimental modem: further testing is needed on Linux, Raspberry Pi and macOS. Performance may vary by platform and audio interface.</p>
-            <details id="modem-tx-panel"><summary>Transmit setup (NOMIC / serial / VOX)</summary>
+            <p class="modem-note">Connect receiver audio to the selected input. Avoid clipping, microphone noise suppression and automatic gain effects. Live decoded packets enter the development station map.</p>
+            <details id="modem-tx-panel" open><summary>Transmit setup (NOMIC / serial / VOX)</summary>
                 <p class="modem-note">For a RIGblaster NOMIC, select the soundcard output connected to the NOMIC and its USB/serial port. RTS keys PTT; the unused DTR line stays low. Start receiving before enabling TX.</p>
-                <label class="modem-check"><input type="checkbox" id="modem-tx-enabled"> Enable RF transmission (restored on application launch)</label>
-                <p class="modem-note">When enabled, configured beacons, messages, spots and digipeating can use this modem. Saved RX and enabled TX restore on application launch. Stop RX or Stop TX disables their automatic startup. Internet-to-RF gating stays disabled on this interface.</p>
+                <div class="modem-primary-controls" role="group" aria-label="RF transmission controls">
+                    <label class="modem-check"><input type="checkbox" id="modem-tx-enabled"> <span>Enable RF transmission<small>Saved for the next application launch</small></span></label>
+                    <label class="modem-check"><input id="modem-tx-wait-clear" type="checkbox" checked> <span>Wait for clear channel<small>Wait before transmitting on a busy channel</small></span></label>
+                </div>
+                <p class="modem-note">When enabled, configured beacons, messages, spots and digipeating can use this modem. Saved RX and enabled TX restore on application launch. Stop RX or Stop TX disables their automatic startup.</p>
+                <label class="modem-check"><input type="checkbox" id="modem-tx-is-to-rf"> Allow APRS-IS → RF gating</label>
+                <p class="modem-note">Off by default. Requires modem RF transmission and IGate IS→RF to be enabled. Existing message routing and duplicate checks apply. Click Apply transmit settings to save.</p>
                 <div class="modem-grid">
                     <label>Radio transmit audio output<select id="modem-tx-device"></select></label>
                     <label>Output channel<select id="modem-tx-channel"><option value="0">Left / mono</option><option value="1">Right (stereo)</option></select></label>
@@ -46,18 +50,13 @@
                     <label>TX tail (ms)<input id="modem-tx-tail" type="number" min="0" max="500" step="1" value="50"></label>
                 </div>
                 <p class="modem-note">Transmit delay is the lead-in before packet data, in milliseconds (50–1500 ms; default 300 ms). It sends opening flags so the radio and receiving stations can settle. Click Apply transmit settings to save it. Tail sends closing flags before releasing PTT. Audio level sets tone amplitude, not RF power; adjust it for your radio's required deviation. Audio and serial PTT are limited to 10 seconds per packet; VOX release also depends on your radio's hang time. Stop TX aborts audio and releases RTS/DTR. Use your local radio audio for channel-busy detection.</p>
-                <label class="modem-check"><input id="modem-tx-wait-clear" type="checkbox" checked> Wait for clear channel</label>
                 <p class="modem-note">Enabled by default. Uncheck to bypass carrier waiting immediately. This choice is saved across restarts. Channel busy/clear remains visible.</p>
                 <div class="modem-actions"><button id="modem-tx-refresh" type="button">Refresh outputs / ports</button><button id="modem-tx-apply" type="button">Apply transmit settings</button><button id="modem-tx-test" type="button" disabled>Send RF test packet</button><button id="modem-tx-stop" type="button">Stop TX / disable</button></div>
                 <p id="modem-tx-state" role="status" aria-live="polite">Transmission disabled.</p>
             </details>
-            <details><summary>Test with a WAV recording</summary>
-            <p>16-bit PCM WAV, mono/stereo, up to 5 minutes and 32 MB. Recorded test packets stay out of the live map. The audio channel selection above also applies here.</p>
-            <p><a href="/api/modem/test-wav" download="propview-modem-test.wav">Download generated test WAV</a></p>
-            <label>Recording<input type="file" id="modem-wav" accept=".wav,audio/wav"></label>
-            <button id="modem-decode" type="button">Decode recording</button><pre id="modem-results" aria-live="polite"></pre>
-            </details>
+
             <p class="modem-note">Experimental reception: compare real radio recordings with your existing TNC. CPU and weak-signal performance have not yet been qualified.</p>
+            <p class="modem-note">Experimental modem: further testing is needed on Linux, Raspberry Pi and macOS. Performance may vary by platform and audio interface.</p>
             <div class="modem-actions"><button id="modem-close" type="button">Close</button></div>`;
         document.body.append(dialog);
         const $=id=>dialog.querySelector('#'+id);
@@ -68,6 +67,7 @@
         }
         function render(data) {
             lastStatus=data;
+            document.dispatchEvent(new CustomEvent('pvmodemstatus', {detail:data}));
             const running=data.running&&data.connected,m=data.metrics||{};
             $('modem-state').textContent=data.last_error || (data.transmit?.active?'Transmitting; receiver decoding paused.':running?`Receiving radio audio (${data.transmit?.enabled?'TX enabled':'RX only'}).`:'Stopped. Select an input and start receiving.');
             $('modem-start').disabled=busy||running||!$('modem-device').value;
@@ -98,6 +98,18 @@
         async function status() {
             try{render(await api('status'));}catch(error){$('modem-state').textContent=error.message;clearInterval(poll);}
         }
+        // Keep setup guidance current even when the modem dialog has never been opened.
+        async function updateSetupStatus() {
+            if (!window.pvOperator?.authenticated || dialog.open || document.hidden) return;
+            try {
+                const data = await api('status');
+                document.dispatchEvent(new CustomEvent('pvmodemstatus', {detail:data}));
+            } catch (_) {
+                document.dispatchEvent(new CustomEvent('pvmodemstatus', {detail:null}));
+            }
+        }
+        window.pvOperator.ready.then(updateSetupStatus);
+        setInterval(updateSetupStatus, 5000);
         button.onclick=async()=>{
             await window.pvOperator.ready;
             if(!window.pvOperator.authenticated)return window.pvOperator.openLogin();
@@ -125,6 +137,7 @@
             fill('modem-tx-port',data.ports,'Choose PTT serial port','device',p=>`${p.device} - ${p.description}`);
             if(saved.ptt)$('modem-tx-ptt').value=saved.ptt;
             $('modem-tx-wait-clear').checked=saved.wait_for_clear_channel!==false;
+            $('modem-tx-is-to-rf').checked=saved.allow_is_to_rf===true;
             for(const [id,key] of [['channel','channel'],['gain','gain'],['delay','delay_ms'],['tail','tail_ms']]) {
                 if(saved[key]!==undefined)$('modem-tx-'+id).value=saved[key];
             }
@@ -146,7 +159,8 @@
                 const data=await api('transmit-settings',{enabled:$('modem-tx-enabled').checked,
                     device:Number($('modem-tx-device').value),channel:Number($('modem-tx-channel').value),
                     ptt:$('modem-tx-ptt').value,port:$('modem-tx-port').value,gain:Number($('modem-tx-gain').value),
-                    delay_ms:Number($('modem-tx-delay').value),tail_ms:Number($('modem-tx-tail').value),wait_for_clear_channel:$('modem-tx-wait-clear').checked});
+                    delay_ms:Number($('modem-tx-delay').value),tail_ms:Number($('modem-tx-tail').value),wait_for_clear_channel:$('modem-tx-wait-clear').checked,
+                    allow_is_to_rf:$('modem-tx-is-to-rf').checked});
                 render(data);
             }catch(error){showTxNotice(error.message);}
             finally{button.disabled=false;}
@@ -165,17 +179,6 @@
         };
         $('modem-close').onclick=()=>dialog.close();
         dialog.addEventListener('close',()=>clearInterval(poll));
-        $('modem-decode').onclick=async()=>{
-            const file=$('modem-wav').files[0];
-            if(!file){$('modem-results').textContent='Choose a PCM WAV recording first.';return;}
-            if(file.size>32*1024*1024){$('modem-results').textContent='Choose a recording smaller than 32 MB.';return;}
-            $('modem-decode').disabled=true;$('modem-results').textContent='Decoding recording...';
-            try{
-                const response=await fetch('/api/modem/decode-wav?channel='+$('modem-channel').value,{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:file});
-                const data=await response.json();if(!response.ok)throw new Error(data.message||'Could not decode recording.');
-                $('modem-results').textContent=`${data.decoded_frames} packets | ${data.audio_seconds.toFixed(2)} s audio | ${data.processing_seconds.toFixed(3)} s processing\n`+data.packets.join('\n');
-            }catch(error){$('modem-results').textContent=error.message;}
-            finally{$('modem-decode').disabled=false;}
-        };
+
     });
 })();

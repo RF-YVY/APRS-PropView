@@ -1,5 +1,18 @@
 # APRS PropView changelog
 
+## v1.14.0 — enhanced receiver and clearer operating controls
+
+- [NEW] Integrated the enhanced Bell 202 receiver proven in Dev modem: 132 parallel timing and tone-decision lanes, varied filter windows, tone offsets and pre/de-emphasis hypotheses, and adaptive clock tracking.
+- [NEW] Production runs one native receiver, with bounded queues and frame buffers. The legacy comparison engine and experimental bit-repair search are not included. A repeatable processing benchmark is available for Windows, Linux/ARM64 and macOS; physical Raspberry Pi/audio performance still requires hardware validation.
+- [NEW] Built-in modem APRS-IS → RF gating is now an explicit opt-in, off by default. Modem TX and IGate IS→RF must also be enabled, and existing message routing and duplicate checks still apply.
+- [FIX] Removed the offline Test with a WAV recording section from the production modem window. Internal offline regression tests and packaged self-tests remain available to developers.
+- [FIX] Enable RF transmission and Wait for clear channel are larger, adjacent controls in a highlighted panel; transmit setup starts expanded and stacks on small screens. Existing TX opt-in, clear-channel default and saved settings are preserved.
+- [FIX] Setup guidance recognizes built-in modem reception, beaconing, digipeating and permitted gated-transmit routes without requiring a duplicate Serial/TCP RF port.
+- [FIX] Desktop and mobile uptime roll over to DD:HH:MM:SS at 24 hours, retaining HH:MM:SS below one day.
+- [FIX] Added the visible word Login beside the map-toolbar lock icon.
+- [FIX] Updated release notices, help, native version metadata and platform release packaging for v1.14.0.
+
+
 ## v1.13.1 — text encoding correction
 
 Released October 23, 2026.

@@ -118,7 +118,9 @@ class SoftwareModem:
 
     @property
     def rx_only_rf(self):return not self.transmitter.enabled
-    rx_only_is=True
+    @property
+    def rx_only_is(self):
+        return self.transmitter.settings.get('allow_is_to_rf') is not True
 
     def __init__(self, handler, path):
         self.handler,self.path=handler,Path(path)
@@ -169,7 +171,7 @@ class SoftwareModem:
                 'receive_only':not self.transmitter.enabled,'transmit':self.transmitter.status(),'last_error':self.last_error,'metrics':dict(self.metrics),
                 'dropped_blocks':self.dropped_blocks,'audio_overflows':self.overflows,
                 'frames_dropped':self.frames_dropped,'settings':self.settings,
-                'engine':'Original PropView Bell 202 / 1200 baud / four decoder lanes'}
+                'engine':'PropView enhanced Bell 202 / 1200 baud / 132 decision and timing lanes'}
 
     def devices(self):
         import sounddevice as sd

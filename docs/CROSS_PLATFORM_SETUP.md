@@ -132,3 +132,9 @@ health endpoint, dashboard and explicit database path without enabling RF.
 CI includes Windows, Linux x86-64/ARM64 and macOS Intel/Apple Silicon; configured
 jobs are not proof of success until they run. Physical USB audio and PTT tests
 remain necessary on each intended radio/interface/platform combination.
+
+## Enhanced receiver resource checks (v1.14.0)
+
+The portable C++17 receiver uses 132 bounded decision/timing lanes in one engine. It does not run Dev modem's legacy comparison engine or optional bit-repair search. No Python/numpy/SciPy DSP dependency was added. Linux packages are native amd64/arm64 builds; Raspberry Pi OS must match the package architecture and system-library requirements. Source builds remain available for other supported host architectures.
+
+After building the native library, run `python scripts/benchmark_modem.py --seconds 10` on the intended host. Compare p95 processing time against the 20 ms audio block budget, and observe modem audio-overflow and dropped-block diagnostics during normal full-application use. Hosted ARM64 CI checks ABI compatibility and build/startup behavior; it does not establish performance on a physical Raspberry Pi. No Pi performance or universal sensitivity claim is made.
