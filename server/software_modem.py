@@ -120,7 +120,7 @@ class SoftwareModem:
     def rx_only_rf(self):return not self.transmitter.enabled
     @property
     def rx_only_is(self):
-        return self.transmitter.settings.get('allow_is_to_rf') is not True
+        return not self.transmitter.enabled
 
     def __init__(self, handler, path):
         self.handler,self.path=handler,Path(path)

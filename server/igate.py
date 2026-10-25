@@ -31,12 +31,16 @@ class IGate:
 
     def note_rf_station(self, callsign: str):
         """Record that a station was heard on RF (for IS→RF routing)."""
+        if not self.config.igate.enabled:
+            return
         normalized = (callsign or "").strip().upper()
         if normalized:
             self._rf_stations[normalized] = time.time()
 
     def note_is_station(self, callsign: str):
         """Record that a station was heard via APRS-IS."""
+        if not self.config.igate.enabled:
+            return
         normalized = (callsign or "").strip().upper()
         if normalized:
             self._is_stations[normalized] = time.time()
@@ -51,7 +55,7 @@ class IGate:
         Determine if an RF packet should be gated to APRS-IS.
         Returns the packet string to send to APRS-IS, or None.
         """
-        if not self.config.igate.rf_to_is:
+        if not self.config.igate.enabled or not self.config.igate.rf_to_is:
             return None
 
         # Don't gate our own packets
@@ -103,7 +107,7 @@ class IGate:
         Determine if an APRS-IS packet should be gated to RF.
         Returns the info field to transmit, or None.
         """
-        if not self.config.igate.is_to_rf:
+        if not self.config.igate.enabled or not self.config.igate.is_to_rf:
             return None
 
         # Only gate messages addressed to stations heard on RF

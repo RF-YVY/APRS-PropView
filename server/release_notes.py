@@ -8,6 +8,10 @@ from server.config_io import atomic_write
 logger = logging.getLogger('propview.release')
 
 RELEASES = {
+    '1.14.1': [
+        '[FIX] APRS-IS to RF is controlled only in IGate settings; removed the duplicate modem option and its hidden veto.',
+        '[FIX] IGate master/direction switches apply live; built-in modem RF transmission must still be enabled.',
+    ],
     '1.14.0': [
         '[NEW] Enhanced 132-lane Bell 202 receiver with one native receive engine and bounded memory; no reference decoder or bit repair runs in production.',
         '[NEW] Optional built-in modem APRS-IS to RF gating, disabled by default and subject to existing IGate routing checks.',

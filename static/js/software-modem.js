@@ -38,8 +38,7 @@
                     <label class="modem-check"><input id="modem-tx-wait-clear" type="checkbox" checked> <span>Wait for clear channel<small>Wait before transmitting on a busy channel</small></span></label>
                 </div>
                 <p class="modem-note">When enabled, configured beacons, messages, spots and digipeating can use this modem. Saved RX and enabled TX restore on application launch. Stop RX or Stop TX disables their automatic startup.</p>
-                <label class="modem-check"><input type="checkbox" id="modem-tx-is-to-rf"> Allow APRS-IS → RF gating</label>
-                <p class="modem-note">Off by default. Requires modem RF transmission and IGate IS→RF to be enabled. Existing message routing and duplicate checks apply. Click Apply transmit settings to save.</p>
+                <p class="modem-note">APRS-IS → RF is controlled in Settings → Radio &amp; TNC → IGate. This modem can carry gated messages when RF transmission is enabled here.</p>
                 <div class="modem-grid">
                     <label>Radio transmit audio output<select id="modem-tx-device"></select></label>
                     <label>Output channel<select id="modem-tx-channel"><option value="0">Left / mono</option><option value="1">Right (stereo)</option></select></label>
@@ -137,7 +136,6 @@
             fill('modem-tx-port',data.ports,'Choose PTT serial port','device',p=>`${p.device} - ${p.description}`);
             if(saved.ptt)$('modem-tx-ptt').value=saved.ptt;
             $('modem-tx-wait-clear').checked=saved.wait_for_clear_channel!==false;
-            $('modem-tx-is-to-rf').checked=saved.allow_is_to_rf===true;
             for(const [id,key] of [['channel','channel'],['gain','gain'],['delay','delay_ms'],['tail','tail_ms']]) {
                 if(saved[key]!==undefined)$('modem-tx-'+id).value=saved[key];
             }
@@ -159,8 +157,7 @@
                 const data=await api('transmit-settings',{enabled:$('modem-tx-enabled').checked,
                     device:Number($('modem-tx-device').value),channel:Number($('modem-tx-channel').value),
                     ptt:$('modem-tx-ptt').value,port:$('modem-tx-port').value,gain:Number($('modem-tx-gain').value),
-                    delay_ms:Number($('modem-tx-delay').value),tail_ms:Number($('modem-tx-tail').value),wait_for_clear_channel:$('modem-tx-wait-clear').checked,
-                    allow_is_to_rf:$('modem-tx-is-to-rf').checked});
+                    delay_ms:Number($('modem-tx-delay').value),tail_ms:Number($('modem-tx-tail').value),wait_for_clear_channel:$('modem-tx-wait-clear').checked});
                 render(data);
             }catch(error){showTxNotice(error.message);}
             finally{button.disabled=false;}

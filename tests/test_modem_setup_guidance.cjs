@@ -36,7 +36,7 @@ test('active built-in RX/TX supplies radio, digipeater and beacon routes', () =>
     assert.match(result.html, /Every 10 min over RF/);
     assert.doesNotMatch(result.html, /RF ports exist|No enabled RF transmit port/);
     assert.ok(!result.readiness.blockers.some(row => row[0] === 'No receive source is enabled.'));
-    assert.match(result.html, /enable RF transmission and Allow APRS-IS → RF gating/);
+    assert.doesNotMatch(result.html, /enable RF transmission|Allow APRS-IS/);
 });
 
 test('RX-only modem counts as reception but cannot provide RF transmission', () => {
@@ -47,9 +47,9 @@ test('RX-only modem counts as reception but cannot provide RF transmission', () 
     assert.ok(!result.readiness.blockers.some(row => row[0] === 'No receive source is enabled.'));
 });
 
-test('modem opt-in supplies the IS to RF route', () => {
+test('modem TX supplies the route without a second gating setting', () => {
     const result = guidance({running: true, connected: true,
-        transmit: {enabled: true, settings: {allow_is_to_rf: true}}});
+        transmit: {enabled: true, settings: {allow_is_to_rf: false}}});
     assert.doesNotMatch(result.html, /enable RF transmission and Allow|no enabled port permits/);
     assert.match(result.html, /IS→RF on/);
 });

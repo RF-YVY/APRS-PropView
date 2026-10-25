@@ -1,5 +1,13 @@
 # APRS PropView changelog
 
+## v1.14.1 — one APRS-IS to RF control
+
+- [FIX] Removed the duplicate APRS-IS → RF checkbox from the built-in modem. Settings → Radio & TNC → IGate is the single place to enable or disable gating.
+- [FIX] Built-in modem routing now follows the IGate controls and its general RF transmit enable. Old modem-specific gating flags no longer block or override the IGate setting.
+- [FIX] IGate master and direction changes apply live, including when IGate was disabled at startup. Both gating directions stop when the IGate master switch is off.
+- [FIX] Updated setup guidance and documentation to match the single control. New installations still default APRS-IS → RF to off; saved IGate choices are retained.
+
+
 ## v1.14.0 — enhanced receiver and clearer operating controls
 
 - [NEW] Integrated the enhanced Bell 202 receiver proven in Dev modem: 132 parallel timing and tone-decision lanes, varied filter windows, tone offsets and pre/de-emphasis hypotheses, and adaptive clock tracking.

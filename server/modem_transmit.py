@@ -63,11 +63,8 @@ class ModemTransmitter:
 
     async def configure(self,body):
         if not isinstance(body,dict) or type(body.get('enabled')) is not bool:raise ValueError('Invalid transmit settings.')
-        allow_is_to_rf=body.get('allow_is_to_rf',False)
-        if type(allow_is_to_rf) is not bool:raise ValueError('Allow APRS-IS to RF gating must be true or false.')
         if not body['enabled']:
             await self.stop()
-            self.settings['allow_is_to_rf']=allow_is_to_rf
             return self.status()
         if not self.receiver_ready():raise ValueError('Start receiving before enabling transmission.')
         async with self.lock:
@@ -100,7 +97,7 @@ class ModemTransmitter:
             except sd.PortAudioError:
                 rate=44100;sd.check_output_settings(device=device,channels=channel+1,dtype='float32',samplerate=rate)
             self.settings={'device':device,'device_name':output['name'],'host_api':output['host_api'],'channel':channel,
-                           'ptt':method,'port':port,'gain':gain,'delay_ms':delay,'tail_ms':tail,'rate':rate,'wait_for_clear_channel':wait_clear,'allow_is_to_rf':allow_is_to_rf}
+                           'ptt':method,'port':port,'gain':gain,'delay_ms':delay,'tail_ms':tail,'rate':rate,'wait_for_clear_channel':wait_clear}
             self.enabled=True;self.last_error=''
             return self.status()
 

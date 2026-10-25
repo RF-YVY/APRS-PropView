@@ -4,7 +4,7 @@
 Launch this to start the application. The web interface opens automatically.
 """
 
-APP_VERSION = "1.14.0"
+APP_VERSION = "1.14.1"
 
 import asyncio
 import sys
@@ -344,7 +344,7 @@ async def main():
     ws_manager = WebSocketManager()
     tracker = StationTracker(db, config, ws_manager)
     digipeater = Digipeater(config) if config.digipeater.enabled else None
-    igate = IGate(config) if config.igate.enabled else None
+    igate = IGate(config)
     gps_manager = GPSManager(config, ws_manager, tracker)
     tracker.set_gps_manager(gps_manager)
 

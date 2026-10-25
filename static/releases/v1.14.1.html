@@ -1,0 +1,119 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>APRS PropView 1.14.1 changelog</title><style>body{margin:0;background:#101820;color:#e5edf3;font:16px/1.65 system-ui,sans-serif}main{max-width:980px;margin:auto;padding:32px 24px 70px}h1,h2,h3{line-height:1.25;color:#fff}h2{margin-top:2.3em;border-bottom:1px solid #405361;padding-bottom:10px;scroll-margin-top:18px}a{color:#79c9ff}code{background:#243441;padding:2px 5px;border-radius:3px}li{margin:.5em 0}nav{padding:18px 24px;background:#1a2b38;border:1px solid #405361;border-radius:10px}nav ul{columns:2;padding-left:20px}nav li{break-inside:avoid}p,li{overflow-wrap:anywhere}@media(max-width:600px){nav ul{columns:1}main{padding:18px}}</style></head><body><main><nav aria-label="Contents"><strong>Contents</strong><ul><li><a href="#v1-14-1-one-aprs-is-to-rf-control">v1.14.1 — one APRS-IS to RF control</a></li><li><a href="#v1-14-0-enhanced-receiver-and-clearer-operating-controls">v1.14.0 — enhanced receiver and clearer operating controls</a></li><li><a href="#v1-13-1-text-encoding-correction">v1.13.1 — text encoding correction</a></li><li><a href="#v1-13-0-changes-since-v1-11-1">v1.13.0 — changes since v1.11.1</a></li><li><a href="#v1-11-1-previous-published-baseline">v1.11.1 — previous published baseline</a></li></ul></nav><h1>APRS PropView changelog</h1>
+<h2 id="v1-14-1-one-aprs-is-to-rf-control">v1.14.1 — one APRS-IS to RF control</h2>
+<ul>
+<li>[FIX] Removed the duplicate APRS-IS → RF checkbox from the built-in modem. Settings → Radio &amp; TNC → IGate is the single place to enable or disable gating.</li>
+<li>[FIX] Built-in modem routing now follows the IGate controls and its general RF transmit enable. Old modem-specific gating flags no longer block or override the IGate setting.</li>
+<li>[FIX] IGate master and direction changes apply live, including when IGate was disabled at startup. Both gating directions stop when the IGate master switch is off.</li>
+<li>[FIX] Updated setup guidance and documentation to match the single control. New installations still default APRS-IS → RF to off; saved IGate choices are retained.</li>
+</ul>
+<h2 id="v1-14-0-enhanced-receiver-and-clearer-operating-controls">v1.14.0 — enhanced receiver and clearer operating controls</h2>
+<ul>
+<li>[NEW] Integrated the enhanced Bell 202 receiver proven in Dev modem: 132 parallel timing and tone-decision lanes, varied filter windows, tone offsets and pre/de-emphasis hypotheses, and adaptive clock tracking.</li>
+<li>[NEW] Production runs one native receiver, with bounded queues and frame buffers. The legacy comparison engine and experimental bit-repair search are not included. A repeatable processing benchmark is available for Windows, Linux/ARM64 and macOS; physical Raspberry Pi/audio performance still requires hardware validation.</li>
+<li>[NEW] Built-in modem APRS-IS → RF gating is now an explicit opt-in, off by default. Modem TX and IGate IS→RF must also be enabled, and existing message routing and duplicate checks still apply.</li>
+<li>[FIX] Removed the offline Test with a WAV recording section from the production modem window. Internal offline regression tests and packaged self-tests remain available to developers.</li>
+<li>[FIX] Enable RF transmission and Wait for clear channel are larger, adjacent controls in a highlighted panel; transmit setup starts expanded and stacks on small screens. Existing TX opt-in, clear-channel default and saved settings are preserved.</li>
+<li>[FIX] Setup guidance recognizes built-in modem reception, beaconing, digipeating and permitted gated-transmit routes without requiring a duplicate Serial/TCP RF port.</li>
+<li>[FIX] Desktop and mobile uptime roll over to DD:HH:MM:SS at 24 hours, retaining HH:MM:SS below one day.</li>
+<li>[FIX] Added the visible word Login beside the map-toolbar lock icon.</li>
+<li>[FIX] Updated release notices, help, native version metadata and platform release packaging for v1.14.0.</li>
+</ul>
+<h2 id="v1-13-1-text-encoding-correction">v1.13.1 — text encoding correction</h2>
+<p>Released October 23, 2026.</p>
+<ul>
+<li>Repaired corrupted Unicode characters throughout the application, settings, modem help, weather text, Markdown guides and generated changelog/documentation pages.</li>
+<li>Fixed the View, Stations, Layers and Appearance dropdown indicators. CSS chevrons now use encoding-independent character escapes.</li>
+<li>Repaired both single and repeated UTF-8/Windows-code-page conversion errors while preserving intended symbols and emoji.</li>
+<li>Made text-file encoding explicit in maintenance/configuration code, added UTF-8 editor defaults, and added regression checks for invalid UTF-8 and common corruption patterns.</li>
+<li>Regenerated bundled documentation from the corrected Markdown sources and rebuilt platform packages. The experimental-modem disclaimer and the full changes since v1.11.1 remain included.</li>
+</ul>
+<h2 id="v1-13-0-changes-since-v1-11-1">v1.13.0 — changes since v1.11.1</h2>
+<p>Released October 23, 2026. This release consolidates the unpublished v1.12.0 work and the v1.13.0 development series into one public release.</p>
+<h3>Experimental built-in soundcard modem</h3>
+<p><strong>The built-in modem is experimental. Further radio and hardware testing is needed on Linux, Raspberry Pi and macOS. Reception, transmission and PTT behavior may vary by platform and audio interface.</strong> Software tests are not a substitute for validating your radio setup.</p>
+<ul>
+<li>Added an original native 1200-baud Bell 202/AFSK modem with AX.25 framing, FCS checking, HDLC bit stuffing and NRZI encoding/decoding. External KISS serial, KISS TCP and AGWPE connections remain available.</li>
+<li>Added soundcard reception with selectable radio audio input and mono/left or right stereo channel. Four decoder lanes attempt reception with different thresholds.</li>
+<li>Added input level, peak, clipping, carrier detection, decoded-frame, CRC-failure, dropped-block and audio-overflow diagnostics, with explanations of what the readings mean.</li>
+<li>Added offline 16-bit PCM WAV decoding and a downloadable generated test recording. Imported test recordings do not enter the live RF map and cannot trigger digipeating, iGating or message acknowledgements.</li>
+<li>Added native transmit audio encoding, selectable radio audio output/channel, adjustable amplitude, <strong>Transmit delay (ms)</strong> and transmit tail. Delay accepts 50–1500 ms, defaults to 300 ms, and supplies opening flags before packet data.</li>
+<li>Added RIGblaster NOMIC/serial RTS, serial DTR and radio VOX PTT modes, plus an RF test-packet control. The unused serial control line stays low.</li>
+<li>Added Stop TX, bounded audio/PTT operation, a ten-second keying watchdog, frame validation and error reporting for audio underruns and unavailable interfaces.</li>
+<li>Added <strong>Wait for clear channel</strong>, enabled by default. Its checkbox sits beside its label, changes apply immediately, the selected mode is visible, and the choice survives restarts. Carrier detection requires sustained tone evidence to reduce busy indications from short noise peaks.</li>
+<li>Saved RX and enabled TX settings restore at launch, matching audio interfaces by name and host API. Stop RX disables reception auto-start; Stop TX disables TX auto-start. Transmission is initially disabled until configured and enabled.</li>
+<li>Integrated the modem into RF connection status, source health, manual transmission readiness, configured beacons, messages, OTA spots and digipeating without requiring a duplicate external RF port. APRS-IS-to-RF gating remains disabled on the built-in modem interface.</li>
+<li>Moved modem setup into <strong>Settings → Radio &amp; TNC → RF Ports</strong>. Added an experimental-platform notice directly in the modem window.</li>
+</ul>
+<h3>Remote access, web server and mobile dashboard</h3>
+<ul>
+<li>Restored the normal release port to <strong>14501</strong> and default listening address to <strong>0.0.0.0</strong>. The server accepts connections on local, LAN and Tailscale interfaces instead of being limited to loopback.</li>
+<li>The desktop dashboard is at <code>/</code>; the mobile page is at <code>/mobile</code> on the same server and port. Use <code>http://&lt;host-or-Tailscale-IP&gt;:14501/</code> or <code>http://&lt;host-or-Tailscale-IP&gt;:14501/mobile</code>.</li>
+<li>On the first v1.13.0 startup, saved loopback-only defaults are migrated to the shared listener, and the former dev port 14502 is migrated to 14501. Explicit environment overrides and other custom ports remain supported. Subsequent user settings changes are preserved.</li>
+<li>Removed the dev-launch behavior that discarded deployment settings. Container and service deployments retain their configured host, port, config and database locations.</li>
+<li>Mobile maps now use key-free OpenStreetMap tiles, including a locally styled dark map.</li>
+<li>Existing host firewall rules and Tailscale access policies still govern access to the listening service.</li>
+</ul>
+<h3>Operator access and privacy</h3>
+<ul>
+<li>Public dashboards are read-only. Settings, private messages, transmission actions, configuration exports and update installation require an operator session.</li>
+<li>Added local operator-password setup and recovery without an online account. Passwords support 6–256 characters, and existing credentials continue to work.</li>
+<li>Added remote sign-in durations of 15 minutes, one hour or eight hours; session countdown, extension and immediate locking controls are available in the compact map-toolbar lock popover.</li>
+<li>Browsers opened by the host application can sign in automatically. This does not grant operator access to other browsers or public viewers.</li>
+<li>Added per-browser sessions, HttpOnly authentication cookies, origin/CSRF checks, sanitized public responses, private-message filtering and non-cacheable session-dependent API responses.</li>
+<li>Added an owner-only local shortcut handoff and single-use update-session handoff. Restart/update continuation does not unlock other browsers.</li>
+<li>Added terminal-based <code>--set-operator-password</code> for headless Linux/Pi/container installations; passwords are prompted without echo or command-line arguments.</li>
+</ul>
+<h3>OTA activity spotting and messaging</h3>
+<ul>
+<li>Added <strong>Send OTA Activity Spot</strong> on the map toolbar, with APSPOT command preview and routing for supported POTA, SOTA, WWFF and SIOTA references.</li>
+<li>Added editable operator callsign, activity/reference, frequency, mode, comment and RF/APRS-IS delivery selection, including validation and service instructions/credit.</li>
+<li>Added current-spot filtering and test-mode support.</li>
+<li>APRS-IS reception filters include replies to a selected spotting callsign without discarding the operator's configured filter. Relevant APSPOT replies are recorded and acknowledged with the corresponding sender identity.</li>
+<li>Callsign examples in editable fields and the illustrated setup guide now use W1AW or a fictitious placeholder. User-entered callsigns and creator/service credits are preserved.</li>
+</ul>
+<h3>RF processing and source health</h3>
+<ul>
+<li>Fixed KISS escaping of command bytes on channels 12 and 13.</li>
+<li>Fixed digipeater enabling after startup: the service remains available when the operator enables it in Settings.</li>
+<li>Digipeater callsign, aliases and duplicate-window changes now apply live rather than retaining startup values.</li>
+<li>Retained explicit alias matching and duplicate suppression. A request for WIDE2-2 requires that alias to be configured; the default WIDE1-1/WIDE2-1 aliases do not automatically authorize every WIDEn-N request.</li>
+<li>A connected receiver with no decoded packet this session is shown as listening. Stale data uses a yellow indicator and label; red indicates offline/error conditions. The combined health indicator follows the same distinction.</li>
+<li>Improved RF readiness/status integration for the built-in modem and preserved receive-only port restrictions.</li>
+</ul>
+<h3>Map, settings and appearance</h3>
+<ul>
+<li>Added a saved <strong>Show RF lines</strong> control and expanded line options under <strong>Appearance</strong>. RF lines respect source, station and time filters; APRS-IS packet animations remain temporary.</li>
+<li>Matched the Lines control sizing to adjacent Appearance controls.</li>
+<li>Added a custom header icon beside the application name/version. PNG, JPEG, WebP, GIF, BMP and ICO uploads up to 10 MB are normalized and resized proportionally to fit the header, preserving transparency where supported.</li>
+<li>Header-icon changes save immediately, survive restarts and include <strong>Restore default icon</strong>. Invalid uploads preserve the previously saved image.</li>
+<li>Weather/lightning enablement, location lookup and display options are visible in Basic Settings under <strong>Alerts &amp; Weather</strong>.</li>
+<li>Fixed the NOAA Minimum Kp input step so the default threshold 5.00 is accepted.</li>
+</ul>
+<h3>Updates, release notes and documentation</h3>
+<ul>
+<li>Added download progress, installation guidance, relaunch handling and refresh of the existing browser tab for Windows updates.</li>
+<li>Preserved existing configuration/database files and local operator state across updates. Build scripts no longer delete unrelated artifacts or user data from the entire distribution directory.</li>
+<li>Added this consolidated Markdown changelog for GitHub, the PropView website and bundled documentation. The full changelog appears on first v1.13.0 use, including new installations, and remains pending until an operator acknowledges it.</li>
+<li>Rewrote the in-app Help &amp; User Guide and full HTML documentation from a shared Markdown user guide, covering modem RX/TX, remote access, mobile use, spotting, weather, maps, integrations and troubleshooting.</li>
+<li>Added cross-platform setup, headless deployment, native-build and compatibility documentation.</li>
+</ul>
+<h3>Linux, Raspberry Pi, macOS and packaging</h3>
+<ul>
+<li>Added platform-aware native-library loading: Windows DLL, Linux <code>.so</code> and macOS <code>.dylib</code>. The native build script now uses MSVC on Windows and a host C++17 compiler on Linux/macOS, including native ARM builds.</li>
+<li>Serial PTT now accepts enumerated Unix device paths and preserves case; device conflicts remain blocked.</li>
+<li>Added a Linux executable builder and updated Windows/macOS packaging to include the native modem and required audio dependencies.</li>
+<li>macOS packaging includes a microphone usage declaration, audio-input entitlement and final bundle signing. The incompatible background-thread menu-bar icon is omitted; the browser dashboard remains available.</li>
+<li>Docker builds the modem for the image architecture, includes system PortAudio and uses the intended listening port and persistent volume. Images target Linux amd64 and arm64.</li>
+<li>Added platform CI for Windows, Linux x86-64/ARM64 and Intel/Apple Silicon macOS, with regression suites, native modem tests and packaging/startup checks.</li>
+<li>Windows and Linux source suites and packaged modem/headless web smoke tests were exercised locally during remediation. Native Mac builds, physical Raspberry Pi/Mac USB audio and PTT performance, and 32-bit Pi support still require platform/hardware validation. Linux binaries must match the target architecture and compatible system-library versions; rebuild from source when needed.</li>
+</ul>
+<h3>Upgrade notes</h3>
+<ul>
+<li>Windows: install <code>APRSPropViewSetup-1.13.0.exe</code> over the stable installation, or replace the portable <code>APRSPropView.exe</code>. Quit the existing application first. Existing stable data remains in place; the separate dev installation/data is not silently imported.</li>
+<li>Linux/Pi/macOS: update the source and dependencies, build the native modem on the target host, then restart or rebuild the application. See <a href="/static/guides/CROSS_PLATFORM_SETUP.html">cross-platform setup</a>.</li>
+<li>Docker: use the v1.13.0 image once its publishing workflow completes, or build the included Dockerfile. Supply device/group access when using serial/audio hardware.</li>
+<li>Configure your own licensed station identity before transmitting. For remote viewing, use the host's LAN/Tailscale address, not localhost; the mobile path is <code>/mobile</code>.</li>
+</ul>
+<h2 id="v1-11-1-previous-published-baseline">v1.11.1 — previous published baseline</h2>
+<p>Released October 14, 2026. Preserved saved MQTT passwords during unrelated settings saves, corrected Safari settings-overlay clipping, and improved Windows weather HTTPS certificate handling. Those fixes remain included in v1.13.0.</p>
+<p><a href="/static/documentation.html">Full user guide</a> &#183; <a href="/">Dashboard</a></p></main></body></html>

@@ -33,6 +33,7 @@ test('primary modem controls are adjacent and WAV test UI is removed', () => {
     assert.doesNotMatch(source,/id="modem-tx-enabled"[^>]*checked/);
     assert.match(source,/<details id="modem-tx-panel" open>/);
     assert.doesNotMatch(source,/Test with a WAV|modem-decode|modem-wav|test-wav/);
+    assert.doesNotMatch(source,/modem-tx-is-to-rf|allow_is_to_rf/);
 });
 
 test('toolbar session control includes visible Login text', () => {

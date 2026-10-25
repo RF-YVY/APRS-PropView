@@ -1,6 +1,6 @@
 # APRS PropView User Guide
 
-Current version: **1.14.0**. This guide covers the desktop dashboard, mobile companion, settings and built-in modem.
+Current version: **1.14.1**. This guide covers the desktop dashboard, mobile companion, settings and built-in modem.
 
 ## Getting started
 
@@ -45,7 +45,7 @@ Default OpenStreetMap tiles work without a map API key on desktop and mobile. Op
 
 RF Ports supports multiple named serial and TCP interfaces. Serial KISS, TCP KISS and TCP AGWPE server ports are transmit-capable when enabled and connected; TNC2 monitor reception is receive-only. Select the TCP protocol that matches your server. Serial options include flow control and supported initialization profiles/commands. Select the correct COM device, speed or TCP endpoint and any receive-only restrictions. Names appear in packet/station information. TCP interfaces expose connection, error and retry information and reconnect automatically. A green browser connection only confirms the dashboard link, not a radio link.
 
-Digipeater settings control whether received packets may be repeated, including path/deduplication behavior. IGate settings control RF-to-APRS-IS and optional APRS-IS-to-RF traffic, subject to route restrictions. Review paths and station settings before enabling these functions. A receive-only interface is never a transmit path. Built-in modem APRS-IS-to-RF gating is off by default. Enable Allow APRS-IS → RF gating and apply transmit settings to opt in; modem TX and IGate IS→RF must also be enabled.
+Digipeater settings control whether received packets may be repeated, including path/deduplication behavior. IGate settings control RF-to-APRS-IS and optional APRS-IS-to-RF traffic, subject to route restrictions. Review paths and station settings before enabling these functions. A receive-only interface is never a transmit path. APRS-IS → RF is controlled only in Settings → Radio & TNC → IGate and is off by default. Enable the IGate and APRS-IS → RF there. The built-in modem also needs its general Enable RF transmission switch on to transmit. There is no separate modem gating option.
 
 Manual **Transmit Beacon** uses the selected RF, APRS-IS or combined route and requires a valid station position. Connected RF reception and RF transmit availability are separate: the modem can receive while TX is disabled. Scheduled beacon intervals and smart beaconing are station functions, independent of whether a browser is currently open.
 

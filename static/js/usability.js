@@ -350,11 +350,11 @@
         if (igate || readBool('cfg-igate-rf2is') || readBool('cfg-igate-is2rf')) {
             const directions = [rfToIs ? 'RF→IS on' : 'RF→IS off', isToRf ? 'IS→RF on' : 'IS→RF off'].join(' · ');
             const hasDirection = rfToIs || isToRf;
-            const gatedTx = (modemTransmitting() && modemStatus?.transmit?.settings?.allow_is_to_rf === true) || rfCards.some((card) => !rfCardField(card, 'rx_only_is')?.checked);
+            const gatedTx = modemTransmitting() || rfCards.some((card) => !rfCardField(card, 'rx_only_is')?.checked);
             const isToRfReady = !isToRf || gatedTx;
             const detail = !igate
                 ? 'Direction selected while the IGate itself is disabled.'
-                : `${directions}${isToRf && !gatedTx ? (modemReceiving() ? ' · enable RF transmission and Allow APRS-IS → RF gating in Configure Built-in Modem, or choose an external gated-transmit port' : ' · no enabled port permits gated RF transmit') : ''}`;
+                : `${directions}${isToRf && !gatedTx ? (modemReceiving() ? ' · enable RF transmission in Configure Built-in Modem, or choose an external gated-transmit port' : ' · no enabled port permits gated RF transmit') : ''}`;
             const state = igate && hasDirection && isToRfReady ? (isToRf ? 'review' : 'done') : 'needed';
             items.push(setupGuideItem(state, 'IGate directions', detail, 'radio', 'igate'));
         }
