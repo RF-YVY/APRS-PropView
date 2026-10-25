@@ -15,7 +15,6 @@ class IGate:
 
     def __init__(self, config: Config):
         self.config = config
-        self.my_call = config.station.full_callsign
 
         self._gated_is_to_rf: OrderedDict[str, float] = OrderedDict()
         self._gate_dedupe_seconds = 30
@@ -28,6 +27,11 @@ class IGate:
             f"IGate initialized: rf_to_is={config.igate.rf_to_is}, "
             f"is_to_rf={config.igate.is_to_rf}"
         )
+
+    @property
+    def my_call(self):
+        # Station identity can change while this controller remains available.
+        return self.config.station.full_callsign
 
     def note_rf_station(self, callsign: str):
         """Record that a station was heard on RF (for IS→RF routing)."""

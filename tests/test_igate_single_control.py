@@ -11,10 +11,11 @@ class SingleIGateControlTests(unittest.TestCase):
         raw='K2SRC>APRS::K1DEST   :Test message'
         self.assertFalse(config.igate.is_to_rf)
         config.igate.enabled=True
+        config.station.callsign='W2AW'
         gate.note_rf_station('K1DEST')
         self.assertIsNone(gate.should_gate_is_to_rf(raw,'K2SRC'))
         config.igate.is_to_rf=True
-        self.assertIsNotNone(gate.should_gate_is_to_rf(raw,'K2SRC'))
+        self.assertIn(',W2AW*:',gate.should_gate_is_to_rf(raw,'K2SRC'))
         config.igate.is_to_rf=False
         self.assertIsNone(gate.should_gate_is_to_rf(raw+'2','K2SRC'))
         config.igate.is_to_rf=True
