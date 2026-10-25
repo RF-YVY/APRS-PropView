@@ -93,6 +93,28 @@ class TransmitControlTests(unittest.IsolatedAsyncioTestCase):
             if method=='vox':self.assertEqual(FakeSerial.instances,[])
             else:self.assertEqual(FakeSerial.instances[0].asserted,['dtr'])
 
+    async def test_gated_transmit_is_explicit_opt_in_and_requires_tx(self):
+        from server.software_modem import SoftwareModem
+        from server.packet_handler import PacketHandler
+        modem=SimpleNamespace(transmitter=self.tx,connected=True,can_transmit=True)
+        def permitted():
+            modem.rx_only_is=SoftwareModem.rx_only_is.fget(modem)
+            return PacketHandler._iface_can_transmit(None,modem,'is')
+        await self.tx.configure(self.settings)
+        self.assertFalse(permitted())
+        for value in ['true',1,None]:
+            with self.assertRaises(ValueError):
+                await self.tx.configure({**self.settings,'allow_is_to_rf':value})
+        await self.tx.configure({**self.settings,'allow_is_to_rf':True})
+        self.assertTrue(permitted())
+        modem.can_transmit=False
+        self.assertFalse(permitted())
+        modem.can_transmit=True
+        await self.tx.configure({**self.settings,'allow_is_to_rf':False})
+        self.assertFalse(permitted())
+        self.assertEqual(FakeSerial.instances,[])
+        self.assertEqual(FakeOutput.instances,[])
+
     async def test_transmit_delay_milliseconds_reach_audio_encoder(self):
         await self.tx.configure({**self.settings,'delay_ms':725,'wait_for_clear_channel':False})
         self.assertEqual(self.tx.status()['settings']['delay_ms'],725)

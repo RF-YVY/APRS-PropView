@@ -1,5 +1,5 @@
 """Packaged decoder test, with no audio device, browser or user data access."""
-def run():
+def run(version):
     from server.ax25 import AX25Frame
     from server.software_modem import generate_test_wav,decode_wav
     import sounddevice
@@ -12,6 +12,6 @@ def run():
     try:
         if decoder.feed(tx_audio)!=[frame.encode()]:raise RuntimeError('Packaged transmit encoder self-test failed.')
     finally:decoder.close()
-    return {'tx_encoder_passed':True,'version':__import__('main').APP_VERSION,'passed':True,'decoded_frames':result['decoded_frames'],
+    return {'tx_encoder_passed':True,'version':version,'passed':True,'decoded_frames':result['decoded_frames'],
             'audio_seconds':result['audio_seconds'],'processing_seconds':result['processing_seconds'],
             'portaudio_version':sounddevice.get_portaudio_version()[1],'transmit_defaults_off':True}

@@ -694,7 +694,7 @@ if __name__ == "__main__":
     if '--modem-self-test' in sys.argv:
         from server.modem_self_test import run
         import json
-        print(json.dumps(run()))
+        print(json.dumps(run(APP_VERSION)))
         raise SystemExit(0)
     _runtime_environment()
     try:

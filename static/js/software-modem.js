@@ -30,7 +30,7 @@
                 </dl>
                 <p class="modem-note">Counters reset when you start receiving again. Healthy audio counters do not measure how many transmissions were missed. Compare the same recording with another decoder to assess reception performance.</p>
             </details>
-            <p class="modem-note">Connect receiver audio to the selected input. Avoid clipping, microphone noise suppression and automatic gain effects. Live decoded packets enter the development station map.</p>
+            <p class="modem-note">Connect receiver audio to the selected input. Avoid clipping, microphone noise suppression and automatic gain effects. Live decoded packets enter the station map.</p>
             <details id="modem-tx-panel" open><summary>Transmit setup (NOMIC / serial / VOX)</summary>
                 <p class="modem-note">For a RIGblaster NOMIC, select the soundcard output connected to the NOMIC and its USB/serial port. RTS keys PTT; the unused DTR line stays low. Start receiving before enabling TX.</p>
                 <div class="modem-primary-controls" role="group" aria-label="RF transmission controls">
