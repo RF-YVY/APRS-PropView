@@ -61,6 +61,8 @@ class UpdateChecker:
             "release_url": GITHUB_RELEASES_URL,
             "installer_url": "",
             "installer_name": "",
+            "installer_sha256": "",
+            "installer_size": 0,
             "published_at": "",
             "prerelease": False,
             "checked_at": None,
@@ -167,6 +169,8 @@ class UpdateChecker:
                 "release_url": GITHUB_RELEASES_URL,
                 "installer_url": release.get("installer_url") or "",
                 "installer_name": release.get("installer_name") or "",
+                "installer_sha256": release.get("installer_sha256") or "",
+                "installer_size": release.get("installer_size") or 0,
                 "published_at": release.get("published_at") or "",
                 "prerelease": bool(release.get("prerelease")),
                 "checked_at": checked_at,
@@ -279,10 +283,13 @@ class UpdateChecker:
         }
 
     @staticmethod
-    def _installer_asset_from_release(release: Dict[str, Any]) -> Dict[str, str]:
+    def _installer_asset_from_release(release: Dict[str, Any]) -> Dict[str, Any]:
         for asset in release.get("assets") or []:
             name = asset.get("name") or ""
             url = asset.get("browser_download_url") or ""
             if name and url and INSTALLER_ASSET_RE.search(name):
-                return {"installer_name": name, "installer_url": url}
+                digest = asset.get('digest') or ''
+                sha256 = digest[7:] if re.fullmatch(r'sha256:[a-fA-F0-9]{64}', digest) else ''
+                return {"installer_name": name, "installer_url": url,
+                        "installer_sha256": sha256, "installer_size": asset.get('size') or 0}
         return {"installer_name": "", "installer_url": ""}

@@ -5,10 +5,11 @@ from copy import deepcopy
 from server.config_io import apply_config, atomic_write
 from server.operator_auth import (
     OperatorAuth, COOKIE, install_access_control, public_config, public_status,
-    public_packet, public_station, public_weather, public_socket_message, same_origin,
+    public_packet, public_station, public_weather, public_socket_message, public_propagation, same_origin,
 )
 from server.config import tomllib
 from server.analytics_routes import register_analytics_routes
+from server.resource_limits import PublicRequestLimits, TileCacheBudget
 import base64
 import binascii
 import hashlib
@@ -79,6 +80,8 @@ ALERT_AUDIO_EXTS = {".wav", ".mp3"}
 MAX_ALERT_AUDIO_BYTES = 15 * 1024 * 1024
 MAP_TILE_CACHE_DIR = Path(os.environ.get("PROPVIEW_MAP_TILE_CACHE_DIR") or (RUNTIME_DATA_DIR / "map_tile_cache")).expanduser()
 MAX_TILE_CACHE_REQUEST = 800
+MAX_TILE_BYTES = 1024 * 1024
+TILE_CACHE_BUDGET = TileCacheBudget(MAP_TILE_CACHE_DIR)
 
 # ── Validation helpers ──────────────────────────────────────────────
 
@@ -302,17 +305,17 @@ def _download_tile(tile_url: str, z: int, x: int, y: int) -> Optional[Path]:
             status = getattr(resp, "status", 200)
             if status >= 400:
                 return None
-            data = resp.read(1024 * 1024)
+            data = resp.read(MAX_TILE_BYTES + 1)
     except Exception:
         return None
 
-    if not data:
+    if not data or len(data) > MAX_TILE_BYTES:
         return None
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_bytes(data)
-    tmp.replace(path)
-    return path
+    try:
+        return TILE_CACHE_BUDGET.store(path, data)
+    except OSError:
+        logger.warning('Could not commit map tile to bounded cache')
+        return None
 
 
 def _lon_to_tile_x(lon: float, z: int) -> int:
@@ -795,6 +798,21 @@ def create_app(
     started_at = time.time()
     operator_auth = OperatorAuth(config_path.with_name('operator-auth.json'))
     install_access_control(app, operator_auth)
+    tile_download_slots = asyncio.Semaphore(4)
+    tile_miss_limits = PublicRequestLimits(global_capacity=96, global_rate=2)
+    tile_miss_limits.POLICIES = {**tile_miss_limits.POLICIES, 'tiles': (48, 1)}
+
+    async def fetch_tile(tile_url, z, x, y):
+        # One shared gate for ordinary browsing and operator bulk caching.
+        async with tile_download_slots:
+            worker = asyncio.create_task(asyncio.to_thread(_download_tile, tile_url, z, x, y))
+            try:
+                return await asyncio.shield(worker)
+            except asyncio.CancelledError:
+                # A cancelled await cannot stop a running urllib worker thread.
+                # Keep its slot reserved until that worker has actually finished.
+                await worker
+                raise
 
     @app.get('/api/whats-new')
     async def whats_new(request: Request):
@@ -1019,7 +1037,7 @@ def create_app(
         return FileResponse(str(STATIC_DIR / "ico" / "favicon.ico"))
 
     @app.get("/api/map-tiles/{z}/{x}/{y}")
-    async def get_map_tile(z: int, x: int, y: int):
+    async def get_map_tile(z: int, x: int, y: int, request: Request):
         if z < 0 or z > 22 or x < 0 or y < 0 or x >= (1 << z) or y >= (1 << z):
             return JSONResponse(status_code=404, content={"success": False, "message": "Tile not found."})
 
@@ -1027,7 +1045,18 @@ def create_app(
         tile_url = tile_cfg["url"]
         path = _tile_cache_path(tile_url, z, x, y)
         if not path.exists() or path.stat().st_size <= 0:
-            path = await asyncio.to_thread(_download_tile, tile_url, z, x, y)
+            limited = not request.state.operator_session
+            if limited:
+                peer = request.client.host if request.client else 'unknown'
+                rejected = tile_miss_limits.acquire(peer, '/api/map-tiles/miss')
+                if rejected:
+                    return JSONResponse({'message': 'Tile download limit reached.'}, status_code=rejected,
+                                        headers={'Retry-After': '5'})
+            try:
+                path = await fetch_tile(tile_url, z, x, y)
+            finally:
+                if limited:
+                    tile_miss_limits.release()
         if not path or not path.exists():
             return JSONResponse(status_code=404, content={"success": False, "message": "Tile not cached and upstream is unavailable."})
         media_type = mimetypes.guess_type(path.name)[0] or "image/png"
@@ -1086,7 +1115,6 @@ def create_app(
         downloaded = 0
         cached = 0
         failed = 0
-        semaphore = asyncio.Semaphore(6)
 
         async def cache_one(coord):
             nonlocal downloaded, cached, failed
@@ -1095,8 +1123,7 @@ def create_app(
             if path.exists() and path.stat().st_size > 0:
                 cached += 1
                 return
-            async with semaphore:
-                result = await asyncio.to_thread(_download_tile, tile_url, z, x, y)
+            result = await fetch_tile(tile_url, z, x, y)
             if result:
                 downloaded += 1
             else:
@@ -1118,7 +1145,9 @@ def create_app(
         if not same_origin(websocket):
             await websocket.close(code=1008)
             return
-        accepted = await ws_manager.connect(websocket)
+        accepted = await ws_manager.connect(
+            websocket, operator=bool(operator_auth.session(websocket.cookies.get(COOKIE, ''))),
+            peer=websocket.client.host if websocket.client else 'unknown')
         if not accepted:
             return
         try:
@@ -1204,7 +1233,7 @@ def create_app(
         status["installer_install_supported"] = installer_install_supported
         return status
 
-    from server.update_install import installer_environment
+    from server.update_install import installer_environment, download_installer, verify_installer
     update_install_state = {"phase": "idle", "downloaded_bytes": 0, "total_bytes": 0}
     backend_instance = f"{os.getpid()}-{time.time_ns()}"
 
@@ -1212,46 +1241,15 @@ def create_app(
     async def update_install_status():
         return {**update_install_state, "instance": backend_instance, "version": app_version}
 
-    def _download_update_installer_sync(url: str, filename: str) -> str:
-        parsed = urllib.parse.urlparse(url)
-        if parsed.scheme != "https" or parsed.netloc.lower() not in {
-            "github.com",
-            "objects.githubusercontent.com",
-            "github-releases.githubusercontent.com",
-        }:
-            raise RuntimeError("Installer download URL is not a trusted GitHub URL.")
-
-        safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", filename or "APRSPropViewSetup.exe")
-        if not safe_name.lower().endswith(".exe"):
-            safe_name = "APRSPropViewSetup.exe"
-        update_dir = Path(tempfile.gettempdir()) / "APRSPropViewUpdates"
-        update_dir.mkdir(parents=True, exist_ok=True)
-        target = update_dir / safe_name
-
-        req = urllib.request.Request(
-            url,
-            headers={"User-Agent": f"APRSPropView/{app_version}"},
-        )
-        with urllib.request.urlopen(req, timeout=120, context=_github_ssl_context()) as resp:
-            with open(target, "wb") as f:
-                update_install_state['total_bytes'] = int(resp.headers.get('Content-Length') or 0)
-                while True:
-                    chunk = resp.read(256 * 1024)
-                    if not chunk:
-                        break
-                    f.write(chunk)
-                    update_install_state['downloaded_bytes'] += len(chunk)
-        if target.stat().st_size < 1024 * 1024:
-            raise RuntimeError("Downloaded installer is unexpectedly small.")
-        return str(target)
-
-    def _launch_update_installer(path: str) -> None:
+    def _launch_update_installer(path: str, expected_sha256: str) -> None:
+        verify_installer(path, expected_sha256)
         installer = Path(path)
         installer_arg = str(installer).replace("'", "''")
         working_dir_arg = str(installer.parent).replace("'", "''")
         helper_script = f"""
 $installer = '{installer_arg}'
 $workingDir = '{working_dir_arg}'
+$expectedHash = '{expected_sha256}'
 $parentPid = {os.getpid()}
 Wait-Process -Id $parentPid -Timeout 90 -ErrorAction SilentlyContinue
 $deadline = (Get-Date).AddSeconds(30)
@@ -1260,12 +1258,18 @@ while ((Get-Date) -lt $deadline) {{
     if (-not $running) {{ break }}
     Start-Sleep -Milliseconds 500
 }}
-Start-Process -FilePath $installer -WindowStyle Normal -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS', '/FORCECLOSEAPPLICATIONS', '/NORESTARTAPPLICATIONS', '/PROPVIEWINAPPUPDATE=1') -WorkingDirectory $workingDir
+try {{
+    $actualHash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256 -ErrorAction Stop).Hash
+    if ($actualHash -ine $expectedHash) {{ throw 'Installer integrity check failed' }}
+    Start-Process -FilePath $installer -WindowStyle Normal -ArgumentList @('/SP-', '/CLOSEAPPLICATIONS', '/FORCECLOSEAPPLICATIONS', '/NORESTARTAPPLICATIONS', '/PROPVIEWINAPPUPDATE=1') -WorkingDirectory $workingDir -Wait
+}} finally {{
+    Remove-Item -LiteralPath $workingDir -Recurse -Force -ErrorAction SilentlyContinue
+}}
 """
         encoded_script = base64.b64encode(helper_script.encode("utf-16le")).decode("ascii")
         subprocess.Popen(
             [
-                "powershell.exe",
+                str(Path(os.environ.get('SystemRoot', 'C:/Windows')) / 'System32' / 'WindowsPowerShell' / 'v1.0' / 'powershell.exe'),
                 "-NoProfile",
                 "-WindowStyle",
                 "Hidden",
@@ -1328,19 +1332,22 @@ Start-Process -FilePath $installer -WindowStyle Normal -ArgumentList @('/SP-', '
             try:
                 installer_path = await loop.run_in_executor(
                     None,
-                    _download_update_installer_sync,
+                    download_installer,
                     installer_url,
                     installer_name,
+                    status.get('installer_sha256') or '',
+                    status.get('installer_size') or 0,
+                    update_install_state,
                 )
             except Exception as e:
                 logger.warning("Update installer download failed: %s", e)
                 return JSONResponse(
                     status_code=502,
-                    content={"success": False, "message": "Could not download the update installer."},
+                    content={"success": False, "message": "Could not download and verify this installer. Use the official release page for manual updates."},
                 )
 
             try:
-                _launch_update_installer(installer_path)
+                _launch_update_installer(installer_path, status.get('installer_sha256') or '')
             except Exception:
                 logger.exception("Could not start update installer helper")
                 update_install_state['phase'] = 'failed'
@@ -1575,10 +1582,10 @@ Start-Process -FilePath $installer -WindowStyle Normal -ArgumentList @('/SP-', '
         return {"packets": packets, "count": len(packets)}
 
     @app.get("/api/propagation")
-    async def get_propagation():
+    async def get_propagation(request: Request):
         prop_data = await tracker.get_propagation_data()
         prop_data["watched_paths"] = await tracker.evaluate_watched_paths(allow_alerts=False)
-        return prop_data
+        return prop_data if request.state.operator_session else public_propagation(prop_data)
 
     @app.post("/api/callbook/lookup")
     async def callbook_lookup(request: Request):

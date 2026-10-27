@@ -104,6 +104,14 @@ class PropViewMap {
     }
 
     init(lat, lng) {
+        // Popup "Send Message" buttons carry the callsign in a data attribute
+        // rather than an inline onclick, so packet text never becomes script.
+        // Capture phase, because Leaflet stops click propagation inside popups.
+        document.addEventListener('click', (event) => {
+            const button = event.target.closest?.('[data-message-call]');
+            if (button) window.pvMessages?.startNewMessage?.(button.dataset.messageCall);
+        }, true);
+
         // Default to center of US if no position
         lat = lat || 39.8;
         lng = lng || -98.5;
@@ -1019,7 +1027,7 @@ class PropViewMap {
                 <tr><td class="popup-lbl">Position</td><td>${lat.toFixed(4)}, ${lng.toFixed(4)}</td></tr>
             </table>
             <div class="popup-actions">
-                <button type="button" class="popup-action-btn" onclick="window.pvMessages?.startNewMessage?.('${safeCall}')">Send Message</button>
+                <button type="button" class="popup-action-btn" data-message-call="${safeCall}">Send Message</button>
                 <a class="popup-action-btn" href="${aprsFiUrl}" target="_blank" rel="noopener noreferrer">aprs.fi</a>
             </div>
         `;
@@ -3250,9 +3258,8 @@ class PropViewMap {
     }
 
     _escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text || '';
-        return div.innerHTML;
+        // Also escapes quotes, so the result is safe inside attribute values.
+        return String(text || '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
     }
 
     /**

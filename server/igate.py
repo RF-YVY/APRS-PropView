@@ -10,6 +10,14 @@ from server.config import Config
 logger = logging.getLogger("propview.igate")
 
 
+def _first_line(text: str) -> str:
+    """Return text up to, not including, the first CR or LF."""
+    for i, ch in enumerate(text):
+        if ch == "\r" or ch == "\n":
+            return text[:i]
+    return text
+
+
 class IGate:
     """APRS Internet Gateway (IGate) logic."""
 
@@ -65,6 +73,11 @@ class IGate:
         # Don't gate our own packets
         if from_call.upper() == self.my_call.upper():
             return None
+
+        # APRS-IS is line based. Send only the first line, up to the first CR
+        # or LF, so a CR/LF inside the RF payload cannot become a second
+        # packet under this IGate's login. Nothing else in the data is changed.
+        raw_packet = _first_line(raw_packet)
 
         header, sep, info = raw_packet.partition(":")
         if not sep:

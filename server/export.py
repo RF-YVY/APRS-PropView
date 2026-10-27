@@ -14,6 +14,13 @@ logger = logging.getLogger("propview.export")
 
 # ── CSV/JSON Export Helpers ─────────────────────────────────────────
 
+
+def _csv_row(row):
+    """Keep received text from becoming a spreadsheet formula on CSV import."""
+    return {key: "'" + value if isinstance(value, str) and
+            value.lstrip(" \t\r\n").startswith(("=", "+", "-", "@"))
+            else value for key, value in row.items()}
+
 def stations_to_csv(stations: List[Dict[str, Any]]) -> str:
     """Convert station list to CSV string."""
     if not stations:
@@ -27,7 +34,7 @@ def stations_to_csv(stations: List[Dict[str, Any]]) -> str:
     writer = csv.DictWriter(output, fieldnames=fields, extrasaction="ignore")
     writer.writeheader()
     for s in stations:
-        writer.writerow(s)
+        writer.writerow(_csv_row(s))
     return output.getvalue()
 
 
@@ -43,7 +50,7 @@ def packets_to_csv(packets: List[Dict[str, Any]]) -> str:
     writer = csv.DictWriter(output, fieldnames=fields, extrasaction="ignore")
     writer.writeheader()
     for p in packets:
-        writer.writerow(p)
+        writer.writerow(_csv_row(p))
     return output.getvalue()
 
 
@@ -59,7 +66,7 @@ def propagation_to_csv(records: List[Dict[str, Any]]) -> str:
     writer = csv.DictWriter(output, fieldnames=fields, extrasaction="ignore")
     writer.writeheader()
     for r in records:
-        writer.writerow(r)
+        writer.writerow(_csv_row(r))
     return output.getvalue()
 
 

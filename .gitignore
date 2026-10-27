@@ -50,3 +50,8 @@ operator-update-session.json
 # Native development build products
 native/bin/
 modem-development.json
+
+/node_modules/
+
+# Local audit working papers and tool reports
+/.local-security-audit/

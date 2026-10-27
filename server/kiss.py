@@ -111,10 +111,13 @@ def make_kiss_frame(ax25_data: bytes, port: int = 0) -> bytes:
 class KISSFrameParser:
     """Accumulates bytes and extracts complete KISS frames."""
 
+    MAX_FRAME_BYTES = 4096
+
     def __init__(self):
         self.buffer = bytearray()
         self.in_frame = False
         self.text_buffer = bytearray()
+        self._discarding_frame = False
 
     def feed(self, data: bytes) -> list:
         """Feed raw bytes and return list of extracted KISS data frames."""
@@ -132,7 +135,7 @@ class KISSFrameParser:
                     if line:
                         text_lines.append(line)
                     self.text_buffer.clear()
-                if self.in_frame and len(self.buffer) > 0:
+                if self.in_frame and not self._discarding_frame and len(self.buffer) > 0:
                     # End of frame
                     frame_data = kiss_unescape(bytes(self.buffer))
                     if len(frame_data) > 1:
@@ -142,8 +145,14 @@ class KISSFrameParser:
                     self.buffer.clear()
                 self.in_frame = True
                 self.buffer.clear()
+                self._discarding_frame = False
             elif self.in_frame:
-                self.buffer.append(b)
+                if not self._discarding_frame:
+                    if len(self.buffer) >= self.MAX_FRAME_BYTES:
+                        self.buffer.clear()
+                        self._discarding_frame = True
+                    else:
+                        self.buffer.append(b)
             elif b in (10, 13):
                 line = self.text_buffer.decode("ascii", errors="ignore").strip()
                 if line:

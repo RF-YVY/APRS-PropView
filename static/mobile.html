@@ -835,7 +835,8 @@ function applySavedUITheme() {
     const metaTheme = document.querySelector('meta[name="theme-color"]');
     if (metaTheme) metaTheme.content = getComputedStyle(root).getPropertyValue('--bg').trim() || (mode === 'light' ? '#f5f7fb' : '#0d1117');
 }
-function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+// Also escapes quotes, so the result is safe inside attribute values.
+function escHtml(s) { return String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])); }
 function timeAgo(ts) {
     if (!ts) return '--';
     const s = Math.floor(Date.now() / 1000 - ts);
@@ -1532,6 +1533,14 @@ function showStationOnMap(call, source = '') {
     }, 80);
 }
 
+// Map popup "Send Message": data attributes instead of an inline onclick, so
+// packet text never becomes script. Capture phase, because Leaflet stops click
+// propagation inside popups.
+document.addEventListener('click', e => {
+    const button = e.target.closest?.('[data-message-call]');
+    if (button) startMessageTo(button.dataset.messageCall, button.dataset.messageSource || '');
+}, true);
+
 document.addEventListener('click', e => {
     const action = e.target.closest('[data-station-action]');
     if (!action) return;
@@ -1570,7 +1579,7 @@ function addMapMarker(st) {
         Distance: ${fmtDist(st.distance_km)}<br>Last: ${fmtTime(st.last_heard)}<br>
         Pkts: ${st.packet_count || 1}${st.last_path ? '<br>Path: ' + escHtml(st.last_path) : ''}${st.last_comment ? '<br>' + escHtml(st.last_comment) : ''}</div>
         <div class="popup-actions">
-            <button type="button" class="popup-action-btn" onclick="startMessageTo('${escHtml(call)}', '${source}')">Send Message</button>
+            <button type="button" class="popup-action-btn" data-message-call="${escHtml(call)}" data-message-source="${escHtml(source)}">Send Message</button>
             <a class="popup-action-btn" href="https://aprs.fi/info/a/${encodeURIComponent(call)}" target="_blank" rel="noopener noreferrer">aprs.fi</a>
         </div>`;
 

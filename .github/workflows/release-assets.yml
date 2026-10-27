@@ -5,7 +5,7 @@ on:
       tag:
         description: Existing draft release tag
         required: true
-        default: v1.14.1
+        default: v1.14.2
       platform_run:
         description: Successful platform compatibility run ID
         required: true

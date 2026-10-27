@@ -1446,9 +1446,8 @@
 
     function _esc(str) {
         if (!str) return '';
-        const div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
+        // Also escapes quotes, so the result is safe inside attribute values.
+        return String(str).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
     }
 
     // ── Public API ─────────────────────────────────────────────

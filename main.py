@@ -4,8 +4,8 @@
 Launch this to start the application. The web interface opens automatically.
 """
 
-APP_VERSION = "1.14.1"
-APP_RELEASE_DATE = "October 24, 2026"
+APP_VERSION = "1.14.2"
+APP_RELEASE_DATE = "October 27, 2026"
 
 import asyncio
 import sys
@@ -699,7 +699,10 @@ if __name__ == "__main__":
         raise SystemExit(0)
     _runtime_environment()
     try:
-        if '--set-operator-password' in sys.argv:
+        if '--self-test' in sys.argv:
+            from server.runtime_check import check_runtime
+            asyncio.run(check_runtime())
+        elif '--set-operator-password' in sys.argv:
             from server.desktop_access import set_console_password
             set_console_password(_resolve_config_path(_runtime_data_dir()).with_name('operator-auth.json'))
         elif '--operator-password-dialog' in sys.argv:

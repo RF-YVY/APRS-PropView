@@ -19,6 +19,12 @@ window.pvWeather = (function () {
     function init() {
         updateMapSearchOffset();
         window.addEventListener('resize', updateMapSearchOffset);
+        // Alert dismiss buttons carry their key in a data attribute rather than
+        // an inline onclick, so alert text never becomes script.
+        document.addEventListener('click', (e) => {
+            const button = e.target.closest?.('.wx-alert-dismiss[data-alert-key]');
+            if (button) dismissAlert(button.dataset.alertKey);
+        });
         // Refresh button
         document.getElementById('wx-refresh-btn')?.addEventListener('click', () => {
             fetchWeather(true);
@@ -393,7 +399,7 @@ window.pvWeather = (function () {
                     <button
                         type="button"
                         class="wx-alert-dismiss"
-                        onclick="pvWeather.dismissAlert('${escapeJsString(key)}')"
+                        data-alert-key="${escHtml(key)}"
                         aria-label="Clear ${escHtml(alert.event || 'weather alert')} from view"
                         title="Clear this alert from view"
                     >X</button>
@@ -411,16 +417,6 @@ window.pvWeather = (function () {
 
     function alertKey(alert) {
         return String(alert?.id || `${alert?.event || ''}|${alert?.headline || ''}|${alert?.expires || ''}|${alert?.area_desc || ''}`);
-    }
-
-    function escapeJsString(value) {
-        return String(value || '')
-            .replace(/\\/g, '\\\\')
-            .replace(/'/g, "\\'")
-            .replace(/\r/g, '\\r')
-            .replace(/\n/g, '\\n')
-            .replace(/\u2028/g, '\\u2028')
-            .replace(/\u2029/g, '\\u2029');
     }
 
     function dismissAlert(key) {
@@ -594,9 +590,8 @@ window.pvWeather = (function () {
     }
 
     function escHtml(str) {
-        const div = document.createElement('div');
-        div.textContent = str || '';
-        return div.innerHTML;
+        // Also escapes quotes, so the result is safe inside attribute values.
+        return String(str || '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
     }
 
     return {

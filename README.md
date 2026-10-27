@@ -1,8 +1,10 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.14.1**
+**Version 1.14.2**
 
-Release date: October 24, 2026.
+Release date: October 27, 2026.
+
+Security audit and fixes. Updating is recommended for all users.
 
 See the [complete changelog since v1.11.1](CHANGELOG.md), [User Guide](docs/USER_GUIDE.md) and [cross-platform setup](docs/CROSS_PLATFORM_SETUP.md).
 

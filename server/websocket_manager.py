@@ -5,6 +5,8 @@ import json
 
 class WebSocketManager:
     MAX_CONNECTIONS = 20
+    MAX_PUBLIC_CONNECTIONS = 16
+    MAX_PUBLIC_PER_PEER = 4
     QUEUE_LIMIT = 256
     SEND_TIMEOUT = 5
     REPLACEABLE = {'status', 'stats', 'propagation', 'station_update'}
@@ -15,13 +17,25 @@ class WebSocketManager:
         self._senders = {}
         self._tasks = set()
         self.message_filter = None
+        self._public_peers = {}
 
-    async def connect(self, websocket):
-        if len(self.active_connections) >= self.MAX_CONNECTIONS:
+    async def connect(self, websocket, operator=False, peer='unknown'):
+        if (len(self.active_connections) >= self.MAX_CONNECTIONS or
+                (not operator and (len(self._public_peers) >= self.MAX_PUBLIC_CONNECTIONS or
+                                  sum(value == peer for value in self._public_peers.values()) >= self.MAX_PUBLIC_PER_PEER))):
             await websocket.close(code=1013, reason='Too many connections')
             return False
-        await websocket.accept()
+        # Reserve before yielding to the handshake: concurrent accepts must not
+        # all observe the same free slot and exceed the connection budgets.
         self.active_connections.add(websocket)
+        if not operator:
+            self._public_peers[websocket] = peer
+        try:
+            await websocket.accept()
+        except (Exception, asyncio.CancelledError):
+            self.active_connections.discard(websocket)
+            self._public_peers.pop(websocket, None)
+            raise
         queue = asyncio.Queue(maxsize=self.QUEUE_LIMIT)
         self._queues[websocket] = queue
         task = asyncio.create_task(self._send_loop(websocket, queue))
@@ -33,6 +47,7 @@ class WebSocketManager:
     def disconnect(self, websocket):
         connected = websocket in self.active_connections
         self.active_connections.discard(websocket)
+        self._public_peers.pop(websocket, None)
         self._queues.pop(websocket, None)
         task = self._senders.pop(websocket, None)
         if task and task is not asyncio.current_task():

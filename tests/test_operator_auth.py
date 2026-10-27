@@ -199,7 +199,7 @@ class OperatorAccessTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(status, 200)
             self.assertNotIn('private-', json.dumps(data))
             self.assertEqual(self.viewer.last_headers['cache-control'], 'no-store')
-        self.assertIn('cookie', {value.strip().lower() for value in self.viewer.last_headers['vary'].split(',')})
+            self.assertIn('cookie', {value.strip().lower() for value in self.viewer.last_headers['vary'].split(',')})
         _, config = await self.viewer.request('GET', '/api/config')
         self.assertEqual(config['web']['map_tile_url'], '/api/map-tiles/{z}/{x}/{y}')
         set_password(self.auth_path, PASSWORD)
@@ -208,6 +208,34 @@ class OperatorAccessTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(operator_config['web']['mobile_pin'], 'private-pin')
         self.assertEqual((await self.operator.request('GET', '/api/config/export'))[0], 200)
         self.assertNotIn('digest', json.dumps(operator_config))
+
+    async def test_watched_paths_are_private_over_http(self):
+        tracker = AsyncMock()
+        tracker.get_propagation_data.return_value = {'score': 12}
+        tracker.evaluate_watched_paths.return_value = {'opportunities': [{'callsign': 'PRIVATE-TARGET'}]}
+        app = create_app(self.config, MagicMock(), tracker, MagicMock(), self.handler, config_path=self.path)
+        viewer = Browser(app)
+        status, data = await viewer.request('GET', '/api/propagation')
+        self.assertEqual(status, 200)
+        self.assertEqual(data['watched_paths']['opportunities'], [])
+        set_password(self.auth_path, PASSWORD)
+        await viewer.login()
+        _, data = await viewer.request('GET', '/api/propagation')
+        self.assertEqual(data['watched_paths']['opportunities'][0]['callsign'], 'PRIVATE-TARGET')
+
+    async def test_host_cannot_hide_a_protected_route(self):
+        for host in ('public.example/not-api?', 'public.example#', 'public.example@evil.example',
+                     'public.example\\not-api'):
+            with self.subTest(host=host):
+                browser = Browser(self.app, host=host)
+                self.assertEqual((await browser.request('GET', '/api/config/export'))[0], 400)
+                self.assertEqual((await browser.beacon())[0], 400)
+        self.handler.transmit_beacon_now.assert_not_awaited()
+
+    async def test_unc_path_is_rejected_before_static_resolution(self):
+        from unittest.mock import patch
+        with patch('starlette.staticfiles.os.path.realpath', side_effect=AssertionError('must not resolve UNC')):
+            self.assertEqual((await self.viewer.request('GET', '/static/\\\\audit.invalid\\share'))[0], 400)
 
     async def test_websocket_permissions_follow_each_browser_and_expiry(self):
         set_password(self.auth_path, PASSWORD)

@@ -149,7 +149,7 @@ class APRSISClient:
                 login = self._build_login()
                 self.writer.write((login + "\r\n").encode("ascii"))
                 await self.writer.drain()
-                logger.info(f"APRS-IS login sent: {login}")
+                logger.info("APRS-IS login sent for %s", self.config.station.full_callsign)
 
                 self.connected = True
                 await self._read_login_response()
@@ -244,6 +244,12 @@ class APRSISClient:
         # APRS-IS policy: unverified connections are read-only
         if not self.verified:
             logger.warning("Cannot send to APRS-IS: unverified (read-only). Check your passcode.")
+            return False
+
+        # One packet per line. A CR or LF inside the packet would let the rest
+        # of it reach the server as a separate line under our login.
+        if "\r" in packet or "\n" in packet:
+            logger.warning("Refusing to send APRS-IS packet containing CR/LF: %r", packet[:80])
             return False
 
         try:

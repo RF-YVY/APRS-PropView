@@ -1,5 +1,11 @@
 # APRS PropView changelog
 
+## v1.14.2
+
+Released: October 27, 2026.
+
+- Security audit and fixes. Updating is recommended for all users.
+
 ## v1.14.1 — one APRS-IS to RF control
 
 Released: October 24, 2026.

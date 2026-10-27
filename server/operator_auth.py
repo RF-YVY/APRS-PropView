@@ -286,6 +286,11 @@ def public_station(station):
     return {key: value for key, value in station.items() if key not in {'last_raw', 'last_port_name'}}
 
 
+def public_propagation(data):
+    # Watched targets include configured locations and private RF port evidence.
+    return {**data, 'watched_paths': {'enabled': False, 'opportunities': [], 'alerts': []}}
+
+
 def public_weather(data):
     data = dict(data)
     overlays = dict(data.get('map_overlays') or {})
@@ -304,6 +309,8 @@ def public_socket_message(message):
         return None
     if kind == 'status':
         return {**message, 'data': public_status(message.get('data', {}))}
+    if kind == 'propagation':
+        return {**message, 'data': public_propagation(message.get('data', {}))}
     if kind == 'packet' and not public_packet(message.get('data', {})):
         return None
     if kind == 'station_update':
@@ -315,11 +322,22 @@ def public_socket_message(message):
 
 
 def install_access_control(app, auth):
+    from server.resource_limits import PublicRequestLimits
     app.state.operator_auth = auth
+    app.state.public_limits = PublicRequestLimits()
 
     @app.middleware('http')
     async def enforce_operator_access(request: Request, call_next):
-        path = request.url.path
+        # Authorize the exact path used by the router. Older Starlette versions
+        # reconstruct request.url from Host, allowing a malformed Host to hide
+        # an /api route from URL-based middleware (CVE-2026-48710).
+        path = request.scope['path']
+        hosts = request.headers.getlist('host')
+        if (not path.startswith('/') or '\\' in path or
+                len(hosts) != 1 or not hosts[0] or
+                any(char in '/\\?#@' or ord(char) <= 32 or ord(char) >= 127 for char in hosts[0])):
+            # Reject Windows UNC syntax before StaticFiles resolves any path.
+            return JSONResponse({'message': 'Invalid request target or host.'}, status_code=400)
         token = request.cookies.get(COOKIE, '')
         session = auth.session(token)
         request.state.operator_session = session
@@ -333,10 +351,21 @@ def install_access_control(app, auth):
                 if not same_origin(request) or not hmac.compare_digest(request.headers.get('x-propview-csrf', ''), session['csrf']):
                     return JSONResponse({'success': False, 'message': 'Invalid operator request token.'}, status_code=403)
                 logger.info('Operator action %s %s from %s', request.method, path, request.client.host if request.client else 'unknown')
-        response = await call_next(request)
+        limited = public and not session
+        if limited:
+            peer = request.client.host if request.client else 'unknown'
+            rejected = app.state.public_limits.acquire(peer, path)
+            if rejected:
+                return JSONResponse({'message': 'Public request limit reached. Try again shortly.'},
+                                    status_code=rejected, headers={'Retry-After': '5', 'Cache-Control': 'no-store'})
+        try:
+            response = await call_next(request)
+        finally:
+            if limited:
+                app.state.public_limits.release()
         if is_api:
             response.headers['Cache-Control'] = 'no-store'
-            response.headers['Vary'] = 'Cookie'
+            response.headers.add_vary_header('Cookie')
         return response
 
     @app.get('/api/auth/status')

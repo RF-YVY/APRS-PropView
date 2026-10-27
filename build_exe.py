@@ -50,6 +50,22 @@ def check_pyinstaller():
 
 def check_runtime_dependencies():
     """Ensure optional runtime modules that PyInstaller must bundle are installed."""
+    from importlib.metadata import version, PackageNotFoundError
+    from packaging.requirements import Requirement
+    for line in (PROJECT_ROOT / 'requirements.txt').read_text().splitlines():
+        if not line.strip() or line.startswith('#'):
+            continue
+        requirement = Requirement(line)
+        if requirement.marker and not requirement.marker.evaluate():
+            continue
+        try:
+            installed = version(requirement.name)
+        except PackageNotFoundError:
+            installed = None
+        if installed is None or installed not in requirement.specifier:
+            raise RuntimeError(f'{requirement.name} does not meet release requirements. '
+                               'Install requirements.txt in a clean virtual environment before building.')
+    subprocess.check_call([sys.executable, '-m', 'pip', 'check'])
     try:
         import paho.mqtt.client  # noqa: F401
         print("  paho-mqtt found.")
