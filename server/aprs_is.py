@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import time
+import re
 from typing import Callable, Optional
 
 from server.config import Config
@@ -44,6 +45,7 @@ class APRSISClient:
         self._pending_rx_lines: list[str] = []
         self._handshake_timeout = 3
         self._message_recipients = set()
+        self._heard_me_calls = set()
 
     async def _reset_connection(self):
         """Clear connection state and close the current socket."""
@@ -80,10 +82,29 @@ class APRSISClient:
 
     def _effective_filter(self):
         base = (self.config.aprs_is.filter or '').strip()
+        filters = [base] if base else []
+        call = (self.config.station.callsign or '').upper()
+        if re.fullmatch(r'[A-Z0-9]{1,9}', call) and call not in _BLOCKED_CALLSIGNS:
+            watches = [call, call + '-*', *sorted(self._heard_me_calls)]
+            filters.append('b/' + '/'.join(watches))
         if self._message_recipients:
             recipients = sorted(self._message_recipients | {self.config.station.full_callsign})
-            return (base + ' g/' + '/'.join(recipients)).strip()
-        return base
+            filters.append('g/' + '/'.join(recipients))
+        return ' '.join(filters)
+
+    async def register_heard_me_stations(self, callsigns):
+        from server.heard_me import CALL
+        added = {call.upper() for call in callsigns if isinstance(call, str) and CALL.fullmatch(call.upper())}
+        updated = set(sorted(self._heard_me_calls | added)[:32])
+        if updated == self._heard_me_calls:
+            return
+        self._heard_me_calls = updated
+        if self.connected and self.writer:
+            try:
+                self.writer.write(('#filter ' + self._effective_filter() + '\r\n').encode('ascii'))
+                await self.writer.drain()
+            except Exception:
+                await self._reset_connection()
 
     async def register_message_recipient(self, callsign):
         """Include replies to a locally selected APSPOT operator in the live filter."""

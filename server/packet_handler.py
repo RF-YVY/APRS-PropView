@@ -15,6 +15,7 @@ from server.aprs_parser import (
 )
 from server.digipeater import Digipeater
 from server.igate import IGate
+from server.heard_me import HeardMe
 from server.station_tracker import StationTracker
 from server.websocket_manager import WebSocketManager
 
@@ -38,6 +39,7 @@ class PacketHandler:
         ws_manager: WebSocketManager,
     ):
         self.config = config
+        self.heard_me = HeardMe(config)
         self.tracker = tracker
         # Keep the service available when settings enable it after startup.
         self.digipeater = digipeater if digipeater is not None else Digipeater(config)
@@ -254,6 +256,8 @@ class PacketHandler:
             await self._broadcast_stats()
             return
 
+        # Record RF-return evidence before own packets are omitted from station lists.
+        await self._observe_heard_me(raw_str, packet.source, packet)
         # Track the station
         await self.tracker.track_packet(packet)
 
@@ -311,6 +315,7 @@ class PacketHandler:
             logger.info("RF text RX ignored by station blocklist: %s", packet.from_call)
             await self._broadcast_stats()
             return
+        await self._observe_heard_me(raw_str, "rf", packet)
         await self.tracker.track_packet(packet)
 
         if self.igate and not self.tracker._has_internet_path(packet.path):
@@ -364,6 +369,8 @@ class PacketHandler:
             await self._broadcast_stats()
             return
 
+        # Record RF-return evidence before own packets are omitted from station lists.
+        await self._observe_heard_me(raw_str, packet.source, packet)
         # Track the station
         await self.tracker.track_packet(packet)
         if self.igate:
@@ -699,13 +706,22 @@ class PacketHandler:
                 logger.debug(f"Skipping RF TX on receive-only interface {iface.name}")
                 continue
             try:
-                await iface.send(encoded)
+                result = await iface.send(encoded)
+                if result is False:
+                    continue
                 self.stats["rf_tx"] += 1
                 sent += 1
+                if sent == 1:
+                    self.heard_me.transmitted(frame.to_aprs_string(), getattr(self.tracker, 'my_lat', self.config.station.latitude), getattr(self.tracker, 'my_lon', self.config.station.longitude))
                 logger.debug(f"RF TX via {iface.name}: {frame.to_aprs_string()}")
             except Exception as e:
                 logger.error(f"RF TX error on {iface.name}: {e}")
         return sent
+
+    async def _observe_heard_me(self, raw, transport, packet):
+        observation = self.heard_me.observe(raw, transport, packet)
+        if observation and self.aprs_is:
+            await self.aprs_is.register_heard_me_stations(observation['route_calls'])
 
     async def _record_tx_packet(self, raw: str, transport: str, digipeated_by_me: bool = False):
         packet = parse_packet(raw, source="tx")

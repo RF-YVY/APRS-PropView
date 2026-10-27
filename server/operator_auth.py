@@ -239,7 +239,7 @@ PUBLIC_GET = {
     '/api/auth/status', '/api/whats-new', '/api/config', '/api/health', '/api/version', '/api/status',
     '/api/update-install-status',  # Safe restart identity/progress; no paths or credentials.
     '/api/stations/rf', '/api/stations/is', '/api/stations/all', '/api/packets',
-    '/api/propagation', '/api/propagation/history', '/api/stats', '/api/source-health',
+    '/api/heard-me', '/api/propagation', '/api/propagation/history', '/api/stats', '/api/source-health',
     '/api/weather', '/api/lightning', '/api/space-weather', '/api/external-propagation',
     '/api/first-heard', '/api/ducting',
     '/api/analytics/longest-paths', '/api/analytics/heatmap', '/api/analytics/reliability',

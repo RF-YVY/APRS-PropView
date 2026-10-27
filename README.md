@@ -6,6 +6,8 @@ Release date: October 27, 2026.
 
 Security audit and fixes. Updating is recommended for all users.
 
+Use **Layers → Heard me** for a separate, optional map overlay of reported reception of your RF transmissions.
+
 See the [complete changelog since v1.11.1](CHANGELOG.md), [User Guide](docs/USER_GUIDE.md) and [cross-platform setup](docs/CROSS_PLATFORM_SETUP.md).
 
 **Experimental built-in modem:** further testing is needed on Linux, Raspberry Pi and macOS. Performance may vary by platform and audio interface.

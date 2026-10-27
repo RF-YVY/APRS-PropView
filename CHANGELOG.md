@@ -5,6 +5,7 @@
 Released: October 27, 2026.
 
 - Security audit and fixes. Updating is recommended for all users.
+- Added a separate, optional Heard me map overlay for reported reception of your RF transmissions.
 
 ## v1.14.1 — one APRS-IS to RF control
 

@@ -8,7 +8,8 @@ from server.config_io import atomic_write
 logger = logging.getLogger('propview.release')
 
 RELEASES = {
-    '1.14.2': ['Security audit and fixes. Updating is recommended for all users.'],
+    '1.14.2': ['Security audit and fixes. Updating is recommended for all users.',
+               'Added a separate, optional Heard me map overlay for reported reception of your RF transmissions.'],
     '1.14.1': [
         '[FIX] APRS-IS to RF is controlled only in IGate settings; removed the duplicate modem option and its hidden veto.',
         '[FIX] IGate master/direction switches apply live; built-in modem RF transmission must still be enabled.',

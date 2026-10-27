@@ -280,6 +280,8 @@
                     <summary>Layers</summary>
                     <div class="map-control-group-body">
                         <button id="btn-toggle-lines" title="Toggle propagation lines" class="active">📏 Paths</button>
+                        <button id="btn-heard-me" type="button" data-heard-me-toggle aria-pressed="false" title="Show observed outward RF reception paths">Heard me</button>
+                        <small id="heard-me-status" hidden style="max-width:260px;white-space:normal" role="status"></small>
                         <button id="btn-toggle-radar" type="button" aria-pressed="false" title="Show or hide weather radar">Radar: Off</button>
                         <button id="btn-toggle-radar-loop" type="button" aria-pressed="false" title="Switch radar between loop and latest static frame">Radar: Static</button>
                         <button id="btn-toggle-maidenhead" class="map-wide-control" title="Show Maidenhead grid; click a square to use it in the watched-path builder">Grid</button>
@@ -2749,6 +2751,11 @@
 <p>Propagation and Analytics offer station/distance histories, longest paths, reliability/time-of-day and day-of-week patterns, heatmaps, bearing sectors, historical comparison, anomalies, first-heard stations, possible Sporadic-E, weather graphs and APRS weather-mesh context. Detection is an indication for investigation, not a guarantee of an opening. Data export supports analysis outside the application.</p>
 <p>Watched VHF paths use a callsign, coordinates or Maidenhead grid plus band, mode, frequency and confidence requirements. Bearing tolerance, probe count, target area, maximum age and cooldown govern evidence. Antenna heights, transmitter power and antenna gain add horizon/EIRP/capability context; they do not replace measured propagation evidence. Watched locations can also receive configured weather/lightning awareness within a radius. <strong>VHF Paths</strong> in Lines controls their map drawing independently of RF reception lines.</p>
 <p>NOAA space weather adds Kp/context with optional threshold alerts. The default Minimum Kp is <strong>5.00</strong>, a valid value. Optional PSK Reporter reports at 50 MHz and above supply independent digital-mode context rather than pretending to be your RF reception. External feeds have their own freshness and availability.</p>
+<h4>Heard me: outward reception paths</h4>
+<p>On the desktop, open <strong>Layers → Heard me</strong>. The mobile map also has a <strong>Heard me</strong> button. This optional overlay starts off, remembers its own on/off choice in the browser, and is independent of the received-path Lines/Paths controls.</p>
+<p>Amber arrows point outward from your station. Solid paths indicate reported direct reception; dashed paths indicate reported relayed reception. Click a line for the receiving station, path, observation time and matched transmission count. Lines fade and expire after one hour; history is limited to the current application session. A route with missing hop positions is counted as awaiting positions and is not drawn across the gap.</p>
+<p>Reports must match a recent successful RF transmission from your station. They can arrive as a digipeated copy on RF or through another IGate on APRS-IS. Internet-only packets, your own gateway uploads and private messages do not create paths. APRS-IS automatically watches your callsign and a bounded set of reporting stations while retaining your configured filters. Explicit exclusion filters still apply. It may take another station's position beacon before a route can be placed on the map.</p>
+<p>APRS-IS suppresses duplicate packets, so this is an incomplete set of reported observations, not a coverage guarantee. Sending the same beacon directly to APRS-IS can obscure its RF return. A missing report does not mean nobody heard you, and an IGate at the end of a relayed path did not necessarily hear your station directly.</p>
 <h3 id="help-guide-weather-radar-alerts-and-lightning">Weather, radar, alerts and lightning</h3>
 <p>Open <strong>Settings → Alerts &amp; Weather → Weather</strong>. The Weather section is visible in both Basic and Advanced Settings. Check <strong>Weather Enabled</strong>, enter a ZIP/ICAO location code and use <strong>Lookup</strong>, select the appropriate current-condition source, then <strong>Save</strong>. Station coordinates alone do not supply this separate weather location. Open-Meteo current conditions require no API key; optional providers can require their own credentials. WXnow can supply local current weather when configured.</p>
 <p>Current conditions, wind, precipitation, forecast/ducting context and alerts are displayed when available and their banner/panel settings permit it. Radar visibility, animation versus static, opacity/provider/custom layers, satellite imagery and weather alert polygons have separate controls. The bottom map Layers menu provides radar show/hide and loop/static controls. Provider coverage and valid tile configuration affect availability.</p>
@@ -2823,5 +2830,6 @@
     <script defer src="/static/js/app.js?v=__ASSET_VERSION__"></script>
     <script defer src="/static/js/usability.js?v=__ASSET_VERSION__"></script>
     <script defer src="/static/js/kiosk.js?v=__ASSET_VERSION__"></script>
+    <script defer src="/static/js/heard-me.js?v=__ASSET_VERSION__"></script>
 </body>
 </html>

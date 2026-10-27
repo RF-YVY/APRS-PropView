@@ -115,6 +115,16 @@ Watched VHF paths use a callsign, coordinates or Maidenhead grid plus band, mode
 
 NOAA space weather adds Kp/context with optional threshold alerts. The default Minimum Kp is **5.00**, a valid value. Optional PSK Reporter reports at 50 MHz and above supply independent digital-mode context rather than pretending to be your RF reception. External feeds have their own freshness and availability.
 
+### Heard me: outward reception paths
+
+On the desktop, open **Layers → Heard me**. The mobile map also has a **Heard me** button. This optional overlay starts off, remembers its own on/off choice in the browser, and is independent of the received-path Lines/Paths controls.
+
+Amber arrows point outward from your station. Solid paths indicate reported direct reception; dashed paths indicate reported relayed reception. Click a line for the receiving station, path, observation time and matched transmission count. Lines fade and expire after one hour; history is limited to the current application session. A route with missing hop positions is counted as awaiting positions and is not drawn across the gap.
+
+Reports must match a recent successful RF transmission from your station. They can arrive as a digipeated copy on RF or through another IGate on APRS-IS. Internet-only packets, your own gateway uploads and private messages do not create paths. APRS-IS automatically watches your callsign and a bounded set of reporting stations while retaining your configured filters. Explicit exclusion filters still apply. It may take another station's position beacon before a route can be placed on the map.
+
+APRS-IS suppresses duplicate packets, so this is an incomplete set of reported observations, not a coverage guarantee. Sending the same beacon directly to APRS-IS can obscure its RF return. A missing report does not mean nobody heard you, and an IGate at the end of a relayed path did not necessarily hear your station directly.
+
 ## Weather, radar, alerts and lightning
 
 Open **Settings → Alerts & Weather → Weather**. The Weather section is visible in both Basic and Advanced Settings. Check **Weather Enabled**, enter a ZIP/ICAO location code and use **Lookup**, select the appropriate current-condition source, then **Save**. Station coordinates alone do not supply this separate weather location. Open-Meteo current conditions require no API key; optional providers can require their own credentials. WXnow can supply local current weather when configured.

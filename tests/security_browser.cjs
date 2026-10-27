@@ -82,6 +82,19 @@ const root = path.resolve(__dirname, '..');
         assert.equal(await page.locator('.leaflet-popup [onmouseover], .leaflet-popup img').count(), 0);
         assert.equal(await page.evaluate(() => window.__xss), 0);
         console.log('PASS mobile popup escaping and nested message click through Leaflet');
+        await page.route('**/api/heard-me', route => route.fulfill({ json: { aprs_is_connected: true, observations: [{
+            source_call: 'K5ABC-1', receiver: 'W1GATE', route_calls: ['W1GATE'], direct: true, path_known: true,
+            latitude: 34, longitude: -89, last_heard: Date.now()/1000, packet_count: 1, transport: 'aprs_is',
+            hops: [{ callsign: 'W1GATE', latitude: 35, longitude: -88 }]
+        }] } }));
+        await page.evaluate(() => { activateTab('mtab-map'); document.getElementById('m-heard-me').click(); });
+        await page.waitForFunction(() => document.querySelectorAll('.heard-me-path').length === 1);
+        await page.evaluate(() => setLinesVisible(false));
+        assert.equal(await page.locator('.heard-me-path').count(), 1);
+        await page.locator('#m-heard-me').evaluate(button => button.click());
+        assert.equal(await page.locator('.heard-me-path').count(), 0);
+        console.log('PASS mobile Heard me overlay toggles independently of received lines');
+
     } finally {
         await browser.close();
     }

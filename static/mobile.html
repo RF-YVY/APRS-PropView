@@ -707,6 +707,8 @@ html, body {
         <div class="m-tab m-map-tab" id="mtab-map">
             <div class="m-map-tools">
                 <button id="m-map-lines" type="button" class="active">Lines</button>
+                <button id="m-heard-me" type="button" data-heard-me-toggle aria-pressed="false">Heard me</button>
+                <small id="heard-me-status" hidden role="status" style="position:absolute;top:100%;right:0;max-width:280px;padding:6px;background:var(--bg);white-space:normal"></small>
                 <div class="m-map-segment" aria-label="Map theme">
                     <button id="m-map-theme-dark" type="button">Dark</button>
                     <button id="m-map-theme-light" type="button">Light</button>
@@ -2071,5 +2073,6 @@ window.addEventListener('storage', event => {
 window.addEventListener('pageshow', applySavedUITheme);
 document.addEventListener('DOMContentLoaded', init);
 </script>
+<script defer src="/static/js/heard-me.js?v=1.14.2"></script>
 </body>
 </html>

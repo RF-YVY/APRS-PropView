@@ -1581,6 +1581,12 @@ try {{
             packets = [packet for packet in packets if public_packet(packet)]
         return {"packets": packets, "count": len(packets)}
 
+    @app.get('/api/heard-me')
+    async def get_heard_me():
+        data = handler.heard_me.snapshot()
+        data['aprs_is_connected'] = bool(aprs_is and aprs_is.connected)
+        return data
+
     @app.get("/api/propagation")
     async def get_propagation(request: Request):
         prop_data = await tracker.get_propagation_data()
