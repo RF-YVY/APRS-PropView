@@ -1,0 +1,54 @@
+name: Rebuild macOS ARM release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing draft release tag to rebuild
+        required: true
+        default: v1.14.3
+      runner:
+        description: macOS ARM64 runner pool
+        required: true
+        type: choice
+        options:
+          - macos-14
+          - macos-15
+          - macos-26
+        default: macos-14
+permissions:
+  contents: write
+jobs:
+  macos-arm:
+    runs-on: ${{ inputs.runner }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - name: Verify architecture and draft source
+        run: |
+          test "$(uname -m)" = arm64
+          test "$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
+          expected=$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)
+          test "$(git rev-parse HEAD)" = "$expected"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r requirements.txt pytest pyinstaller pystray
+      - run: python native/build_modem.py
+      - run: python -m pytest -q
+      - run: node --test tests/test_modem_setup_guidance.cjs tests/test_release_ui.cjs
+      - run: python main.py --modem-self-test
+      - run: python scripts/platform_smoke.py
+      - run: python build_macos.py
+      - run: '"dist/APRS PropView.app/Contents/MacOS/APRS PropView" --modem-self-test'
+      - run: python scripts/package_release.py
+      - name: Upload verified release archive
+        run: |
+          expected=$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)
+          test "$(git rev-parse HEAD)" = "$expected"
+          archives=(dist/APRSPropView-*-macos-arm64.tar.gz)
+          test "${#archives[@]}" -eq 1
+          gh release upload "$RELEASE_TAG" "${archives[0]}" --repo "$GITHUB_REPOSITORY" --clobber
