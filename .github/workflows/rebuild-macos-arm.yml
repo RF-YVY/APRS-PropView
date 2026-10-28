@@ -11,10 +11,9 @@ on:
         required: true
         type: choice
         options:
-          - macos-14
           - macos-15
           - macos-26
-        default: macos-14
+        default: macos-26
 permissions:
   contents: write
 jobs:
