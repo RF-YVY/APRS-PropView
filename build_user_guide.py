@@ -15,6 +15,9 @@ def render(text):
     content=MD.renderer.render(tokens,MD.options,{})
     for name in ['PUBLIC_HOSTING','DEVELOPMENT_MODEM','linux-raspberry-pi','docker','CROSS_PLATFORM_SETUP']:
         content=content.replace('href="'+name+'.md"','href="/static/guides/'+name+'.html"').replace('href="docs/'+name+'.md"','href="/static/guides/'+name+'.html"')
+    current_version=re.search(r'^APP_VERSION = "([^"]+)"', (ROOT/'main.py').read_text(encoding='utf-8'), re.M).group(1)
+    content=content.replace('href="USER_GUIDE.md"','href="/static/documentation.html"')
+    content=content.replace('href="../CHANGELOG.md"','href="/static/releases/v'+current_version+'.html"')
     return content,toc
 
 def page(title,body,toc):
