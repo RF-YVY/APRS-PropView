@@ -1725,6 +1725,13 @@ async function loadLeaderboard() {
 }
 
 // ── Uptime ─────────────────────────────────────────────────
+function syncServerUptime(status) {
+    const elapsed = status.uptime_seconds;
+    if (typeof elapsed !== 'number' || !Number.isFinite(elapsed) || elapsed < 0) return;
+    S.startTime = Date.now() / 1000 - elapsed;
+    updateUptime();
+}
+
 function updateUptime() {
     if (!S.startTime) return;
     const diff = Math.max(0, Math.floor(Date.now() / 1000 - S.startTime));
@@ -1914,13 +1921,7 @@ function handleStatus(data) {
     if (!data) return;
     S.myCall = (data.station_info?.callsign || data.station || '').toUpperCase();
     $('m-call').textContent = S.myCall || '—';
-    if (data.start_time) {
-        S.startTime = data.start_time;
-    } else if (data.uptime_seconds != null) {
-        S.startTime = Date.now() / 1000 - data.uptime_seconds;
-    } else {
-        S.startTime = 0;
-    }
+    syncServerUptime(data);
     S.aprsIsConnected = !!data.aprs_is_connected;
     S.aprsIsVerified = !!data.aprs_is_verified;
     updateAprsIsChip();
@@ -2073,6 +2074,6 @@ window.addEventListener('storage', event => {
 window.addEventListener('pageshow', applySavedUITheme);
 document.addEventListener('DOMContentLoaded', init);
 </script>
-<script defer src="/static/js/heard-me.js?v=1.14.2"></script>
+<script defer src="/static/js/heard-me.js?v=1.14.3"></script>
 </body>
 </html>

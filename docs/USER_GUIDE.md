@@ -1,8 +1,8 @@
 # APRS PropView User Guide
 
-Current version: **1.14.2**. This guide covers the desktop dashboard, mobile companion, settings and built-in modem.
+Current version: **1.14.3**. This guide covers the desktop dashboard, mobile companion, settings and built-in modem.
 
-Release date: October 27, 2026.
+Release date: October 28, 2026.
 
 ## Getting started
 
@@ -148,6 +148,21 @@ GPS sources include browser/mobile geolocation, own APRS reports, NMEA serial/TC
 Open **/mobile** for the companion map, station, message, propagation and About views. It uses the no-key OSM map by default and can share browser GPS when authorized and configured. A remote phone needs its own operator session for privileged actions. Tailscale or another private VPN can connect the host and phone; use the host's configured port, not an assumed universal port.
 
 Web/Display settings include listening host/port, browser selection or no automatic browser, UI/map appearance, unit system, fonts, marker aging, display density, visualization effects, dashboard panel visibility and Club Display. Browser UI preferences are local to that browser. Server settings and station configuration are shared by all viewers subject to authentication.
+
+### Personalize Appearance
+
+Open **Settings → Map & Display → Appearance** in either Basic or Advanced Settings. Changes here save immediately; you do not need to press Save Configuration.
+
+- **Station or club name:** enter an optional label of up to 32 characters beside your callsign. Clear the field to remove it. This does not change your transmitted APRS callsign or station symbol.
+- **Header icon:** use Choose File for a PNG, JPEG, WebP, GIF, BMP or ICO image, up to 10 MB and 25 million pixels. Simple club logos or callsign badges work best at this size. The preview and header update after saving; Restore default icon brings back the PropView logo. Invalid uploads preserve the previous image.
+- **Colors and density:** choose brightness, a visual theme, an accent preset, and Comfortable, Compact or Wallboard density. The controls preview changes immediately. Map tiles are selected separately.
+- **Dashboard visibility:** show or hide Weather, Lightning, Weather Alerts, Source Health, Watched Paths and Propagation Context. Hidden panels do not turn off their data sources or alert settings.
+- **Propagation panel order:** use Move up / Move down to arrange cards and charts in the Propagation dashboard.
+- **Dashboard tab order:** show or hide views and use Move up / Move down to reorder tabs. At least one view must remain visible; Settings and Help remain available. Restore default dashboard layout restores tab visibility/order and Propagation panel order without removing your name, logo, colors or density choices.
+
+The name, colors, density, panel visibility and ordering are saved in this browser. Other browsers have their own display preferences. The uploaded logo is stored by the server and shared by all viewers, survives server restarts and requires operator access to change.
+
+**Uptime** measures the running server application session. Reloading the page, closing/reopening the browser, signing in/out or reconnecting does not restart it. Desktop and mobile resynchronize from the same server counter, including public viewing. Closing and reopening the server application resets it. After 24 hours the display includes days.
 
 ## Source health and troubleshooting
 

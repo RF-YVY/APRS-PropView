@@ -31,6 +31,16 @@ class SpotFormatTests(unittest.TestCase):
                 build_spot({**FORM,**change},'N2UGS')
         with self.assertRaises(ValueError): build_spot(FORM, 'N0CALL-1')
 
+    def test_reference_segments_and_numeric_suffix(self):
+        for reference in ('US-1234', 'W4C/CM-001', 'A-1/B2-C3-004'):
+            with self.subTest(reference=reference):
+                self.assertIn(reference, build_spot({**FORM, 'reference': reference}, 'N2UGS')['text'])
+        for reference in ('', 'US', '-123', 'US-', 'US--123', 'US/-123',
+                          'US-12A', 'US-\u0661', 'US_1-123', 'US-123\nX',
+                          '0' * 100000, '0-' * 50000 + 'X', '0/' * 50000 + '0-1X'):
+            with self.subTest(reference=reference[:40]), self.assertRaisesRegex(ValueError, 'Enter a reference'):
+                build_spot({**FORM, 'reference': reference}, 'N2UGS')
+
     def test_test_and_length(self):
         self.assertTrue(build_spot({**FORM,'test':True},'N2UGS')['text'].endswith('aptest'))
         self.assertTrue(build_spot({**FORM,'comment':'contest'},'N2UGS')['test'])
@@ -83,6 +93,15 @@ class SpotDeliveryTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(status,200)
             self.assertEqual(handler.send_message.await_args.kwargs['sender_call'],'K5YVY')
             self.assertEqual(config.station.full_callsign,'N2UGS-7')
+            # Delivery ValueErrors may contain internal information.
+            handler.send_message.side_effect=ValueError('PRIVATE /server/config secret')
+            with self.assertLogs('propview.app',level='ERROR') as logs:
+                status,data=await browser.request('POST','/api/spot/send',FORM,headers)
+            self.assertEqual(status,400)
+            self.assertFalse(data['success'])
+            self.assertNotIn('PRIVATE',data['message'])
+            self.assertIn('PRIVATE',' '.join(logs.output))
+            handler.send_message.side_effect=None
             # Lookup/help do not require any activation-only fields.
             status,data=await browser.request('POST','/api/spot/preview',{'action':'usage'},headers)
             self.assertEqual(status,200); self.assertEqual(data['spot']['text'],'usage')

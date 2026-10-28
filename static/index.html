@@ -67,7 +67,8 @@
             </div>
             <div class="station-identity" title="My Station">
                 <span class="station-identity-label">My Station</span>
-                <span id="station-call" class="station-badge">N0CALL</span>
+                <div class="station-identity-value"><span id="station-call" class="station-badge">N0CALL</span>
+                    <span id="station-custom-label" hidden></span></div>
             </div>
         </div>
         <div class="header-center">
@@ -533,8 +534,8 @@
                         <div id="prop-event-timeline" class="prop-event-timeline"><span>No opening lifecycle is active.</span></div>
                         <p>Events require sustained, fresh RF evidence. A score is an observation summary, not a propagation forecast.</p>
                     </section>
-                    <h3>Current Conditions</h3>
-                    <div class="prop-grid">
+                    <h3 id="prop-conditions-heading">Current Conditions</h3>
+                    <div class="prop-grid" id="prop-conditions-grid">
                         <div class="prop-card">
                             <div class="prop-card-value" id="prop-rf-1h">0</div>
                             <div class="prop-card-label">RF Stations (1h)</div>
@@ -568,22 +569,22 @@
                             <div class="prop-card-label">APRS-IS (1h)</div>
                         </div>
                     </div>
-                    <h3>Watched VHF Paths</h3>
+                    <h3 id="prop-watched-heading">Watched VHF Paths</h3>
                     <div id="watched-paths-panel" class="watched-paths-panel">
                         <div class="analytics-empty">No watched paths configured.</div>
                     </div>
-                    <h3>Distance Distribution</h3>
+                    <h3 id="prop-distance-heading">Distance Distribution</h3>
                     <canvas id="distance-chart" width="380" height="180"></canvas>
-                    <h3>Propagation History (24h)</h3>
+                    <h3 id="prop-history-heading">Propagation History (24h)</h3>
                     <canvas id="prop-history-chart" width="380" height="180"></canvas>
 
-                    <div class="prop-section-heading">
+                    <div class="prop-section-heading" id="prop-external-map-heading">
                         <h3>External Map</h3>
                         <a id="dxview-map-link" href="https://vhf.dxview.org/map?center=34.42,-88.10,7.7" target="_blank" rel="noopener" title="Open VHF DXView map centered on your station">Open VHF DXView Map</a>
                     </div>
                     <div id="dxview-map-coords" class="dxview-map-coords">Waiting for station location</div>
 
-                    <h3>NOAA Space Weather Context</h3>
+                    <h3 id="space-weather-heading">NOAA Space Weather Context</h3>
                     <div id="space-weather-card" class="space-weather-card">
                         <div class="space-weather-heading"><strong>NOAA SWPC</strong><span id="space-weather-age">Waiting for data…</span></div>
                         <div class="space-weather-metrics">
@@ -607,8 +608,8 @@
                         <p id="external-propagation-note">Independent digital-mode reports are supporting context, not APRS RF evidence.</p>
                     </div>
 
-                    <h3>Solar-Terrestrial Data</h3>
-                    <div class="solar-widget">
+                    <h3 id="prop-solar-heading">Solar-Terrestrial Data</h3>
+                    <div class="solar-widget" id="prop-solar-widget">
                         <a href="https://www.hamqsl.com/solar.html" target="_blank" rel="noopener" title="Solar-Terrestrial Data — click for details">
                             <img id="solar-img" src="https://www.hamqsl.com/solarbrief.php" alt="Solar-Terrestrial Data" loading="lazy">
                         </a>
@@ -1060,15 +1061,6 @@
                             <input type="text" id="cfg-comment" placeholder="APRS PropView">
                         </div>
                         <div class="settings-row">
-                            <label for="cfg-header-image">Header icon</label>
-                            <div class="header-image-controls">
-                                <input type="file" id="cfg-header-image" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/x-icon,image/vnd.microsoft.icon">
-                                <button type="button" id="cfg-header-image-reset" class="btn-secondary">Restore default icon</button>
-                            </div>
-                        </div>
-                        <p class="settings-help">Choose a PNG, JPEG, WebP, GIF, BMP or ICO image (up to 10 MB). Large images automatically fit the header without stretching. Changes save immediately.</p>
-                        <p id="cfg-header-image-status" role="status" aria-live="polite"></p>
-                        <div class="settings-row">
                             <label for="cfg-beacon-interval">Beacon Interval (min)</label>
                             <input type="number" id="cfg-beacon-interval" min="0" max="1440" step="1" value="30">
                         </div>
@@ -1326,6 +1318,72 @@
                                 <option value="'Courier New', monospace">Courier New (Mono)</option>
                             </select>
                         </div>
+                        <div class="settings-row">
+                            <label for="cfg-unit-system">Units</label>
+                            <select id="cfg-unit-system">
+                                <option value="imperial">Imperial (mi, °F, mph)</option>
+                                <option value="metric">Metric (km, °C, m/s)</option>
+                            </select>
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-map-tile-source">Map Tiles</label>
+                            <select id="cfg-map-tile-source">
+                                <option value="osm">Online OpenStreetMap</option>
+                                <option value="custom">Custom XYZ / local server</option>
+                            </select>
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-map-tile-url">Tile URL</label>
+                            <input type="text" id="cfg-map-tile-url" placeholder="http://127.0.0.1:8080/tile/{z}/{x}/{y}.png">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-map-tile-attribution">Tile Attribution</label>
+                            <input type="text" id="cfg-map-tile-attribution" placeholder="Optional attribution text">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-map-tile-max-zoom">Tile Max Zoom</label>
+                            <input type="number" id="cfg-map-tile-max-zoom" min="1" max="22" step="1" value="19">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-web-ghost">Ghost After (min)</label>
+                            <input type="number" id="cfg-web-ghost" min="0" max="1440" step="5" value="60">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-web-expire">Expire After (min)</label>
+                            <input type="number" id="cfg-web-expire" min="0" max="1440" step="5" value="0">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-web-pin">Mobile PIN</label>
+                            <input type="text" id="cfg-web-pin" maxlength="8" placeholder="Leave blank = no PIN" autocomplete="off">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-web-update-check-enabled">Update Checks Enabled</label>
+                            <input type="checkbox" id="cfg-web-update-check-enabled">
+                        </div>
+                        <div class="settings-row">
+                            <label for="cfg-web-update-check-hours">Update Check Interval (hours)</label>
+                            <input type="number" id="cfg-web-update-check-hours" min="1" max="720" step="1" value="24">
+                        </div>
+                    </div>
+
+                    <div class="settings-section" data-settings-key="appearance" data-summary="Personal station label, club logo, colors, density and dashboard layout.">
+                        <h3>Appearance</h3>
+                        <p class="settings-help">Display preferences save immediately in this browser. Your uploaded logo is shared by the station.</p>
+                        <div class="settings-row">
+                            <label for="cfg-station-label">Station or club name</label>
+                            <input id="cfg-station-label" type="text" maxlength="32" data-local-setting placeholder="Optional short name">
+                        </div>
+                        <p class="settings-help">Up to 32 characters, shown beside your callsign. This display label does not change your APRS identity.</p>
+                        <div class="settings-row">
+                            <label for="cfg-header-image">Header icon</label>
+                            <div class="header-image-controls">
+                                <img id="header-image-preview" src="/api/header-image" alt="Current station logo" width="64" height="64">
+                                <input type="file" id="cfg-header-image" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/x-icon,image/vnd.microsoft.icon">
+                                <button type="button" id="cfg-header-image-reset" class="btn-small">Restore default icon</button>
+                            </div>
+                        </div>
+                        <p class="settings-help">Choose a PNG, JPEG, WebP, GIF, BMP or ICO image (up to 10 MB). Large images automatically fit the header without stretching. Changes save immediately.</p>
+                        <p id="cfg-header-image-status" role="status" aria-live="polite"></p>
                         <div class="theme-settings-card">
                             <div class="settings-row">
                                 <label for="cfg-ui-mode">Brightness</label>
@@ -1376,52 +1434,24 @@
                             </div>
                             <p class="settings-note">Visual themes change panel materials, controls, typography, and decorative details. Map tiles remain independently selectable.</p>
                         </div>
-                        <div class="settings-row">
-                            <label for="cfg-unit-system">Units</label>
-                            <select id="cfg-unit-system">
-                                <option value="imperial">Imperial (mi, °F, mph)</option>
-                                <option value="metric">Metric (km, °C, m/s)</option>
-                            </select>
+                        <h4>Dashboard Visibility</h4>
+                        <div class="dashboard-panel-settings" aria-label="Dashboard panel visibility">
+                            <label><input type="checkbox" id="cfg-dashboard-weather" data-dashboard-panel="weather" data-local-setting checked> <span><strong>Weather</strong><small>Current local conditions above the map.</small></span></label>
+                            <label><input type="checkbox" id="cfg-dashboard-glm-card" data-dashboard-panel="lightning" data-local-setting checked> <span><strong>Lightning</strong><small>GOES GLM activity and nearest strike.</small></span></label>
+                            <label><input type="checkbox" id="cfg-dashboard-alerts" data-dashboard-panel="alerts" data-local-setting checked> <span><strong>Weather Alerts</strong><small>Active alert banners and warnings.</small></span></label>
+                            <label><input type="checkbox" id="cfg-dashboard-source-health" data-dashboard-panel="source-health" data-local-setting checked> <span><strong>Source Health</strong><small>Data freshness control in the header.</small></span></label>
+                            <label><input type="checkbox" id="cfg-dashboard-watched-paths" data-dashboard-panel="watched-paths" data-local-setting checked> <span><strong>Watched Paths</strong><small>Configured VHF path observations.</small></span></label>
+                            <label><input type="checkbox" id="cfg-dashboard-space-weather" data-dashboard-panel="space-weather" data-local-setting checked> <span><strong>Propagation Context</strong><small>NOAA space weather and external context cards.</small></span></label>
                         </div>
-                        <div class="settings-row">
-                            <label for="cfg-map-tile-source">Map Tiles</label>
-                            <select id="cfg-map-tile-source">
-                                <option value="osm">Online OpenStreetMap</option>
-                                <option value="custom">Custom XYZ / local server</option>
-                            </select>
-                        </div>
-                        <div class="settings-row">
-                            <label for="cfg-map-tile-url">Tile URL</label>
-                            <input type="text" id="cfg-map-tile-url" placeholder="http://127.0.0.1:8080/tile/{z}/{x}/{y}.png">
-                        </div>
-                        <div class="settings-row">
-                            <label for="cfg-map-tile-attribution">Tile Attribution</label>
-                            <input type="text" id="cfg-map-tile-attribution" placeholder="Optional attribution text">
-                        </div>
-                        <div class="settings-row">
-                            <label for="cfg-map-tile-max-zoom">Tile Max Zoom</label>
-                            <input type="number" id="cfg-map-tile-max-zoom" min="1" max="22" step="1" value="19">
-                        </div>
-                        <div class="settings-row">
-                            <label for="cfg-web-ghost">Ghost After (min)</label>
-                            <input type="number" id="cfg-web-ghost" min="0" max="1440" step="5" value="60">
-                        </div>
-                        <div class="settings-row">
-                            <label for="cfg-web-expire">Expire After (min)</label>
-                            <input type="number" id="cfg-web-expire" min="0" max="1440" step="5" value="0">
-                        </div>
-                        <div class="settings-row">
-                            <label for="cfg-web-pin">Mobile PIN</label>
-                            <input type="text" id="cfg-web-pin" maxlength="8" placeholder="Leave blank = no PIN" autocomplete="off">
-                        </div>
-                        <div class="settings-row">
-                            <label for="cfg-web-update-check-enabled">Update Checks Enabled</label>
-                            <input type="checkbox" id="cfg-web-update-check-enabled">
-                        </div>
-                        <div class="settings-row">
-                            <label for="cfg-web-update-check-hours">Update Check Interval (hours)</label>
-                            <input type="number" id="cfg-web-update-check-hours" min="1" max="720" step="1" value="24">
-                        </div>
+                        <p class="settings-note">Each effect is independent. Motion is automatically reduced when your operating system requests reduced motion.</p>
+                        <h4>Propagation panel order</h4>
+                        <p class="settings-help">Arrange the cards and charts inside the Propagation dashboard. Live data and visibility settings still apply.</p>
+                        <div id="appearance-panel-order" aria-label="Propagation panel order"></div>
+                        <h4>Dashboard tab order</h4>
+                        <p class="settings-help">Show or hide views and use Move up / Move down to change their order. Settings and Help remain available.</p>
+                        <div id="appearance-tab-order" aria-label="Dashboard tab order"></div>
+                        <button type="button" id="appearance-layout-reset" class="btn-small">Restore default dashboard layout</button>
+                        <p id="appearance-layout-status" role="status" aria-live="polite"></p>
                     </div>
 
                     <!-- Visualizations -->
@@ -1465,16 +1495,7 @@
                                 <span><strong>Packet Animation</strong><small>Shows station transmit bursts and directional packet flow. Enhanced adds a moving head, contrail, and hop pulses.</small></span>
                             </label>
                         </div>
-                        <h4>Dashboard Visibility</h4>
-                        <div class="dashboard-panel-settings" aria-label="Dashboard panel visibility">
-                            <label><input type="checkbox" id="cfg-dashboard-weather" data-dashboard-panel="weather" data-local-setting checked> <span><strong>Weather</strong><small>Current local conditions above the map.</small></span></label>
-                            <label><input type="checkbox" id="cfg-dashboard-glm-card" data-dashboard-panel="lightning" data-local-setting checked> <span><strong>Lightning</strong><small>GOES GLM activity and nearest strike.</small></span></label>
-                            <label><input type="checkbox" id="cfg-dashboard-alerts" data-dashboard-panel="alerts" data-local-setting checked> <span><strong>Weather Alerts</strong><small>Active alert banners and warnings.</small></span></label>
-                            <label><input type="checkbox" id="cfg-dashboard-source-health" data-dashboard-panel="source-health" data-local-setting checked> <span><strong>Source Health</strong><small>Data freshness control in the header.</small></span></label>
-                            <label><input type="checkbox" id="cfg-dashboard-watched-paths" data-dashboard-panel="watched-paths" data-local-setting checked> <span><strong>Watched Paths</strong><small>Configured VHF path observations.</small></span></label>
-                            <label><input type="checkbox" id="cfg-dashboard-space-weather" data-dashboard-panel="space-weather" data-local-setting checked> <span><strong>Propagation Context</strong><small>NOAA space weather and external context cards.</small></span></label>
-                        </div>
-                        <p class="settings-note">Each effect is independent. Motion is automatically reduced when your operating system requests reduced motion.</p>
+
                     </div>
 
                     <div class="settings-section" data-settings-key="club-display" data-summary="Rotating layouts for club rooms, events, and unattended monitors.">
@@ -2395,7 +2416,7 @@
                     <div class="about-section">
                         <h3>Build Info</h3>
                         <p>Version: <span id="about-version-detail">1.11.1</span></p>
-                        <p>Release Date: <span id="about-date">October 27, 2026</span></p>
+                        <p>Release Date: <span id="about-date">October 28, 2026</span></p>
                         <p>Highlights: Adds unified source health, expanded propagation and weather context, remote awareness alerts, club display mode, Bullseye SQLite compatibility, and reliable APRS object placement through weather polygons.</p>
                     </div>
                     <div class="about-section">
@@ -2687,8 +2708,8 @@
             </div>
             <div class="help-body">
 <p><button id="btn-help-quick-start" class="btn-primary">Open Illustrated Quick Start</button> <a href="/static/documentation.html" target="_blank" rel="noopener">Open full documentation</a></p><h3>APRS PropView User Guide</h3>
-<p>Current version: <strong>1.14.2</strong>. This guide covers the desktop dashboard, mobile companion, settings and built-in modem.</p>
-<p>Release date: October 27, 2026.</p>
+<p>Current version: <strong>1.14.3</strong>. This guide covers the desktop dashboard, mobile companion, settings and built-in modem.</p>
+<p>Release date: October 28, 2026.</p>
 <h3 id="help-guide-getting-started">Getting started</h3>
 <p>Install the application, launch it, and complete the operator-password window on the host computer. Set your callsign, SSID, symbol and coordinates under <strong>Settings → Station &amp; Location</strong>. Coordinates can be typed, picked on the map or supplied by the configured GPS source. Use your actual licensed station identity before transmitting.</p>
 <p>Open <strong>Settings → Radio &amp; TNC → RF Ports</strong> to configure an external TNC or the built-in experimental modem. APRS-IS is an independent internet feed; configure it in the same category if needed. Start with reception, verify the RF/APRS-IS indicators and packet list, then enable the transmit functions you intend to use. Weather and lightning require their own enable switches under <strong>Alerts &amp; Weather</strong>; setting station coordinates alone does not enable them.</p>
@@ -2768,6 +2789,18 @@
 <p>GPS sources include browser/mobile geolocation, own APRS reports, NMEA serial/TCP/UDP, gpsd and any-supported-source mode. <strong>LOCK</strong> prevents live GPS from overwriting saved station coordinates; moving the displayed marker and saving coordinates are distinct choices. Smart beaconing can use received speed. Browser geolocation requires permission and browser-compatible secure/local access.</p>
 <p>Open <strong>/mobile</strong> for the companion map, station, message, propagation and About views. It uses the no-key OSM map by default and can share browser GPS when authorized and configured. A remote phone needs its own operator session for privileged actions. Tailscale or another private VPN can connect the host and phone; use the host's configured port, not an assumed universal port.</p>
 <p>Web/Display settings include listening host/port, browser selection or no automatic browser, UI/map appearance, unit system, fonts, marker aging, display density, visualization effects, dashboard panel visibility and Club Display. Browser UI preferences are local to that browser. Server settings and station configuration are shared by all viewers subject to authentication.</p>
+<h4>Personalize Appearance</h4>
+<p>Open <strong>Settings → Map &amp; Display → Appearance</strong> in either Basic or Advanced Settings. Changes here save immediately; you do not need to press Save Configuration.</p>
+<ul>
+<li><strong>Station or club name:</strong> enter an optional label of up to 32 characters beside your callsign. Clear the field to remove it. This does not change your transmitted APRS callsign or station symbol.</li>
+<li><strong>Header icon:</strong> use Choose File for a PNG, JPEG, WebP, GIF, BMP or ICO image, up to 10 MB and 25 million pixels. Simple club logos or callsign badges work best at this size. The preview and header update after saving; Restore default icon brings back the PropView logo. Invalid uploads preserve the previous image.</li>
+<li><strong>Colors and density:</strong> choose brightness, a visual theme, an accent preset, and Comfortable, Compact or Wallboard density. The controls preview changes immediately. Map tiles are selected separately.</li>
+<li><strong>Dashboard visibility:</strong> show or hide Weather, Lightning, Weather Alerts, Source Health, Watched Paths and Propagation Context. Hidden panels do not turn off their data sources or alert settings.</li>
+<li><strong>Propagation panel order:</strong> use Move up / Move down to arrange cards and charts in the Propagation dashboard.</li>
+<li><strong>Dashboard tab order:</strong> show or hide views and use Move up / Move down to reorder tabs. At least one view must remain visible; Settings and Help remain available. Restore default dashboard layout restores tab visibility/order and Propagation panel order without removing your name, logo, colors or density choices.</li>
+</ul>
+<p>The name, colors, density, panel visibility and ordering are saved in this browser. Other browsers have their own display preferences. The uploaded logo is stored by the server and shared by all viewers, survives server restarts and requires operator access to change.</p>
+<p><strong>Uptime</strong> measures the running server application session. Reloading the page, closing/reopening the browser, signing in/out or reconnecting does not restart it. Desktop and mobile resynchronize from the same server counter, including public viewing. Closing and reopening the server application resets it. After 24 hours the display includes days.</p>
 <h3 id="help-guide-source-health-and-troubleshooting">Source health and troubleshooting</h3>
 <p><strong>Data → Source Health</strong> separates connection state from data age. RF <strong>LISTENING</strong> means a receiver is connected but no RF packet has been recorded this session; <strong>LIVE</strong> means recent RF data; <strong>STALE</strong> means old observations; <strong>OFFLINE</strong> means unavailable; <strong>OFF</strong> means disabled. Configured tile layers are not a guarantee every external tile request succeeded. Browser live-link state is separate from backend feed health.</p>
 <ul>
@@ -2821,6 +2854,7 @@
     <script defer src="/static/js/messages.js?v=__ASSET_VERSION__"></script>
     <script defer src="/static/js/weather.js?v=__ASSET_VERSION__"></script>
     <script defer src="/static/js/alert-audio.js?v=__ASSET_VERSION__"></script>
+    <script defer src="/static/js/appearance.js?v=__ASSET_VERSION__"></script>
     <script defer src="/static/js/header-image.js?v=__ASSET_VERSION__"></script>
     <script defer src="/static/js/propagation-evidence.js?v=__ASSET_VERSION__"></script>
     <script defer src="/static/js/source-health.js?v=__ASSET_VERSION__"></script>

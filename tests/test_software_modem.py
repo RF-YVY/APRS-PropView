@@ -124,7 +124,7 @@ class ReleaseIdentityTests(unittest.TestCase):
     def test_release_version_and_installer_identity(self):
         from pathlib import Path
         from main import APP_VERSION
-        self.assertEqual(APP_VERSION, '1.14.2')
+        self.assertEqual(APP_VERSION, '1.14.3')
         root=Path(__file__).resolve().parents[1]
         script=(root/'deploy/APRSPropView.iss').read_text(encoding='utf-8')
         self.assertIn('8F56D489-53F5-4E9E-89B0-BA55762CDE37',script)
@@ -132,7 +132,75 @@ class ReleaseIdentityTests(unittest.TestCase):
         self.assertNotIn('APRSPropViewDev.exe',script)
 
 
+class ModemRouteErrorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_route_errors_are_logged_without_exposing_details(self):
+        import json
+        from fastapi import FastAPI
+        from unittest.mock import AsyncMock, MagicMock
+        from server.modem_routes import register_modem_routes
+        secret='PRIVATE /server/config secret'
+        modem=MagicMock()
+        modem.devices.side_effect=RuntimeError(secret)
+        modem.start=AsyncMock(side_effect=RuntimeError(secret))
+        modem.transmitter.outputs.side_effect=RuntimeError(secret)
+        modem.transmitter.configure=AsyncMock(side_effect=RuntimeError(secret))
+        modem.handler.config.station.callsign='K5YVY'
+        modem.handler.config.station.full_callsign='K5YVY-7'
+        modem.send=AsyncMock(side_effect=RuntimeError(secret))
+        app=FastAPI()
+        register_modem_routes(app,modem)
+        request=MagicMock()
+        request.json=AsyncMock(return_value={})
+        for route in app.routes:
+            path=getattr(route,'path','')
+            if path not in ('/api/modem/devices','/api/modem/start','/api/modem/transmit-devices',
+                            '/api/modem/transmit-settings','/api/modem/transmit-test'):
+                continue
+            with self.subTest(path=path), self.assertLogs('server.modem_routes',level='ERROR') as logs:
+                response=await route.endpoint(request) if path.endswith(('start','transmit-settings')) else await route.endpoint()
+                self.assertEqual(response.status_code,400)
+                message=json.loads(response.body)['message']
+                self.assertIn('Unable to',message)
+                self.assertNotIn(secret,response.body.decode())
+                self.assertIn(secret,' '.join(logs.output))
+                if path.endswith('/start'):
+                    self.assertEqual(modem.last_error,message)
+        modem.send.assert_awaited_once()
+        modem.handler._record_tx_packet.assert_not_called()
+
+
 class OfflineRouteTests(unittest.IsolatedAsyncioTestCase):
+
+    async def test_wav_errors_do_not_expose_exception_details(self):
+        import json, wave
+        from fastapi import FastAPI
+        from starlette.requests import Request
+        from unittest.mock import MagicMock, patch
+        from server.modem_routes import register_modem_routes
+        app=FastAPI()
+        register_modem_routes(app,MagicMock())
+        endpoint=next(route.endpoint for route in app.routes if getattr(route,'path','')=='/api/modem/decode-wav')
+        async def receive():return {'type':'http.request','body':b'invalid wav','more_body':False}
+        def request(query=b'channel=0'):
+            return Request({'type':'http','method':'POST','path':'/api/modem/decode-wav',
+                            'query_string':query,'headers':[]},receive)
+        responses=[]
+        for error_type in (ValueError,wave.Error,EOFError):
+            with self.subTest(error=error_type.__name__):
+                with patch('server.modem_routes.decode_wav',side_effect=error_type('PRIVATE /server/config secret')):
+                    response=await endpoint(request())
+                self.assertEqual(response.status_code,400)
+                self.assertNotIn('PRIVATE',response.body.decode())
+                self.assertIn('16-bit PCM WAV',json.loads(response.body)['message'])
+                responses.append(response.body)
+        # Exercise the real parser and query conversion as well as mocked failures.
+        for query in (b'channel=0',b'channel=PRIVATE'):
+            response=await endpoint(request(query))
+            self.assertEqual(response.status_code,400)
+            responses.append(response.body)
+        self.assertTrue(all(body==responses[0] for body in responses))
+
+
     async def test_wav_route_decodes_without_touching_rf_handler(self):
         import tempfile
         from pathlib import Path

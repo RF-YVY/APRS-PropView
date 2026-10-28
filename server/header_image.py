@@ -3,6 +3,7 @@ import asyncio
 import base64
 import binascii
 import io
+import logging
 import os
 import tempfile
 import warnings
@@ -11,6 +12,8 @@ from pathlib import Path
 from fastapi import Request
 from fastapi.responses import FileResponse, JSONResponse
 from PIL import Image, ImageOps, UnidentifiedImageError
+
+logger = logging.getLogger(__name__)
 
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
@@ -75,8 +78,11 @@ def register_header_image_routes(app, config_path, static_dir):
             data = base64.b64decode(encoded.split(',', 1)[-1], validate=True)
             await asyncio.to_thread(save_header_image, image_path, data)
             return {'success': True}
-        except (ValueError, binascii.Error, AttributeError) as exc:
-            return JSONResponse({'success': False, 'message': str(exc)}, status_code=400)
+        except (ValueError, binascii.Error, AttributeError):
+            logger.exception('Header image upload failed')
+            return JSONResponse({'success': False, 'message':
+                'Unable to read this upload. Choose a valid PNG, JPEG, WebP, GIF, BMP or ICO image '
+                'of 10 MB or smaller and at most 25 million pixels.'}, status_code=400)
 
     @app.delete('/api/header-image')
     async def reset_header_image():

@@ -274,7 +274,7 @@ def public_config(config):
 def public_status(data):
     return {key: value for key, value in data.items() if key in {
         'station', 'station_info', 'latitude', 'longitude', 'symbol_table', 'symbol_code',
-        'rf_connected', 'aprs_is_connected', 'stats'}}
+        'rf_connected', 'aprs_is_connected', 'stats', 'uptime_seconds'}}
 
 
 def public_packet(packet):

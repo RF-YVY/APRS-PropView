@@ -40,3 +40,29 @@ test('toolbar session control includes visible Login text', () => {
     const source=fs.readFileSync(path.join(root,'static/js/operator-auth.js'),'utf8');
     assert.match(source,/<\/svg><span>Login<\/span><\/button>/);
 });
+
+test('desktop and mobile uptime follows server age across reloads and partial status updates', () => {
+    for (const file of ['static/js/app.js', 'static/mobile.html']) {
+        const source = fs.readFileSync(path.join(root,file),'utf8');
+        const start = source.indexOf('function syncServerUptime(status)');
+        const end = source.indexOf('function updateUptime()',start);
+        const fn = source.slice(start,end);
+        const context = {Date:{now:()=>1000000000}, uptimeStart:0, S:{startTime:0}, updateUptime:()=>{}};
+        const getStart = () => file.endsWith('.html') ? context.S.startTime : context.uptimeStart;
+        vm.runInNewContext(fn+'\nsyncServerUptime({uptime_seconds:7200});',context);
+        assert.equal(getStart(),1000000-7200);
+        for (const value of [undefined, null, -1, NaN, Infinity, '7200']) {
+            context.status={uptime_seconds:value};
+            vm.runInNewContext('syncServerUptime(status);',context);
+            assert.equal(getStart(),1000000-7200,`${file}: partial/invalid update must preserve server age`);
+        }
+        // A new browser document resynchronizes to the same still-running server.
+        context.uptimeStart=0; context.S.startTime=0;
+        context.Date.now=()=>1000010000;
+        vm.runInNewContext('syncServerUptime({uptime_seconds:7210});',context);
+        assert.equal(getStart(),1000000-7200);
+        // Only a restarted server reporting zero resets the displayed age.
+        vm.runInNewContext('syncServerUptime({uptime_seconds:0});',context);
+        assert.equal(getStart(),1000010);
+    }
+});

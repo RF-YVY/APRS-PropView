@@ -62,6 +62,17 @@ class HeaderImageApiTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(Path(response.path), stored)
             self.assertEqual(response.headers['cache-control'], 'no-store')
             self.assertEqual((await browser.request('POST', '/api/header-image', {'data': 'invalid!'}, headers))[0], 400)
+            from unittest.mock import patch
+            for error in (ValueError, AttributeError):
+                with self.subTest(error=error.__name__):
+                    with patch('server.header_image.save_header_image', side_effect=error('PRIVATE /server/config secret')):
+                        with self.assertLogs('server.header_image', level='ERROR') as logs:
+                            status, result = await browser.request('POST', '/api/header-image', payload, headers)
+                    self.assertEqual(status, 400)
+                    self.assertFalse(result['success'])
+                    self.assertNotIn('PRIVATE', result['message'])
+                    self.assertIn('10 MB', result['message'])
+                    self.assertIn('PRIVATE', ' '.join(logs.output))
             self.assertTrue(stored.is_file())
             self.assertEqual((await browser.request('DELETE', '/api/header-image', headers=headers))[0], 200)
             self.assertFalse(stored.exists())

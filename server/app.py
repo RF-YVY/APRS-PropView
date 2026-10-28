@@ -1695,13 +1695,16 @@ try {{
             spot['route_message'] = ('Using ' + ('RF' if route == 'rf' else 'APRS-IS')) if route else 'No transmit connection available. Connect a transmit-enabled RF interface or verified APRS-IS session.'
             if request.url.path.endswith('/send'):
                 if not route:
-                    raise ValueError(spot['route_message'])
+                    return JSONResponse(status_code=400, content={"success": False,
+                        "message": spot['route_message']})
                 await handler.send_message(spot['to'], spot['text'],
                                            preferred_source=spot['source'], require_delivery=True,
                                            sender_call=spot['callsign'])
             return {"success": True, "spot": spot}
-        except ValueError as exc:
-            return JSONResponse(status_code=400, content={"success": False, "message": str(exc)})
+        except ValueError:
+            logger.exception("APRS spot validation or delivery failed")
+            return JSONResponse(status_code=400, content={"success": False,
+                "message": "Could not process the spot. Check the form fields and connection status before retrying."})
         except Exception:
             logger.exception("APRS spot send failed")
             return JSONResponse(status_code=500, content={"success": False,

@@ -4,6 +4,10 @@ The built-in modem now builds a host-native library on Windows, Linux and macOS.
 Run Python 3.11 or newer. Build on the target OS and CPU architecture: a Windows
 DLL or executable cannot be used as a native Linux/Pi/macOS application.
 
+## v1.14.3 update
+
+Use the package matching your OS and CPU: Windows portable/setup, Linux amd64 or arm64, or macOS Intel/Apple Silicon. Stop the existing application before replacing binaries; retain its application data directory. Browser-only reloads do not restart the server or reset uptime. After updating, refresh the browser to load the new Appearance controls and server uptime fix. See the [User Guide](USER_GUIDE.md) for personalization and the [changelog](../CHANGELOG.md) for security fixes.
+
 ## Linux / Raspberry Pi OS
 
 Prefer 64-bit Raspberry Pi OS on an ARM64 Pi. ARM64 is in the CI matrix; a physical

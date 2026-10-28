@@ -50,7 +50,11 @@ def build_spot(body, station_callsign):
         if activity not in ACTIVITIES:
             raise ValueError('Choose POTA, SOTA, WWFF or SIOTA.')
         reference, mode = field('reference').upper(), field('mode').upper()
-        if not re.fullmatch(r'[A-Z0-9]+(?:[/-][A-Z0-9]+)*-[0-9]+', reference):
+        # Split the final numeric suffix before matching to avoid backtracking
+        # over every possible suffix boundary in an untrusted reference.
+        prefix, separator, number = reference.rpartition('-')
+        if (not separator or not re.fullmatch(r'[A-Z0-9]+(?:[/-][A-Z0-9]+)*', prefix)
+                or not re.fullmatch(r'[0-9]+', number)):
             raise ValueError('Enter a reference such as ' + ACTIVITY_PROFILES[activity]['example'] + '.')
         if mode not in ACTIVITY_PROFILES[activity]['modes']:
             raise ValueError('Choose a supported mode. FT8 is available for POTA only.')

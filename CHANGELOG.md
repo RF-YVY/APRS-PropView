@@ -1,5 +1,17 @@
 # APRS PropView changelog
 
+## v1.14.3
+
+Released: October 28, 2026.
+
+- Added a clearly named Appearance section under Settings → Map & Display, with an optional station/club label, logo preview and restore control, existing accent/theme/density controls, dashboard visibility, Propagation panel ordering and dashboard tab ordering.
+- Appearance preferences save immediately per browser; the uploaded station logo remains shared and persistent. Settings and Help stay accessible, and at least one dashboard tab remains visible.
+- Fixed desktop/mobile uptime for public viewers: uptime follows the server application session across browser reloads and reconnects, and resets only when the server restarts.
+- Removed ambiguous backtracking from APRS spot reference validation while preserving supported reference formats.
+- Replaced raw exception responses in modem routes, APRS spot handling and header-image uploads with fixed user-facing messages; relevant diagnostics remain in server logs.
+- Updated the user guide, bundled Help and platform documentation. Retained the existing experimental modem and hardware-testing limitations.
+
+
 ## v1.14.2
 
 Released: October 27, 2026.

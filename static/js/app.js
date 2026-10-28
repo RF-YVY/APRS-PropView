@@ -526,7 +526,7 @@
             { key: 'tracking', title: 'Tracking & Callsigns', summary: 'Retention, blocklist, callbook, messages', sections: ['tracking', 'messaging'] },
             { key: 'propagation', title: 'Propagation', summary: 'Scoring, watched VHF paths, and supporting context', sections: ['propagation', 'watched-paths'] },
             { key: 'alerts', title: 'Alerts & Weather', summary: 'Weather, lightning, watched-location alerts, and notification delivery', sections: ['weather', 'watched-alerts', 'alerts'] },
-            { key: 'display', title: 'Map & Display', summary: 'Map tiles, theme, visualizations, units, and club display', sections: ['web', 'visualizations', 'club-display'] },
+            { key: 'display', title: 'Map & Display', summary: 'Map tiles, theme, visualizations, units, and club display', sections: ['appearance', 'web', 'visualizations', 'club-display'] },
             { key: 'integrations', title: 'Integrations', summary: 'MQTT and Home Assistant', sections: ['mqtt'] },
         ];
         const categoryBySection = new Map();
@@ -886,6 +886,7 @@
             'rf-ports',
             'igate',
             'digipeater',
+            'appearance',
             'web',
             'visualizations',
             'club-display',
@@ -1370,7 +1371,7 @@
             lightning: '#lightning-card',
             alerts: '#wx-alerts-container',
             'source-health': '#source-health-control',
-            'watched-paths': '#watched-paths-panel',
+            'watched-paths': '#prop-watched-heading, #watched-paths-panel',
             'space-weather': '#space-weather-card, #external-propagation-card, #space-weather-heading, #external-propagation-heading',
         };
         Object.entries(selectors).forEach(([key, selector]) => {
@@ -1918,7 +1919,7 @@
         lastStatus = status;
         window.pvEvidence?.status(status);
         serverConfig = status;
-        uptimeStart = Date.now() / 1000 - (status.uptime_seconds || 0);
+        syncServerUptime(status);
 
         // Update station callsign
         const callEl = document.getElementById('station-call');
@@ -2306,6 +2307,13 @@
     }
 
     // ── Uptime ─────────────────────────────────────────────────
+
+    function syncServerUptime(status) {
+        const elapsed = status.uptime_seconds;
+        if (typeof elapsed !== 'number' || !Number.isFinite(elapsed) || elapsed < 0) return;
+        uptimeStart = Date.now() / 1000 - elapsed;
+        updateUptime();
+    }
 
     function updateUptime() {
         if (!uptimeStart) return;

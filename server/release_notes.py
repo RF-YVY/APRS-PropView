@@ -8,6 +8,12 @@ from server.config_io import atomic_write
 logger = logging.getLogger('propview.release')
 
 RELEASES = {
+    '1.14.3': [
+        'Personalize Appearance with a station/club label, logo preview, colors, density and dashboard ordering.',
+        'Uptime now follows the server session across browser reloads and reconnects for desktop and mobile viewers.',
+        'Security fixes remove ambiguous spot-reference regex matching and exception details from affected API responses.',
+        'Updated user guides and bundled Help.',
+    ],
     '1.14.2': ['Security audit and fixes. Updating is recommended for all users.',
                'Added a separate, optional Heard me map overlay for reported reception of your RF transmissions.'],
     '1.14.1': [
