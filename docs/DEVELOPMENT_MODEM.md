@@ -13,7 +13,7 @@ The paths below describe Windows. For Linux, Raspberry Pi, macOS and headless op
 ## First test
 
 1. Install the release installer or launch its portable executable.
-2. Complete its separate GUI operator-password setup if prompted. Configure your callsign/location in the application UI as needed.
+2. Optionally enable User login in Settings → Security and set a password in the browser. Configure your callsign/location in the application UI as needed.
 3. Open **Settings → Radio & TNC → RF Ports → Configure Built-in Modem**.
 4. Expand **Test with a WAV recording**. Download the generated test WAV, select it and click **Decode recording**. It should recover one synthetic N0CALL packet. Nothing is transmitted, played or inserted in the live map.
 5. To receive radio audio, select the USB audio input (WASAPI preferred when available), choose left/mono or right, and click **Start receiving**. Settings are remembered; successful setup enables automatic reception on subsequent launches.

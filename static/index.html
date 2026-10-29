@@ -1283,6 +1283,16 @@
                         <p class="settings-note">Named RF ports are shown on received packets and stations. Add Serial for KISS or receive-only TNC2 monitor ports, or TCP for KISS-over-TCP. Older single-port KISS settings are automatically imported here when present.</p>
                     </div>
 
+                    <div class="settings-section" data-settings-key="security" data-summary="Optional user login and password protection.">
+                        <h3>Security</h3>
+                        <p>User login is optional and off by default. Anyone who can reach this application can change settings and use transmit controls while login is off. For unattended or public-facing instances, enabling User login is recommended. Use HTTPS or a trusted private VPN for remote access.</p>
+                        <div class="form-row">
+                            <label for="cfg-security-enabled">Enable User login</label>
+                            <input type="checkbox" id="cfg-security-enabled" role="switch" data-local-setting>
+                        </div>
+                        <p id="security-status" role="status">User login is off. The application is unlocked. Security changes save immediately.</p>
+                    </div>
+
                     <!-- Web Interface -->
                     <div class="settings-section" data-settings-key="web" data-summary="Desktop and mobile web UI behavior, PIN, and marker aging.">
                         <h3>Web Interface</h3>
@@ -2416,7 +2426,7 @@
                     <div class="about-section">
                         <h3>Build Info</h3>
                         <p>Version: <span id="about-version-detail">1.11.1</span></p>
-                        <p>Release Date: <span id="about-date">October 28, 2026</span></p>
+                        <p>Release Date: <span id="about-date">October 29, 2026</span></p>
                         <p>Highlights: Adds unified source health, expanded propagation and weather context, remote awareness alerts, club display mode, Bullseye SQLite compatibility, and reliable APRS object placement through weather polygons.</p>
                     </div>
                     <div class="about-section">
@@ -2708,20 +2718,23 @@
             </div>
             <div class="help-body">
 <p><button id="btn-help-quick-start" class="btn-primary">Open Illustrated Quick Start</button> <a href="/static/documentation.html" target="_blank" rel="noopener">Open full documentation</a></p><h3>APRS PropView User Guide</h3>
-<p>Current version: <strong>1.14.3</strong>. This guide covers the desktop dashboard, mobile companion, settings and built-in modem.</p>
-<p>Release date: October 28, 2026.</p>
+<p>Current version: <strong>1.14.4</strong>. This guide covers the desktop dashboard, mobile companion, settings and built-in modem.</p>
+<p>Release date: October 29, 2026.</p>
 <h3 id="help-guide-getting-started">Getting started</h3>
-<p>Install the application, launch it, and complete the operator-password window on the host computer. Set your callsign, SSID, symbol and coordinates under <strong>Settings → Station &amp; Location</strong>. Coordinates can be typed, picked on the map or supplied by the configured GPS source. Use your actual licensed station identity before transmitting.</p>
+<p>Install the application and launch it. User login is optional and off by default; no password is required to begin. Set your callsign, SSID, symbol and coordinates under <strong>Settings → Station &amp; Location</strong>. Coordinates can be typed, picked on the map or supplied by the configured GPS source. Use your actual licensed station identity before transmitting.</p>
 <p>Open <strong>Settings → Radio &amp; TNC → RF Ports</strong> to configure an external TNC or the built-in experimental modem. APRS-IS is an independent internet feed; configure it in the same category if needed. Start with reception, verify the RF/APRS-IS indicators and packet list, then enable the transmit functions you intend to use. Weather and lightning require their own enable switches under <strong>Alerts &amp; Weather</strong>; setting station coordinates alone does not enable them.</p>
 <p>Settings offers <strong>Show Advanced / Show Basic</strong>, category navigation, search, collapsible sections, guided setup, connection diagnostics, operating-mode presets, a configuration-readiness summary and transmit-setting protection. Presets stage changes for review; save them to apply. Settings with a restart requirement identify it in the save feedback. Export a configuration backup before changing network or interface settings.</p>
 <h3 id="help-guide-operator-access-and-public-viewing">Operator access and public viewing</h3>
-<p>Click the small <strong>lock icon in the toolbar below the map</strong> to see whether this browser is a local operator, a signed-in operator or a public viewer, and the remaining session time. The popover provides <strong>Extend session / Operator sign in</strong> and <strong>Lock now</strong>. Extend session opens the password form again. Choose 15 minutes, one hour or eight hours when signing in. Click outside the popover or press Escape to close it.</p>
-<p>Authentication belongs to the browser session that signed in. Signing in on the host or through a private VPN does not unlock anyone else's public browser. Public viewers can observe the dashboard; settings, private messages, transmissions, configuration exports and update operations require operator access. Lock now revokes this browser's session. Expiry returns it to read-only viewing; it does not stop the backend modem or previously configured station functions.</p>
-<p>The host's password setup window can enable automatic sign-in for browsers opened by the local application. A manually entered dashboard address does not receive that local-launch access automatically. Passwords must be <strong>6–256 characters</strong>. For a forgotten password, use <strong>Set/reset operator password</strong> from the host's tray or Start menu. The local GUI sets a replacement password and revokes existing sessions; no email or hosted recovery server is required.</p>
-<p>For public hosting, use HTTPS through your reverse proxy and retain operator authentication. A private VPN is another option for remote use. Set the listening host/port as needed and restart when requested. Only expose the intended web interface. See the separate public-hosting guide for session and proxy details.</p>
+<p>Open <strong>Settings → Security</strong> to choose whether to require <strong>User login</strong>. It is off by default when no operator password has been configured. While off, the application stays unlocked and no User login button appears below the map. Anyone who can reach the application can change settings and use transmit controls. Enabling User login is recommended for unattended or public-facing instances; use HTTPS or a trusted private VPN for remote access.</p>
+<p>Turn on <strong>Enable User login</strong> to set and confirm a password of <strong>6–256 characters</strong> directly in the browser. Cancel leaves login off. Saving enables protection immediately and signs in this browser for one hour; other browsers must sign in separately. This works with a headless Raspberry Pi over a remote browser, with no desktop or tray menu required. Security changes save immediately, independently of the main Settings Save button.</p>
+<p>When enabled, the <strong>User login</strong> button below the map shows the current session and provides <strong>Extend session / Operator sign in</strong> and <strong>Lock now</strong>. Login sessions last 15 minutes, one hour or eight hours. Signed-in users can turn login off under <strong>Settings → Security</strong>, which unlocks access for all viewers. Existing configured passwords retain protection when upgrading.</p>
+<p>For a forgotten password, use <strong>Set/reset operator password</strong> from the host tray or Start menu, or run <code>main.py --set-operator-password</code> with the same Linux account and deployment environment as the running application. This resets the password, enables login and revokes existing sessions. For the standard Pi service install:</p>
+<pre><code class="language-sh">cd /opt/aprs-propview
+PROPVIEW_DATA_DIR=/opt/aprs-propview .venv/bin/python main.py --set-operator-password
+</code></pre>
 <h3 id="help-guide-dashboard-map-and-toolbars">Dashboard, map and toolbars</h3>
 <p>The header shows station identity, direct and regional propagation evidence, RF/APRS-IS/browser connection indicators, Data source health and notifications. Theme controls change the UI separately from the map background. The sidebar contains RF stations, APRS-IS stations, packet history, propagation, analytics, operator messages/settings and About/Help. Collapse the sidebar for more map area.</p>
-<p>The bottom map toolbar provides <strong>Send OTA Activity Spot</strong>, <strong>View</strong>, <strong>Stations</strong>, <strong>Layers</strong>, <strong>Appearance</strong> and the operator lock button. The built-in modem is configured in <strong>Settings → Radio &amp; TNC → RF Ports</strong>, not from this toolbar.</p>
+<p>The bottom map toolbar provides <strong>Send OTA Activity Spot</strong>, <strong>View</strong>, <strong>Stations</strong>, <strong>Layers</strong>, <strong>Appearance</strong> and, when User login is enabled, the User login lock button. The built-in modem is configured in <strong>Settings → Radio &amp; TNC → RF Ports</strong>, not from this toolbar.</p>
 <ul>
 <li><strong>View:</strong> center on your station, enable the local scope/range rings, fit visible stations or create an APRS object. Auto-fit stops after manual map movement; enable it again to resume.</li>
 <li><strong>Stations:</strong> show RF and APRS-IS sources, direct RF only, callsign labels and station-type filters. Station lists also filter age, distance, callsign, category and path, and offer sorting.</li>

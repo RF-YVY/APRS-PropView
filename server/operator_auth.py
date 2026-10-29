@@ -1,7 +1,7 @@
 """Local credentials and independent, expiring browser operator sessions.
 
-There is deliberately no network password setup/reset endpoint and no trusted
-IP, localhost, VPN, or proxy-header shortcut to operator privileges.
+Login is optional. Enabling it requires an explicit same-origin Settings action
+with a password. Protected installations retain independent browser sessions.
 """
 import asyncio
 import hashlib
@@ -33,7 +33,7 @@ def set_password(path, password, local_auto_login=True):
     digest = hashlib.pbkdf2_hmac('sha256', password.encode(), bytes.fromhex(salt), ITERATIONS).hex()
     atomic_write(path, json.dumps({'algorithm': 'pbkdf2-sha256', 'iterations': ITERATIONS,
                                  'salt': salt, 'digest': digest,
-                                 'local_auto_login': bool(local_auto_login)}))
+                                 'local_auto_login': bool(local_auto_login), 'enabled': True}))
     Path(path).chmod(0o600)
 
 
@@ -48,6 +48,8 @@ class OperatorAuth:
         self.attempts = defaultdict(deque)
         self.global_attempts = deque()
         self.login_lock = asyncio.Lock()
+        self.enabled = False
+        self.unlocked_session = {'csrf': secrets.token_urlsafe(32), 'expires_at': None, 'local': False}
 
     def reload(self):
         try:
@@ -61,21 +63,26 @@ class OperatorAuth:
         self.sessions.clear()
         self.local_launches.clear()
         self.record = None
+        # Preserve protection for existing password users and fail closed on corruption.
+        self.enabled = bool(raw) or self.enabled
         try:
             record = json.loads(raw)
+            self.enabled = record.get('enabled', True) is not False
             if (record['algorithm'] == 'pbkdf2-sha256' and
                     record['iterations'] == ITERATIONS and
                     len(bytes.fromhex(record['salt'])) == 32 and
                     len(bytes.fromhex(record['digest'])) == 32):
                 self.record = record
-        except (ValueError, KeyError, TypeError):
-            pass  # Missing/corrupt credentials always leave the server read-only.
+        except (ValueError, KeyError, TypeError, AttributeError):
+            pass  # Invalid credentials never unlock an enabled installation.
 
     def session(self, token):
         self.reload()
         if not self.update_restored:
             self.update_restored = True
             self._restore_update_session()
+        if not self.enabled:
+            return self.unlocked_session
         now = time.time()
         self.sessions = {key: value for key, value in self.sessions.items() if value['expires_at'] > now}
         return self.sessions.get(hashlib.sha256(token.encode()).hexdigest()) if token else None
@@ -83,7 +90,7 @@ class OperatorAuth:
     def preserve_local_update_session(self, token):
         """Only an intentional in-app update may continue this exact local browser."""
         session = self.session(token)
-        if not session or not session.get('local'):
+        if not self.enabled or not session or not session.get('local'):
             return
         path = self.path.with_name('operator-update-session.json')
         atomic_write(path, json.dumps({'key': hashlib.sha256(token.encode()).hexdigest(),
@@ -110,7 +117,7 @@ class OperatorAuth:
 
     def status(self, token):
         session = self.session(token)
-        return {'authenticated': bool(session), 'configured': self.record is not None,
+        return {'enabled': self.enabled, 'authenticated': bool(session), 'configured': self.record is not None,
                 'expires_at': session['expires_at'] if session else None,
                 'csrf_token': session['csrf'] if session else None,
                 'local_session': bool(session and session.get('local')),
@@ -131,7 +138,7 @@ class OperatorAuth:
     def local_dashboard_url(self, url):
         """Host process/tray only. There is no HTTP endpoint to mint these."""
         self.reload()
-        if not self.record or not self.record.get('local_auto_login', True):
+        if not self.enabled or not self.record or not self.record.get('local_auto_login', True):
             return url
         now = time.time()
         self.local_launches = {key: value for key, value in self.local_launches.items() if value[0] > now}
@@ -379,6 +386,43 @@ def install_access_control(app, auth):
     @app.post('/api/auth/local-login')
     async def local_login(request: Request):
         return await auth.local_login(request)
+
+    @app.post('/api/auth/security')
+    async def security(request: Request):
+        # The middleware requires same-origin + CSRF, and a signed-in operator
+        # when protection is already on. Setup is possible remotely while off.
+        raw = bytearray()
+        async for chunk in request.stream():
+            raw.extend(chunk)
+            if len(raw) > 4096:
+                return JSONResponse({'message': 'Security request too large.'}, status_code=413)
+        try:
+            body = json.loads(raw)
+            enabled = body['enabled']
+            if type(enabled) is not bool:
+                raise ValueError('Choose whether user login is enabled.')
+            async with auth.login_lock:
+                current = auth.session(request.cookies.get(COOKIE, ''))
+                if not current or not hmac.compare_digest(request.headers.get('x-propview-csrf', ''), current['csrf']):
+                    return JSONResponse({'message': 'Refresh the page and sign in again.'}, status_code=403)
+                if enabled:
+                    if auth.enabled:
+                        return JSONResponse({'message': 'User login is already enabled.'}, status_code=409)
+                    password = body.get('password')
+                    if not isinstance(password, str) or not 6 <= len(password) <= 256:
+                        return JSONResponse({'message': 'Use an operator password between 6 and 256 characters.'}, status_code=400)
+                    set_password(auth.path, password, local_auto_login=False)
+                else:
+                    record = dict(auth.record or {})
+                    record['enabled'] = False
+                    atomic_write(auth.path, json.dumps(record))
+                    auth.path.chmod(0o600)
+                auth.reload()
+        except (ValueError, KeyError, TypeError):
+            return JSONResponse({'message': 'Invalid security settings.'}, status_code=400)
+        if enabled:
+            return auth.create_session(request, 3600)
+        return JSONResponse(auth.status(''))
 
     @app.post('/api/auth/logout')
     async def logout(request: Request):

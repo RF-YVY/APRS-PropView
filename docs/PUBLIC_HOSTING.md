@@ -1,18 +1,19 @@
 # Public dashboard and operator access
 
-The dashboard is read-only until a browser signs in as an operator. Publishing
-the dashboard does **not** grant viewers permission to transmit, edit settings,
-read messages/contacts, export configuration, or install updates.
+User login is optional and off by default when no password has been configured. While off, anyone who can reach the application can change settings, read messages and use transmit controls. **Enable User login for unattended or public-facing instances** before making the application accessible. Use HTTPS or a trusted private VPN for remote access.
 
 ## First setup and lost passwords
 
-On first desktop launch, PropView opens a **Set your operator password**
-window on the host computer. Enter and confirm a password of 6–256 characters.
-Use **Set/reset operator password** in the application's tray menu or Windows
-Start menu to change or recover it later. Recovery replaces the forgotten
-password and revokes existing sessions; the old password cannot be retrieved.
-No PowerShell commands, email service, cloud account, or public reset endpoint
-are needed. Cancelling setup leaves operator functions locked.
+Open **Settings → Security** and turn on **Enable User login**. Set and confirm a password of 6–256 characters in the browser prompt. Saving enables protection and signs in the current browser for one hour. Other browsers must sign in separately and receive read-only public data until they do. Cancel leaves login off. Signed-in users may disable login in Security, unlocking access for everyone who can reach the application.
+
+No desktop or tray is required for initial setup on a headless Pi. Existing configured passwords retain protection on upgrade. For recovery, use **Set/reset operator password** in the host tray/Start menu, or the terminal command with the same service account and deployment paths. The standard Pi service command is:
+
+```sh
+cd /opt/aprs-propview
+PROPVIEW_DATA_DIR=/opt/aprs-propview .venv/bin/python main.py --set-operator-password
+```
+
+Recovery enables login and revokes existing sessions. The old password cannot be retrieved. No hosted account or recovery service is needed.
 
 The password window includes **Automatically sign in browsers opened by this
 computer** (enabled by default). Startup, the tray's **Open PropView**, and
@@ -34,10 +35,12 @@ to that directory to trusted host users. Back up the verifier separately if
 desired; it is deliberately excluded from Git and Docker build contexts.
 
 Resetting the password revokes all sessions, including sessions on a running
-backend. A missing or corrupt verifier leaves operator functions locked. The
-first website visitor cannot create a password. No default password exists.
+backend. A corrupt verifier, or a verifier removed while protected mode is running, leaves operator functions locked. A new installation without credentials defaults to login off. The
+unauthenticated visitor cannot reset an enabled password. No default password exists.
 
 ## Sign in once, operate until expiry
+
+The following session and public-view protections apply when User login is enabled.
 
 Choose **Operator sign in** in the browser. Pick **15 minutes**, **1 hour**
 (default), or **8 hours**. Settings and manual transmit controls become
@@ -93,7 +96,7 @@ for public viewers; built-in radar sources remain available.
 
 ## Upgrading existing installations
 
-After installing this version, complete the host password window before trying
+After installing this version, enable User login in Settings → Security before publishing
 to change settings or transmit manually. The old mobile PIN and browser-local
 "Protect transmit settings" preference do not grant operator permission.
 The mobile PIN screen is replaced by operator sign-in. Existing radio and

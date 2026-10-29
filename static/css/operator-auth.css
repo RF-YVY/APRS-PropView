@@ -117,3 +117,11 @@ html:not(.operator-authenticated) #m-btn-gps { display: none !important; }
 
 #software-modem-dialog .modem-check { flex-direction:row; align-items:center; }
 #software-modem-dialog .modem-check input { width:auto; }
+
+#operator-access[hidden] { display: none !important; }
+#security-setup-dialog { margin: auto; width: min(440px, calc(100vw - 40px)); max-height: 85vh; overflow: auto; background: #161b22; color: #f0f3f6; border: 1px solid #748ba1; border-radius: 10px; padding: 24px; font: 14px/1.5 system-ui, sans-serif; }
+#security-setup-dialog::backdrop { background: #000a; }
+#security-setup-dialog label { display: block; margin: 14px 0; }
+#security-setup-dialog input { display: block; box-sizing: border-box; width: 100%; padding: 9px; margin-top: 4px; }
+#security-setup-dialog button { cursor: pointer; background: #253b52; color: #fff; border: 1px solid #748ba1; border-radius: 4px; padding: 8px; }
+#security-setup-error { color: #ffb3b3; }

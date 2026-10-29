@@ -1,5 +1,18 @@
 # APRS PropView changelog
 
+## v1.14.4 — optional user login
+
+Released: October 29, 2026.
+
+I apologize for another update so soon. I decided to make security settings optional because requiring a password can complicate headless Raspberry Pi setup and may not be needed for most users running on a trusted local network.
+
+- Added Settings → Security with an Enable User login toggle, off by default for installations without a configured password. The application stays unlocked and the bottom-menu User login button is hidden while login is off.
+- Enabling User login prompts for a new password directly in Settings, including when accessing a headless Pi remotely, and signs in the current browser. Other browsers must sign in independently.
+- Recommended enabling User login for unattended or public-facing instances. When login is off, anyone who can reach the application can change settings and use transmit controls.
+- Existing configured passwords retain protection on upgrade. Signed-in users can turn it off in Settings → Security. Password reset remains available locally through the tray/Start menu or the headless terminal command.
+- Removed the automatic password prompt at startup. Retained same-origin request checks and CSRF protection in both modes, and session isolation, expiry and public-view filtering when login is enabled.
+- Updated Windows, Linux, Raspberry Pi ARM64, macOS and Docker release versions and documentation.
+
 ## v1.14.3
 
 Released: October 28, 2026.

@@ -32,7 +32,9 @@ def test_public_buckets_refill_and_peer_storage_stays_bounded():
 def test_public_concurrency_and_rate_errors_have_retry_headers(tmp_path):
     async def run():
         app = FastAPI()
-        install_access_control(app, OperatorAuth(tmp_path / 'missing.json'))
+        auth_path = tmp_path / 'operator-auth.json'
+        auth_path.write_text('{"enabled": true}')
+        install_access_control(app, OperatorAuth(auth_path))
         entered = asyncio.Event()
         finish = asyncio.Event()
         count = 0

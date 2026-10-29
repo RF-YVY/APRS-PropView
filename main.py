@@ -4,8 +4,8 @@
 Launch this to start the application. The web interface opens automatically.
 """
 
-APP_VERSION = "1.14.3"
-APP_RELEASE_DATE = "October 28, 2026"
+APP_VERSION = "1.14.4"
+APP_RELEASE_DATE = "October 29, 2026"
 
 import asyncio
 import sys
@@ -328,14 +328,6 @@ async def main():
         _pause_for_packaged_error()
         return
 
-    from server.operator_auth import OperatorAuth
-    auth = OperatorAuth(config_path.with_name('operator-auth.json'))
-    auth.reload()
-    password_configured_now = False
-    if auth.record is None:
-        from server.desktop_access import show_password_dialog
-        password_configured_now = show_password_dialog(auth.path)
-
     from server.release_notes import ReleaseNotes
     release_notes = ReleaseNotes(config_path.with_name('release-state.json'), APP_VERSION, existing_installation)
 
@@ -652,9 +644,7 @@ async def main():
         except OSError:
             logger.warning('Could not register the local shortcut. Use Open PropView from the tray.')
         # The original tab polls and reloads after an in-app update.
-        # Older browser UIs cannot refresh/sign in themselves on the first
-        # security upgrade. After initial password setup open the new local UI.
-        if '--update-relaunch' not in sys.argv or password_configured_now:
+        if '--update-relaunch' not in sys.argv:
             open_dashboard(automatic=True)
 
     tasks.append(asyncio.create_task(open_browser()))

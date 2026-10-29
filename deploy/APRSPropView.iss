@@ -3,7 +3,7 @@
 ; Build through build_installer.py so MyAppVersion is supplied from main.py.
 
 #ifndef MyAppVersion
-#define MyAppVersion "1.14.3"
+#define MyAppVersion "1.14.4"
 #endif
 
 #define MyAppName "APRS PropView"

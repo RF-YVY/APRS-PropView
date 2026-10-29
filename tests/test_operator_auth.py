@@ -81,6 +81,8 @@ class OperatorAccessTests(unittest.IsolatedAsyncioTestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.path = Path(self.temp.name) / 'config.toml'
         self.auth_path = self.path.with_name('operator-auth.json')
+        # These cases exercise an explicitly protected, not yet configured host.
+        self.auth_path.write_text('{"enabled": true}')
         self.config = Config()
         self.config.alerts.discord_webhook_url = 'private-webhook-secret'
         self.config.web.mobile_pin = 'private-pin'

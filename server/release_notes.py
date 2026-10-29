@@ -8,6 +8,12 @@ from server.config_io import atomic_write
 logger = logging.getLogger('propview.release')
 
 RELEASES = {
+    '1.14.4': [
+        'I apologize for another update so soon. Mandatory login complicated headless Pi setup and may not be needed for most users on trusted local networks.',
+        'Settings → Security now offers optional User login, off by default without an existing password. Enable it to set a password in the browser.',
+        'With login off, the UI stays unlocked and the User login button is hidden. Existing configured passwords retain protection until disabled in Settings.',
+        'Enabling User login is recommended for unattended or public-facing instances.',
+    ],
     '1.14.3': [
         'Personalize Appearance with a station/club label, logo preview, colors, density and dashboard ordering.',
         'Uptime now follows the server session across browser reloads and reconnects for desktop and mobile viewers.',

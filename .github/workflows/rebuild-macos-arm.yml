@@ -5,7 +5,7 @@ on:
       tag:
         description: Existing draft release tag to rebuild
         required: true
-        default: v1.14.3
+        default: v1.14.4
       runner:
         description: macOS ARM64 runner pool
         required: true

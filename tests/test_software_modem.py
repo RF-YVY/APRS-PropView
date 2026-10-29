@@ -112,6 +112,7 @@ class ModemLifecycleTests(unittest.IsolatedAsyncioTestCase):
         from tests.test_operator_auth import Browser
         with tempfile.TemporaryDirectory() as temp:
             handler=MagicMock();handler.rf_interfaces=[]
+            (Path(temp)/'operator-auth.json').write_text('{"enabled": true}')
             app=create_app(Config(),MagicMock(),MagicMock(),MagicMock(),handler,
                            app_version='1.13.0-dev.1',config_path=Path(temp)/'config.toml')
             browser=Browser(app)
@@ -124,7 +125,7 @@ class ReleaseIdentityTests(unittest.TestCase):
     def test_release_version_and_installer_identity(self):
         from pathlib import Path
         from main import APP_VERSION
-        self.assertEqual(APP_VERSION, '1.14.3')
+        self.assertEqual(APP_VERSION, '1.14.4')
         root=Path(__file__).resolve().parents[1]
         script=(root/'deploy/APRSPropView.iss').read_text(encoding='utf-8')
         self.assertIn('8F56D489-53F5-4E9E-89B0-BA55762CDE37',script)
@@ -210,6 +211,7 @@ class OfflineRouteTests(unittest.IsolatedAsyncioTestCase):
         from server.config import Config
         with tempfile.TemporaryDirectory() as temp:
             handler=MagicMock();handler.rf_interfaces=[]
+            (Path(temp)/'operator-auth.json').write_text('{"enabled": true}')
             app=create_app(Config(),MagicMock(),MagicMock(),MagicMock(),handler,
                            app_version='1.13.0-dev.1',config_path=Path(temp)/'config.toml')
             endpoint=next(route.endpoint for route in app.routes if getattr(route,'path','')=='/api/modem/decode-wav')

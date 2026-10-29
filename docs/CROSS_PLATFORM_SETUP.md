@@ -4,9 +4,9 @@ The built-in modem now builds a host-native library on Windows, Linux and macOS.
 Run Python 3.11 or newer. Build on the target OS and CPU architecture: a Windows
 DLL or executable cannot be used as a native Linux/Pi/macOS application.
 
-## v1.14.3 update
+## v1.14.4 update
 
-Use the package matching your OS and CPU: Windows portable/setup, Linux amd64 or arm64, or macOS Intel/Apple Silicon. Stop the existing application before replacing binaries; retain its application data directory. Browser-only reloads do not restart the server or reset uptime. After updating, refresh the browser to load the new Appearance controls and server uptime fix. See the [User Guide](USER_GUIDE.md) for personalization and the [changelog](../CHANGELOG.md) for security fixes.
+Use the package matching your OS and CPU: Windows portable/setup, Linux amd64 or arm64, or macOS Intel/Apple Silicon. Stop the existing application before replacing binaries; retain its application data directory. Browser-only reloads do not restart the server or reset uptime. After updating, refresh the browser. User login is optional under Settings → Security; existing configured passwords retain protection. New headless installs can enable login and set a password directly in the browser. See the [User Guide](USER_GUIDE.md) for personalization and the [changelog](../CHANGELOG.md) for security fixes.
 
 ## Linux / Raspberry Pi OS
 
@@ -96,11 +96,12 @@ export PROPVIEW_DATA_DIR="$HOME/propview-data"
 export PROPVIEW_HOST=0.0.0.0
 export PROPVIEW_PORT=14501
 export PROPVIEW_LAUNCH_BROWSER=none
-.venv/bin/python main.py --set-operator-password
+# Optional: enable login and set a password from the terminal:
+# .venv/bin/python main.py --set-operator-password
 .venv/bin/python main.py
 ```
 
-The password command prompts on the host terminal without echoing the password.
+Login is off by default without configured credentials. Enable it in Settings → Security to set a password remotely, or use the optional terminal command above. The password command prompts on the host terminal without echoing the password.
 It writes credentials beside this deployment's config. The web dashboard remains
 subject to the existing operator authentication and CSRF protections.
 

@@ -1,12 +1,12 @@
 # APRS PropView User Guide
 
-Current version: **1.14.3**. This guide covers the desktop dashboard, mobile companion, settings and built-in modem.
+Current version: **1.14.4**. This guide covers the desktop dashboard, mobile companion, settings and built-in modem.
 
-Release date: October 28, 2026.
+Release date: October 29, 2026.
 
 ## Getting started
 
-Install the application, launch it, and complete the operator-password window on the host computer. Set your callsign, SSID, symbol and coordinates under **Settings → Station & Location**. Coordinates can be typed, picked on the map or supplied by the configured GPS source. Use your actual licensed station identity before transmitting.
+Install the application and launch it. User login is optional and off by default; no password is required to begin. Set your callsign, SSID, symbol and coordinates under **Settings → Station & Location**. Coordinates can be typed, picked on the map or supplied by the configured GPS source. Use your actual licensed station identity before transmitting.
 
 Open **Settings → Radio & TNC → RF Ports** to configure an external TNC or the built-in experimental modem. APRS-IS is an independent internet feed; configure it in the same category if needed. Start with reception, verify the RF/APRS-IS indicators and packet list, then enable the transmit functions you intend to use. Weather and lightning require their own enable switches under **Alerts & Weather**; setting station coordinates alone does not enable them.
 
@@ -14,19 +14,25 @@ Settings offers **Show Advanced / Show Basic**, category navigation, search, col
 
 ## Operator access and public viewing
 
-Click the small **lock icon in the toolbar below the map** to see whether this browser is a local operator, a signed-in operator or a public viewer, and the remaining session time. The popover provides **Extend session / Operator sign in** and **Lock now**. Extend session opens the password form again. Choose 15 minutes, one hour or eight hours when signing in. Click outside the popover or press Escape to close it.
+Open **Settings → Security** to choose whether to require **User login**. It is off by default when no operator password has been configured. While off, the application stays unlocked and no User login button appears below the map. Anyone who can reach the application can change settings and use transmit controls. Enabling User login is recommended for unattended or public-facing instances; use HTTPS or a trusted private VPN for remote access.
 
-Authentication belongs to the browser session that signed in. Signing in on the host or through a private VPN does not unlock anyone else's public browser. Public viewers can observe the dashboard; settings, private messages, transmissions, configuration exports and update operations require operator access. Lock now revokes this browser's session. Expiry returns it to read-only viewing; it does not stop the backend modem or previously configured station functions.
+Turn on **Enable User login** to set and confirm a password of **6–256 characters** directly in the browser. Cancel leaves login off. Saving enables protection immediately and signs in this browser for one hour; other browsers must sign in separately. This works with a headless Raspberry Pi over a remote browser, with no desktop or tray menu required. Security changes save immediately, independently of the main Settings Save button.
 
-The host's password setup window can enable automatic sign-in for browsers opened by the local application. A manually entered dashboard address does not receive that local-launch access automatically. Passwords must be **6–256 characters**. For a forgotten password, use **Set/reset operator password** from the host's tray or Start menu. The local GUI sets a replacement password and revokes existing sessions; no email or hosted recovery server is required.
+When enabled, the **User login** button below the map shows the current session and provides **Extend session / Operator sign in** and **Lock now**. Login sessions last 15 minutes, one hour or eight hours. Signed-in users can turn login off under **Settings → Security**, which unlocks access for all viewers. Existing configured passwords retain protection when upgrading.
 
-For public hosting, use HTTPS through your reverse proxy and retain operator authentication. A private VPN is another option for remote use. Set the listening host/port as needed and restart when requested. Only expose the intended web interface. See the separate public-hosting guide for session and proxy details.
+For a forgotten password, use **Set/reset operator password** from the host tray or Start menu, or run `main.py --set-operator-password` with the same Linux account and deployment environment as the running application. This resets the password, enables login and revokes existing sessions. For the standard Pi service install:
+
+```sh
+cd /opt/aprs-propview
+PROPVIEW_DATA_DIR=/opt/aprs-propview .venv/bin/python main.py --set-operator-password
+```
+
 
 ## Dashboard, map and toolbars
 
 The header shows station identity, direct and regional propagation evidence, RF/APRS-IS/browser connection indicators, Data source health and notifications. Theme controls change the UI separately from the map background. The sidebar contains RF stations, APRS-IS stations, packet history, propagation, analytics, operator messages/settings and About/Help. Collapse the sidebar for more map area.
 
-The bottom map toolbar provides **Send OTA Activity Spot**, **View**, **Stations**, **Layers**, **Appearance** and the operator lock button. The built-in modem is configured in **Settings → Radio & TNC → RF Ports**, not from this toolbar.
+The bottom map toolbar provides **Send OTA Activity Spot**, **View**, **Stations**, **Layers**, **Appearance** and, when User login is enabled, the User login lock button. The built-in modem is configured in **Settings → Radio & TNC → RF Ports**, not from this toolbar.
 
 - **View:** center on your station, enable the local scope/range rings, fit visible stations or create an APRS object. Auto-fit stops after manual map movement; enable it again to resume.
 - **Stations:** show RF and APRS-IS sources, direct RF only, callsign labels and station-type filters. Station lists also filter age, distance, callsign, category and path, and offer sorting.

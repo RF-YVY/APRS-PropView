@@ -38,7 +38,7 @@ test('primary modem controls are adjacent and WAV test UI is removed', () => {
 
 test('toolbar session control includes visible Login text', () => {
     const source=fs.readFileSync(path.join(root,'static/js/operator-auth.js'),'utf8');
-    assert.match(source,/<\/svg><span>Login<\/span><\/button>/);
+    assert.match(source,/<\/svg><span>User login<\/span><\/button>/);
 });
 
 test('desktop and mobile uptime follows server age across reloads and partial status updates', () => {

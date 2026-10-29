@@ -1,8 +1,8 @@
 # APRS PropView — VHF Propagation Monitor
 
-**Version 1.14.3**
+**Version 1.14.4**
 
-Release date: October 28, 2026.
+Release date: October 29, 2026.
 
 Security audit and fixes. Updating is recommended for all users.
 
@@ -44,9 +44,9 @@ Docker, TrueNAS SCALE, Portainer, and app-registry installs are covered in [docs
 
 ## 1.12.0
 
-- Public viewers remain read-only; browser-specific operator sessions protect settings and manual RF/APRS-IS actions.
+- When User login is enabled, public viewers remain read-only; browser-specific operator sessions protect settings and manual RF/APRS-IS actions.
 - Browsers opened by the local application or tray menu sign in automatically using a single-use local launch token. Other viewers never inherit that session.
-- A friendly password window opens on first desktop launch. Set or recover the remote operator password from the tray or Start menu; no hosted accounts are needed.
+- User login is optional under Settings → Security, off by default without an existing password. Enable it to set a password in your browser, including on a headless Pi.
 - Added a versioned **What's new** dialog shown once after upgrading, with dismissal remembered by this installation.
 - Added radar visibility and loop/static toolbar controls, key-free mobile map tiles, clearer updater progress, and installer relaunch/browser refresh fixes.
 
@@ -550,16 +550,10 @@ Contact: [k5yvy.radio@gmail.com](mailto:k5yvy.radio@gmail.com)
 
 ## Public dashboard and operator login
 
-The dashboard is public/read-only by default. Settings, manual RF/APRS-IS
-transmissions, messages, configuration exports, and updates require an operator
-session in that browser. Remote sessions last 15 minutes, 1 hour (default), or
-8 hours. Browsers opened by the host app sign in automatically for 8 hours;
-this can be disabled in the local password window. Signing in never unlocks
-other viewers, even behind the same VPN or proxy.
+User login is optional under **Settings → Security** and off by default when no password has been configured. With login off, the UI stays unlocked and the User login button is hidden. Anyone who can reach the application can change settings and use transmit controls. Enabling login is recommended for unattended or public-facing instances.
 
-A password window opens on first desktop launch. Choose **Set/reset operator
-password** in the PropView tray or Start menu to change or recover it later.
-No hosted authentication or recovery server is needed.
+Turn on **Enable User login** to set a password directly in the browser, including for headless Pi installations. The current browser signs in; other viewers must sign in independently. Sessions last 15 minutes, 1 hour or 8 hours. Existing configured passwords retain protection on upgrade; signed-in users can turn it off in Security. Local tray/Start menu and terminal password recovery remain available.
+
 See [Public hosting and operator access](docs/PUBLIC_HOSTING.md) for setup,
 password recovery, reverse-proxy guidance, and upgrade notes.
 

@@ -57,6 +57,19 @@ If you run the app as a headless Pi service and do not want browser launch
 attempts, set `[web].launch_browser = "none"` in `config.toml` or choose
 `Do not open automatically` in Settings - Web Interface.
 
+## Optional User login
+
+No tray menu or password is required to start a headless installation. In **Settings → Security**, **Enable User login** is off by default without an existing password. With login off, anyone who can reach the application can change settings and use transmit controls; the User login button is hidden. Enabling login is recommended for unattended or public-facing instances.
+
+Enable the toggle and set a password in the browser prompt. This works remotely over SSH-forwarded access or a trusted network/VPN. Existing configured passwords retain protection on upgrade; sign in to turn login off in Security. To reset a forgotten password for the standard service, run as the service's Linux user:
+
+```sh
+cd /opt/aprs-propview
+PROPVIEW_DATA_DIR=/opt/aprs-propview .venv/bin/python main.py --set-operator-password
+```
+
+Use the same data/config directory and account as the service if customized. The command enables login and revokes existing sessions.
+
 ## Remote Mobile Companion With Tailscale
 
 For phone access away from home, install Tailscale on the Pi and on the phone,

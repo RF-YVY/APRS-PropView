@@ -1,15 +1,12 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PUBLIC HOSTING</title><style>body{margin:0;background:#101820;color:#e5edf3;font:16px/1.65 system-ui,sans-serif}main{max-width:980px;margin:auto;padding:32px 24px 70px}h1,h2,h3{line-height:1.25;color:#fff}h2{margin-top:2.3em;border-bottom:1px solid #405361;padding-bottom:10px;scroll-margin-top:18px}a{color:#79c9ff}code{background:#243441;padding:2px 5px;border-radius:3px}li{margin:.5em 0}nav{padding:18px 24px;background:#1a2b38;border:1px solid #405361;border-radius:10px}nav ul{columns:2;padding-left:20px}nav li{break-inside:avoid}p,li{overflow-wrap:anywhere}@media(max-width:600px){nav ul{columns:1}main{padding:18px}}</style></head><body><main><nav aria-label="Contents"><strong>Contents</strong><ul><li><a href="#first-setup-and-lost-passwords">First setup and lost passwords</a></li><li><a href="#sign-in-once-operate-until-expiry">Sign in once, operate until expiry</a></li><li><a href="#public-hosting">Public hosting</a></li><li><a href="#upgrading-existing-installations">Upgrading existing installations</a></li><li><a href="#what-s-new-after-an-update">What&#x27;s new after an update</a></li><li><a href="#finding-operator-access">Finding operator access</a></li></ul></nav><h1>Public dashboard and operator access</h1>
-<p>The dashboard is read-only until a browser signs in as an operator. Publishing
-the dashboard does <strong>not</strong> grant viewers permission to transmit, edit settings,
-read messages/contacts, export configuration, or install updates.</p>
+<p>User login is optional and off by default when no password has been configured. While off, anyone who can reach the application can change settings, read messages and use transmit controls. <strong>Enable User login for unattended or public-facing instances</strong> before making the application accessible. Use HTTPS or a trusted private VPN for remote access.</p>
 <h2 id="first-setup-and-lost-passwords">First setup and lost passwords</h2>
-<p>On first desktop launch, PropView opens a <strong>Set your operator password</strong>
-window on the host computer. Enter and confirm a password of 6–256 characters.
-Use <strong>Set/reset operator password</strong> in the application's tray menu or Windows
-Start menu to change or recover it later. Recovery replaces the forgotten
-password and revokes existing sessions; the old password cannot be retrieved.
-No PowerShell commands, email service, cloud account, or public reset endpoint
-are needed. Cancelling setup leaves operator functions locked.</p>
+<p>Open <strong>Settings → Security</strong> and turn on <strong>Enable User login</strong>. Set and confirm a password of 6–256 characters in the browser prompt. Saving enables protection and signs in the current browser for one hour. Other browsers must sign in separately and receive read-only public data until they do. Cancel leaves login off. Signed-in users may disable login in Security, unlocking access for everyone who can reach the application.</p>
+<p>No desktop or tray is required for initial setup on a headless Pi. Existing configured passwords retain protection on upgrade. For recovery, use <strong>Set/reset operator password</strong> in the host tray/Start menu, or the terminal command with the same service account and deployment paths. The standard Pi service command is:</p>
+<pre><code class="language-sh">cd /opt/aprs-propview
+PROPVIEW_DATA_DIR=/opt/aprs-propview .venv/bin/python main.py --set-operator-password
+</code></pre>
+<p>Recovery enables login and revokes existing sessions. The old password cannot be retrieved. No hosted account or recovery service is needed.</p>
 <p>The password window includes <strong>Automatically sign in browsers opened by this
 computer</strong> (enabled by default). Startup, the tray's <strong>Open PropView</strong>, and
 reopening the normal shortcut while PropView is running open that computer's
@@ -27,9 +24,10 @@ configuration, separate from settings exports/imports. Only a salted PBKDF2-SHA2
 to that directory to trusted host users. Back up the verifier separately if
 desired; it is deliberately excluded from Git and Docker build contexts.</p>
 <p>Resetting the password revokes all sessions, including sessions on a running
-backend. A missing or corrupt verifier leaves operator functions locked. The
-first website visitor cannot create a password. No default password exists.</p>
+backend. A corrupt verifier, or a verifier removed while protected mode is running, leaves operator functions locked. A new installation without credentials defaults to login off. The
+unauthenticated visitor cannot reset an enabled password. No default password exists.</p>
 <h2 id="sign-in-once-operate-until-expiry">Sign in once, operate until expiry</h2>
+<p>The following session and public-view protections apply when User login is enabled.</p>
 <p>Choose <strong>Operator sign in</strong> in the browser. Pick <strong>15 minutes</strong>, <strong>1 hour</strong>
 (default), or <strong>8 hours</strong>. Settings and manual transmit controls become
 available until the chosen absolute expiry. Normal activity does not silently
@@ -77,7 +75,7 @@ messages, GPS jobs, and unknown event types. Custom base-map credentials stay
 behind the tile proxy. Custom credential-bearing radar sources are disabled
 for public viewers; built-in radar sources remain available.</p>
 <h2 id="upgrading-existing-installations">Upgrading existing installations</h2>
-<p>After installing this version, complete the host password window before trying
+<p>After installing this version, enable User login in Settings → Security before publishing
 to change settings or transmit manually. The old mobile PIN and browser-local
 &quot;Protect transmit settings&quot; preference do not grant operator permission.
 The mobile PIN screen is replaced by operator sign-in. Existing radio and
