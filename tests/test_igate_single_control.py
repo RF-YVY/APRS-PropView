@@ -9,7 +9,9 @@ class SingleIGateControlTests(unittest.TestCase):
         from main import APP_RELEASE_DATE, APP_VERSION
         root=Path(__file__).resolve().parents[1]
         self.assertIn(f'<span id="about-date">{APP_RELEASE_DATE}</span>',(root/'static/index.html').read_text(encoding='utf-8'))
-        for name in ['README.md','docs/USER_GUIDE.md','static/documentation.html',f'docs/release-v{APP_VERSION}.md',f'static/releases/v{APP_VERSION}.html']:
+        # The README is an evergreen overview; release dates belong in the
+        # versioned documentation and application About information.
+        for name in ['docs/USER_GUIDE.md','static/documentation.html',f'docs/release-v{APP_VERSION}.md',f'static/releases/v{APP_VERSION}.html']:
             self.assertIn(APP_RELEASE_DATE,(root/name).read_text(encoding='utf-8'),name)
 
     def test_one_live_controller_obeys_master_and_direction_switches(self):
