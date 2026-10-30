@@ -1,18 +1,10 @@
-# APRS PropView — VHF Propagation Monitor
+# APRS PropView
 
-**Version 1.14.4**
+### Real-time APRS monitoring and VHF propagation insight
 
-Release date: October 29, 2026.
+Track RF and APRS-IS stations on a live map, explore propagation evidence, and operate a digipeater or IGate from one browser dashboard. Available for Windows, Linux, Raspberry Pi, macOS, and Docker, with desktop, mobile, and club-display views.
 
-Security audit and fixes. Updating is recommended for all users.
-
-Use **Layers → Heard me** for a separate, optional map overlay of reported reception of your RF transmissions.
-
-See the [complete changelog since v1.11.1](CHANGELOG.md), [User Guide](docs/USER_GUIDE.md) and [cross-platform setup](docs/CROSS_PLATFORM_SETUP.md).
-
-**Experimental built-in modem:** further testing is needed on Linux, Raspberry Pi and macOS. Performance may vary by platform and audio interface.
-
-Web dashboard: `http://localhost:14501/`. Mobile: `http://localhost:14501/mobile`. For LAN/Tailscale access, use the host address instead of localhost.
+[**Download latest release**](https://github.com/RF-YVY/APRS-PropView/releases/latest) · [**User guide**](docs/USER_GUIDE.md) · [**Installation**](#installation) · [**Changelog**](CHANGELOG.md)
 
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/RF-YVY/APRS-PropView/total)
@@ -24,81 +16,44 @@ Web dashboard: `http://localhost:14501/`. Mobile: `http://localhost:14501/mobile
 
 <li style="display: inline-block; margin-right: 0.25rem;"><a href="https://www.buymeacoffee.com/k5yvy"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" width="150"/></a></li>
 
-*Thanks to Contributions and Suggestions from many that emailed or submitted issues.*
-
-
 <img width="1536" height="1024" alt="APRS PropView promo img" src="https://github.com/user-attachments/assets/9942c9df-1599-485c-80a2-4f475c9ff2ae" />
 
+## Contents
 
-A real-time APRS digipeater and IGate application focused on visualizing VHF propagation conditions. Features an interactive web dashboard, advanced analytics, band opening alerts, and full APRS-IS policy compliance. Runs from source or as a single portable `.exe`.
-
-Version 1.9.0 added live packet-flow animation to the APRS map, including station transmit bursts, directional movement, digipeater hop visualization, and selectable Off, Basic, and Enhanced modes.
-
-**PLUS** several new Themes to select from in Settings->Map & Display. Choose your desire console color or choose from fantastic themes.
-
-<img width="1907" height="912" alt="image" src="https://github.com/user-attachments/assets/3dbfab6f-0a0f-4bfd-8444-f4b8964df76f" />
-
-
-Linux and Raspberry Pi installs are covered in [docs/linux-raspberry-pi.md](docs/linux-raspberry-pi.md).
-Docker, TrueNAS SCALE, Portainer, and app-registry installs are covered in [docs/docker.md](docs/docker.md).
-
-## 1.12.0
-
-- When User login is enabled, public viewers remain read-only; browser-specific operator sessions protect settings and manual RF/APRS-IS actions.
-- Browsers opened by the local application or tray menu sign in automatically using a single-use local launch token. Other viewers never inherit that session.
-- User login is optional under Settings → Security, off by default without an existing password. Enable it to set a password in your browser, including on a headless Pi.
-- Added a versioned **What's new** dialog shown once after upgrading, with dismissal remembered by this installation.
-- Added radar visibility and loop/static toolbar controls, key-free mobile map tiles, clearer updater progress, and installer relaunch/browser refresh fixes.
-
-## 1.11.1
-
-- Preserve the saved MQTT password when saving settings with the password field left blank.
-- Move the settings overlay outside the clipped sidebar so Safari can display its Close and Save controls.
-- Load bundled CA certificates for weather HTTPS requests in Windows desktop builds while retaining system trust and TLS verification.
-
-## 1.11.0
-
-- Added unified source-health reporting, propagation confidence and event lifecycle context, QTH/watch range scopes, APRS weather mesh comparisons, NOAA GOES lightning and space-weather context, optional PSK Reporter corroboration, and a rotating club display.
-- Weather-alert polygons no longer intercept location selection while creating an APRS object; clicks inside a watch or warning now open the object editor at the selected point.
-- Restored Raspberry Pi OS/Debian Bullseye database compatibility by removing the SQLite 3.35-only `RETURNING` clause while preserving atomic station packet counts.
-- Expanded the built-in and standalone user guides for the new weather, source-health, propagation, display, and object-creation behavior.
-
-## 1.10.2
-
-- Operating Mode Preset now reports **Custom configuration** when manually selected settings do not exactly match a built-in preset.
-- Added a contextual setup guide for TNC/port, APRS-IS, IGate, digipeater, GPS-source, and station-beacon settings.
-- Added a final review before saving newly enabled transmit capabilities, plus optional transmit-setting protection and saved-configuration reload. Configuration backup remains in the Overview Settings Backup panel.
-- APRS Objects now directs new-object creation through the guided map editor while keeping the saved-record field focused on reviewing, modifying, and removing existing objects.
-
-## 1.10.1
-
-- Fixed the Longest Path leaderboard failing after an upgrade when legacy path-history rows without stored reception coordinates coexist with newer confirmed position clusters.
-- The fix is server-side and applies equally to local, LAN, Tailscale/VPN, Windows, Linux, and macOS browser access.
-
-## 1.10.0
-
-- Added a six-step illustrated first-run guide covering station setup, receive sources, map interpretation, propagation evidence, Maidenhead watched paths, and safe startup checks. It remains available from About/Help after dismissal.
-- Added a zoom-dependent Maidenhead grid overlay. Grid clicks populate the existing watched-path builder with the selected locator and cell center.
-- Changed public project-support wording to “Give Thanks” or “Support” and aligned the package metadata with the repository's Apache-2.0 license.
-
-Version 1.10.0 preserves direct RF observations independently of later
-relays, makes Regional propagation include all RF, and bases historical coverage
-on reception-time evidence. Click a propagation meter to see freshness, receiver
-status, and baseline context. Analytics bearing controls select direct, relayed,
-or all RF observations and a receiver port for coverage and longest-path views.
-
-Settings / Tracking includes raw packet retention (7 days by default) and detailed
-history retention (30 days). Expired RF observations become daily summaries;
-first-heard identities survive cleanup. Settings saves are atomic and retain a
-last-known-good `config.toml.bak`. Stop the application before restoring that file.
-
-Sporadic-E results are explicitly unconfirmed hypotheses. Existing history without
-reception coordinates is retained, but is not assigned a later station position.
-The mobile PIN/access model is unchanged in this release.
+- [Features](#features)
+- [Installation](#installation)
+- [First-run setup](#first-run-setup)
+- [Everyday operation](#everyday-operation)
+- [Remote access and operator login](#remote-access-and-operator-login)
+- [Updates and backups](#updates-and-backups)
+- [Documentation and developer builds](#documentation-and-developer-builds)
+- [Support and project information](#support-and-project-information)
 
 ## Features
 
-### Core
+| Capability | What you can do |
+| --- | --- |
+| **Live station map** | Separate direct RF, relayed RF, and APRS-IS; inspect directional paths, Maidenhead grids, range rings, and packet-flow animation. |
+| **Propagation intelligence** | Compare My Station and Regional meters, confidence and event phases; explore longest paths, coverage, heatmaps, and watched-path alerts. |
+| **RF and internet operation** | Use multiple KISS/AGWPE ports, receive-only TNC2 feeds, WIDEn-N digipeating, and bidirectional IGating. |
+| **Messaging and station tools** | Send APRS messages and OTA activity spots; configure beacons, bulletins, objects, GPS, and smart beaconing. |
+| **Weather awareness** | View current conditions, APRS weather mesh, radar, NWS alerts, GOES lightning, and space-weather context. |
+| **Alerts and integrations** | Notify through Discord, email, or email-to-SMS; publish MQTT metrics, Home Assistant entities, and automation events. |
+| **Flexible displays** | Choose themes, fonts, units, and offline map tiles; use the phone companion or rotating club display. |
+| **Guided operation** | Follow setup presets and readiness checks, inspect source health, back up settings, and enable optional operator login. |
+
+<img width="1907" height="912" alt="image" src="https://github.com/user-attachments/assets/3dbfab6f-0a0f-4bfd-8444-f4b8964df76f" />
+
+**Experimental built-in modem:** 1200-baud Bell 202 AFSK reception and transmission through a soundcard, with audio diagnostics and serial/VOX PTT options. Further testing is needed on Linux, Raspberry Pi, and macOS; performance varies by platform and audio interface. See the [modem guide](docs/DEVELOPMENT_MODEM.md) and [platform compatibility notes](docs/PLATFORM_COMPATIBILITY.md).
+
+**Reading propagation evidence:** APRS-IS traffic and packet animation do not establish reception by your radio. My Station uses direct RF; Regional includes relayed RF. Optional PSK Reporter context stays separate from APRS RF scoring. Sporadic-E results are unconfirmed hypotheses.
+
+### Full feature reference
+
+Expand a category for the complete feature inventory.
+
+<details>
+<summary><strong>Map, tracking, and propagation</strong></summary>
 
 - **Digipeater** — WIDEn-N compliant packet digipeating via KISS TNC (serial or TCP)
 - **IGate** — Bidirectional RF ↔ APRS-IS gateway with proper q-construct handling and third-party IS→RF forwarding
@@ -121,13 +76,15 @@ The mobile PIN/access model is unchanged in this release.
 - **Station Expiry** — Automatically remove stations from the map after a configurable "last heard" timeout
 - **Mobile Companion** — Touch-optimized `/mobile` page with bottom tab bar for phone browsers (via Tailscale or LAN)
 - **Tailscale/VPN Mobile Access** - Documentation for safely using `/mobile` away from home through Tailscale or another private VPN without public port forwarding
-- **Propagation Indicator** — Live gauge showing current VHF band conditions based on station count and distance trends
 - **Filters** — Filter stations by last-heard time, distance, packet type, callsign, source, and direct/via-digipeater RF path
 - **Solar Data Widget** — Live HF propagation summary image (solar flux, K-index, band conditions) from hamqsl.com in the Propagation tab
 - **Real-time Updates** — WebSocket-driven live dashboard
 - **Connection Status UX** - Unified RF/APRS-IS/WebSocket status pills with connected/retrying/disconnected states and a header notification drawer for TCP RF issues and received APRS messages
 
-### Analytics
+</details>
+
+<details>
+<summary><strong>Analytics</strong></summary>
 
 - **Longest Path Leaderboard** — Daily ranking of the longest RF paths heard
 - **Propagation Heatmap** — Hour-by-hour visualization of propagation activity over time
@@ -137,7 +94,10 @@ The mobile PIN/access model is unchanged in this release.
 - **Weather Analytics Dashboard** — Pop-out dashboard for current weather, gauges, history, records, forecast, and map context
 - **DXView Link** - Propagation tab link opens VHF DXView centered on the configured station latitude/longitude
 
-### Alerts
+</details>
+
+<details>
+<summary><strong>Alerts</strong></summary>
 
 - **Band Opening Detection** — Automatic alerts when propagation thresholds are exceeded
 - **Watched VHF Paths** — Monitor a target station by callsign, grid, or coordinates and alert when direct-heard RF enhancement reaches the target bearing and distance
@@ -156,7 +116,10 @@ The mobile PIN/access model is unchanged in this release.
 - **Email (SMTP)** — Email alerts via any SMTP server
 - **SMS Gateway** — Text alerts via carrier email-to-SMS gateways
 
-### Weather
+</details>
+
+<details>
+<summary><strong>Weather</strong></summary>
 
 - **Current Conditions Banner** - Live weather banner on the map view (temperature, wind, humidity, pressure, feels-like) powered by Open-Meteo
 - **WXnow.txt Transmit** - Beacon APRS weather packets from a local `WXnow.txt` file, with weather SSID, RF/APRS-IS routing, optional position, and stale-file cutoff
@@ -180,7 +143,10 @@ The mobile PIN/access model is unchanged in this release.
 - **Point or County/Zone Scope** - Monitor alerts for your exact station point or switch to a county/forecast-zone UGC target for broader warning coverage
 - **Adaptive Refresh Strategy** - Weather condition refresh stays user-configurable while alert polling cadence can increase automatically during elevated severe-weather scenarios
 
-### APRS Messaging
+</details>
+
+<details>
+<summary><strong>APRS Messaging</strong></summary>
 
 - **Send & Receive** — Two-way APRS messaging with auto-ACK and retry support
 - **Click to Reply** — Click any received message to auto-populate the TO callsign for quick reply
@@ -189,9 +155,12 @@ The mobile PIN/access model is unchanged in this release.
 - **Sibling SSID Inbox Option** — Optionally receive messages addressed to the same base callsign with another SSID, such as `W1AW-7` while running `W1AW-1`
 - **Packet Sort and Digipeat Filter** — The Packets tab loads recent packet history, sorts newest or oldest first, and can show packets your station digipeated
 - **Mobile Message Refresh** — Mobile UI includes a manual message refresh button and closer parity with desktop message behavior
-- **RF + IS Routing** — Messages sent on both RF and APRS-IS simultaneously
+- **RF + IS Routing** — Select RF, APRS-IS, or combined routing for messages
 
-### Settings & UX
+</details>
+
+<details>
+<summary><strong>Configuration and station operation</strong></summary>
 
 - **Web-based Configuration** — Edit all settings from the browser (saved to `config.toml`)
 - **Category-Based Settings Workspace** — Navigate Station, Radio, APRS, Tracking, Propagation, Alerts, Display, and Integrations without scrolling one long page
@@ -240,7 +209,10 @@ The mobile PIN/access model is unchanged in this release.
 - **Malformed APRS Position Protection** — Reject invalid uncompressed coordinates instead of misinterpreting them as compressed positions and plotting them in the wrong region
 - **Watched Path Map Toggle** — Show or hide watched VHF path lines from the map Line options
 
-### APRS-IS Policy Compliance
+</details>
+
+<details>
+<summary><strong>APRS-IS Policy Compliance</strong></summary>
 
 - Lossless APRS packet handling across RF and APRS-IS transports (no UTF-8 re-encoding or trailing-space trimming)
 - Country-neutral callsign handling with APRS-safe character checks and APRS-IS placeholder protection
@@ -254,149 +226,115 @@ The mobile PIN/access model is unchanged in this release.
 - APRS-IS range filter guidance for fixed and mobile clients
 - Policy guidance displayed in the settings UI
 
-### Security
+</details>
 
-- Input validation and TOML injection prevention
-- XSS-safe HTML escaping on all user-supplied data
-- CORS middleware with configurable origins
-- Passcode masked in API responses
-- WebSocket connection limits (max 20)
-- Error messages sanitized (no internal paths or stack traces exposed)
+## Installation
 
-## Requirements
+### Choose your platform
 
-- Python 3.11+
-- A KISS TNC (serial or TCP) connected to a VHF radio for RF *(optional — APRS-IS–only mode works without a TNC)*
-- An APRS-IS account (callsign + passcode) for internet connectivity
+| Platform | Start here |
+| --- | --- |
+| **Windows** | Download `APRSPropViewSetup-<version>.exe` or portable `APRSPropView.exe` from [Releases](https://github.com/RF-YVY/APRS-PropView/releases/latest). Packaged apps do not require Python. |
+| **Linux / Raspberry Pi** | Follow the [Linux/Pi service guide](docs/linux-raspberry-pi.md). Python 3.11+ is required; prefer 64-bit Raspberry Pi OS. |
+| **macOS** | Use the source instructions below; see [cross-platform setup](docs/CROSS_PLATFORM_SETUP.md) for native dependencies and app bundles. |
+| **Docker / app registries** | Use Docker Compose below or the [container guide](docs/docker.md) for TrueNAS SCALE, Portainer, Unraid, CasaOS, and ZimaOS. |
 
-## Quick Start
+**What you need:** a modern browser, Python 3.11+ for source installs, and a VHF radio with a supported TNC/audio interface for RF operation. APRS-IS-only operation works without RF hardware. Internet reception supports read-only login; sending requires a verified callsign/passcode connection.
+
+### Windows: install and launch
+
+1. Download the setup installer or portable executable from the [latest release](https://github.com/RF-YVY/APRS-PropView/releases/latest).
+2. Run setup for an installed app and Start Menu shortcuts, or place the portable executable in a writable folder and launch it.
+3. If the browser does not open, visit **http://localhost:14501/**.
+
+### Run from source
+
+Clone the repository before following any source or Docker commands:
 
 ```bash
-# 1. Install dependencies
-pip install -r requirements.txt
-
-# 2. Run (config.toml is created automatically on first launch)
-python main.py
+git clone https://github.com/RF-YVY/APRS-PropView.git
+cd APRS-PropView
 ```
 
-The web interface opens automatically at `http://localhost:14501`.
+**Windows (PowerShell), with Python 3.11+ installed:**
 
-### Docker / App Registry
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe main.py
+```
+
+**Linux / Raspberry Pi / macOS:**
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python main.py
+```
+
+For system libraries, audio/serial permissions, and native modem compilation, follow [cross-platform setup](docs/CROSS_PLATFORM_SETUP.md). The dashboard uses **http://localhost:14501/** by default; `config.toml` is created on first launch.
+
+### Linux / Raspberry Pi service
+
+Install the prerequisites in the [Linux/Pi guide](docs/linux-raspberry-pi.md), then run from the repository root:
+
+```bash
+sudo bash ./scripts/install_linux.sh
+sudo systemctl status aprs-propview
+journalctl -u aprs-propview -f
+```
+
+### Docker / app registry
 
 ```bash
 docker compose up -d
 ```
 
-The container image uses `/data` for `config.toml`, `propview.db`,
-`map_tile_cache/`, and `user_audio/`. For TrueNAS SCALE custom apps, Portainer,
-and other registry-style installs, use `ghcr.io/rf-yvy/aprs-propview:latest`
-and mount persistent storage at `/data`. See [docs/docker.md](docs/docker.md)
-for TCP KISS, USB serial passthrough, and TrueNAS SCALE settings.
+Open **http://localhost:14501/**. Compose stores persistent data in `./data`, mounted at `/data` inside the container. Registry installs use `ghcr.io/rf-yvy/aprs-propview:latest` with persistent storage mounted at `/data`. See the [Docker guide](docs/docker.md) for RF access, USB passthrough, environment settings, and deployment examples.
 
-### Run From Source On macOS
+## First-run setup
 
-Install Python 3.11 or newer, then run APRS PropView from a terminal:
+1. **Identify your station.** Enter callsign/SSID, position, and symbol in Settings; use the map to select your location if needed.
+2. **Choose receive sources.** Under **Radio & TNC**, configure RF ports, the experimental modem, APRS-IS, or a combination. Operating-mode presets stage settings for review before saving.
+3. **Verify connectivity.** Inspect the RF/APRS-IS indicators, packet list, and Data source health. A connected browser does not confirm an RF connection.
+4. **Review transmit settings.** Check beacon routes, paths, intervals, digipeater, IGate, scheduled packets, and modem TX before enabling them. APRS-IS → RF is off by default; receive-only ports cannot transmit.
+5. **Save and check operation.** Resolve readiness/validation messages and follow any restart guidance. Export a configuration backup.
+6. **Personalize your dashboard.** Choose themes, units, map layers, weather location, watched paths, and notification destinations. Reopen the illustrated setup guide from About/Help.
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python main.py
-```
+## Everyday operation
 
-The web interface opens at `http://localhost:14501`. Serial TNC/GPS devices on
-macOS usually appear as `/dev/cu.usbserial-*`, `/dev/cu.usbmodem-*`, or similar
-paths rather than Windows-style `COM` ports. If a USB serial adapter does not
-appear, install the vendor's macOS driver and grant any requested permissions.
+| Task | Where to start |
+| --- | --- |
+| Inspect reception | Click a station marker; compare RF/APRS-IS station lists and packet history. |
+| Filter stations | **Stations** controls source, direct RF, labels, and station types. |
+| Center, fit, or create an object | **View**; manual pan/zoom pauses auto-fit. |
+| Select overlays | **Layers**, including **Heard me**, radar visibility/animation, and RF line-history controls. |
+| Style RF and watched paths | **Appearance → Lines**. |
+| Assess propagation | Click either propagation meter, inspect confidence/freshness, then review Analytics or a watched path. |
+| Diagnose a source | Select a connection indicator or inspect Data source health and About/Help. |
 
-To update an existing macOS source checkout:
+### Mobile and club display
 
-```bash
-git pull
-source .venv/bin/activate
-pip install -r requirements.txt
-python main.py
-```
+- **Desktop:** `http://localhost:14501/`
+- **Phone:** `http://HOST-ADDRESS:14501/mobile`
+- **Club display:** `http://HOST-ADDRESS:14501/kiosk`
 
-If macOS blocks serial or network permissions, open System Settings and review
-Privacy & Security prompts for Terminal, Python, your USB serial driver, or the
-packaged app.
+Replace `HOST-ADDRESS` with the application's LAN or private VPN address. Configure the web bind address for remote access as described in the platform guide. `localhost` refers to the device running the browser. Scheduled backend operation continues when a browser is closed.
 
-### Standalone Executable
+### Send OTA Activity Spot
 
-```bash
-pip install pyinstaller
-python build_exe.py
-```
+Operators can open **Send OTA Activity Spot** beside Transmit Beacon. Select POTA, SOTA, WWFF or SIOTA, then enter the activity reference, operating frequency in MHz, mode and optional comment. Activity profiles supply the supported modes, recipient and APRS command formatting. The editable operator callsign defaults to the configured station call without its SSID. Each request transmits with that operator as its APRS sender; the station configuration and APRS-IS login remain unchanged. This lets multiple operators at an activation send their own spots.
 
-This produces `dist/APRSPropView.exe` — a single portable file (~33 MB). On first run it creates `config.toml` next to the exe and launches the browser.
+Automatic routing prefers a transmit-enabled RF interface, then a verified APRS-IS connection. Expand **+ more options** to override the route, simulate a spot without publishing, inspect the packet, request current POTA/SOTA/WWFF spots with a mode filter and optional result count, or request general/type/activity help (APRS, SMS or Winlink examples). Help requests are sent over APRS, not through an SMS or email gateway. Only fields needed for the selected feature are shown.
 
-### Windows Setup Installer
+The formatter enforces the 67-character APRS message limit. Test mode adds `aptest`; APSPOT treats any posting message containing `test` as a simulation. Responses for recently used operator calls appear in Messages, and the APRS-IS reply filter includes those calls for the running session. A successful transport send does not guarantee publication: destination services may require registration, and RF replies depend on a return path.
 
-Install Inno Setup 6, then build a versioned setup executable:
+Spotting service and format credit: [APSPOT by Josh, VK2MES](https://apspot.radio/). [Command documentation](https://apspot.radio/getting-started/).
 
-```bash
-winget install JRSoftware.InnoSetup
-python build_installer.py
-```
+<details>
+<summary><strong>Configuration reference and offline maps</strong></summary>
 
-This produces `dist/APRSPropViewSetup-<version>.exe`. The installer defaults
-to a per-user install under `%LOCALAPPDATA%\Programs\APRS PropView`, lets users
-choose a different install folder, creates Start Menu shortcuts, and installs
-the current `APRSPropView.exe`.
-
-Installer upgrades replace the application executable and bundled files only.
-User data such as `config.toml`, `propview.db`, `map_tile_cache/`, and
-`user_audio/` is left in place. Publish both `APRSPropView.exe` and the setup
-asset on GitHub releases; assets named like `APRSPropViewSetup-1.11.1.exe` are
-detected by the in-app update checker so users can click **Install Update** in
-the About tab. On Linux, Raspberry Pi, and macOS, users still see release
-notices but installer-based update buttons are hidden because those platforms
-update from source or platform-specific builds.
-
-### macOS App Bundle
-
-Build the local test `.app` bundle on a macOS machine:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt pyinstaller pillow
-python build_macos.py
-```
-
-This produces `dist/APRS PropView.app`. On first launch, the app stores
-`config.toml`, `propview.db`, `map_tile_cache/`, and `user_audio/` in:
-
-```text
-~/Library/Application Support/APRS PropView/
-```
-
-The local `.app` build is unsigned unless you set `MACOS_CODESIGN_IDENTITY`
-before running `build_macos.py`. Unsigned builds are suitable for local testing,
-but public macOS releases should be code-signed and notarized.
-
-For a public macOS release, build on macOS, then sign, zip, and notarize the
-bundle with your Apple Developer credentials. This Windows build host cannot
-produce a real `.app` bundle; use the macOS builder script on a Mac or macOS CI.
-
-### Raspberry Pi / Linux Service Update
-
-Linux and Raspberry Pi installs are normally source/service deployments:
-
-```bash
-git pull
-sudo bash ./scripts/install_linux.sh
-sudo systemctl restart aprs-propview
-journalctl -u aprs-propview -f
-```
-
-The installer preserves `config.toml`, `propview.db`, map tile cache, and user
-audio. For remote mobile companion use, bind the web host to `0.0.0.0`, keep the
-port reachable only over a private VPN such as Tailscale, and open
-`http://TAILSCALE-IP:14501/mobile` from the phone.
-
-## Configuration
+### Configuration reference
 
 All settings are in `config.toml` and can be edited from the web UI **Settings** tab.
 
@@ -423,7 +361,7 @@ All settings are in `config.toml` and can be edited from the web UI **Settings**
 | `[gps]` | Browser, own-packet, serial, TCP, UDP, and gpsd GPS ingestion |
 | `[mqtt]` | Optional broker settings for propagation, Home Assistant Discovery, watched callsigns, retained status snapshots, automation events, and alert publishing |
 
-### Offline Map Tiles
+### Offline maps
 
 APRS PropView uses standard Leaflet XYZ tiles. For grid-down or field setups,
 run a local tile server and point the web map at it:
@@ -456,99 +394,11 @@ upstream tile server is unreachable, the map will show a blank/missing tile for
 that spot until it can be downloaded later. The cache is preserved by Windows
 installer upgrades and Linux/Pi service updates.
 
-### Receiver Feed Roadmap
+Offline maps do not provide internet APRS, weather, radar, or other external feeds. NWS alert coverage is US-focused.
 
-ADS-B/dump1090 and AIS receiver overlays are planned integration targets. A
-useful implementation should ingest local receiver feeds, normalize aircraft
-and vessel positions into dedicated map layers, expire stale targets, and keep
-them visually distinct from APRS stations. They are not APRS packets, so they
-should be added as separate situational-awareness layers instead of mixed into
-RF/APRS-IS station history.
+</details>
 
-## Architecture
-
-```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│  KISS TNC   │────▶│              │────▶│  APRS-IS    │
-│  (RF)       │◀────│ PacketHandler│◀────│  Server     │
-└─────────────┘     │              │     └─────────────┘
-                    │  Digipeater  │
-                    │  IGate       │
-                    │  Tracker     │
-                    │  Analytics   │
-                    │  Alerts      │
-                    └──────┬───────┘
-                           │ WebSocket + REST API
-                    ┌──────▼───────┐
-                    │  Web Browser │
-                    │  Map + Lists │
-                    │  Analytics   │
-                    │  Settings    │
-                    └──────────────┘
-```
-
-## Project Structure
-
-```
-aprs-propview/
-├── main.py                 # Entry point
-├── build_exe.py            # PyInstaller build script
-├── config.toml.example     # Example configuration
-├── requirements.txt        # Python dependencies
-├── server/
-│   ├── app.py              # FastAPI routes & validation
-│   ├── aprs_is.py          # APRS-IS TCP client
-│   ├── aprs_parser.py      # APRS packet parser
-│   ├── ax25.py             # AX.25 frame encode/decode
-│   ├── config.py           # TOML config dataclasses
-│   ├── database.py         # SQLite via aiosqlite
-│   ├── digipeater.py       # WIDEn-N digipeater
-│   ├── igate.py            # RF ↔ APRS-IS gateway
-│   ├── kiss.py             # KISS protocol plus legacy TNC2 monitor serial support
-│   ├── packet_handler.py   # Central packet router
-│   ├── scheduled_packets.py # Scheduled BLN bulletin and APRS object transmitter
-│   ├── station_tracker.py  # Station tracking & propagation
-│   ├── analytics.py        # Analytics engine
-│   ├── alerts.py           # Band opening alert manager
-│   ├── weather.py          # Open-Meteo + NWS weather provider
-│   └── websocket_manager.py
-└── static/
-    ├── index.html           # Single-page dashboard
-    ├── mobile.html          # Mobile companion SPA
-    ├── css/style.css
-    └── js/
-        ├── app.js           # Main UI logic
-        ├── map.js           # Leaflet map
-        ├── stations.js      # Station list management
-        ├── icons.js         # APRS symbol → emoji mapping
-        ├── analytics.js     # Analytics charts & tables
-        ├── messages.js      # APRS messaging UI
-        ├── weather.js       # Weather banner & alerts
-        └── websocket.js     # WebSocket client
-```
-
-## Support
-
-If APRS PropView is useful to you, you can support continued development through
-the official project support link:
-
-- [Support via PayPal](https://www.paypal.com/ncp/payment/2TZHQAECTSDGC)
-
-## License
-
-This project is licensed under the Apache License, Version 2.0. See
-[LICENSE](LICENSE), [NOTICE](NOTICE), and [TRADEMARKS.md](TRADEMARKS.md).
-
-## About
-
-APRS PropView was created by **Brett Wicker - K5YVY** with the assistance of an **AI agent**.
-
-Official project support: [Give Thanks via PayPal](https://www.paypal.com/ncp/payment/2TZHQAECTSDGC)
-
-**Wicker Made, LLC**\
-Contact: [k5yvy.radio@gmail.com](mailto:k5yvy.radio@gmail.com)
-
-## Public dashboard and operator login
+## Remote access and operator login
 
 User login is optional under **Settings → Security** and off by default when no password has been configured. With login off, the UI stays unlocked and the User login button is hidden. Anyone who can reach the application can change settings and use transmit controls. Enabling login is recommended for unattended or public-facing instances.
 
@@ -557,16 +407,108 @@ Turn on **Enable User login** to set a password directly in the browser, includi
 See [Public hosting and operator access](docs/PUBLIC_HOSTING.md) for setup,
 password recovery, reverse-proxy guidance, and upgrade notes.
 
-### Send OTA Activity Spot
+## Updates and backups
 
-Signed-in operators can open **Send OTA Activity Spot** beside Transmit Beacon. Select POTA, SOTA, WWFF or SIOTA, then enter the activity reference, operating frequency in MHz, mode and optional comment. Activity profiles supply the supported modes, recipient and APRS command formatting. The editable operator callsign defaults to the configured station call without its SSID. Each request transmits with that operator as its APRS sender; the station configuration and APRS-IS login remain unchanged. This lets multiple operators at an activation send their own spots.
+- **Windows setup:** use About to check releases and select **Install Update** when a setup asset is available. Automatic checks can be disabled or scheduled at a chosen interval.
+- **Source:** stop the app, run `git pull`, reinstall `requirements.txt` with your virtual environment's Python, then restart.
+- **Linux/Pi service:** run `git pull` in the source checkout, rerun `sudo bash ./scripts/install_linux.sh`, then `sudo systemctl restart aprs-propview`.
+- **Docker:** follow the [container update procedure](docs/docker.md) and retain the `/data` mount.
 
-Automatic routing prefers a transmit-enabled RF interface, then a verified APRS-IS connection. Expand **+ more options** to override the route, simulate a spot without publishing, inspect the packet, request current POTA/SOTA/WWFF spots with a mode filter and optional result count, or request general/type/activity help (APRS, SMS or Winlink examples). Help requests are sent over APRS, not through an SMS or email gateway. Only fields needed for the selected feature are shown.
+Refresh the browser after restarting the backend. Choose packaged builds matching your OS and CPU architecture. See the [changelog](CHANGELOG.md) for release-specific changes.
 
-The formatter enforces the 67-character APRS message limit. Test mode adds `aptest`; APSPOT treats any posting message containing `test` as a simulation. Responses for recently used operator calls appear in Messages, and the APRS-IS reply filter includes those calls for the running session. A successful transport send does not guarantee publication: destination services may require registration, and RF replies depend on a return path.
+Back up the active data directory: `config.toml`, `propview.db`, `map_tile_cache/`, and `user_audio/`. Windows installer and Linux/Pi service updates preserve these files. Configuration export covers settings; back up the database, tiles, and audio separately. Settings saves retain `config.toml.bak`; stop the app before restoring it.
 
-Spotting service and format credit: [APSPOT by Josh, VK2MES](https://apspot.radio/). [Command documentation](https://apspot.radio/getting-started/).
+Tracking settings control raw packet retention (default 7 days) and detailed history retention (default 30 days). Expired RF observations become daily summaries; first-heard identities survive cleanup.
 
-## Maintaining the user documentation
+## Documentation and developer builds
+
+| Guide | Covers |
+| --- | --- |
+| [User guide](docs/USER_GUIDE.md) | Controls, configuration, station operation, and troubleshooting. |
+| [Linux / Raspberry Pi](docs/linux-raspberry-pi.md) | Service installation, permissions, and maintenance. |
+| [Docker](docs/docker.md) | Containers, persistent storage, and app registries. |
+| [Cross-platform setup](docs/CROSS_PLATFORM_SETUP.md) | Dependencies, native builds, headless deployments, and macOS packaging. |
+| [Platform compatibility](docs/PLATFORM_COMPATIBILITY.md) | Supported targets, validation status, and limitations. |
+| [Built-in modem](docs/DEVELOPMENT_MODEM.md) | Audio, PTT, diagnostics, and experimental operation. |
+| [Public hosting](docs/PUBLIC_HOSTING.md) | Operator login, password recovery, and reverse proxies. |
+| [Node-RED](deploy/node-red/README.md) | Automation integration. |
+| [Example configuration](config.toml.example) | Available configuration sections and defaults. |
+
+<details>
+<summary><strong>Build Windows executables and macOS app bundles</strong></summary>
+
+### Build a Windows portable executable
+
+```bash
+pip install pyinstaller
+python build_exe.py
+```
+
+This produces `dist/APRSPropView.exe` — a single portable file. On first run it creates `config.toml` next to the exe and launches the browser.
+
+### Build a Windows setup installer
+
+Install Inno Setup 6, then build a versioned setup executable:
+
+```bash
+winget install JRSoftware.InnoSetup
+python build_installer.py
+```
+
+This produces `dist/APRSPropViewSetup-<version>.exe`. The installer defaults
+to a per-user install under `%LOCALAPPDATA%\Programs\APRS PropView`, lets users
+choose a different install folder, creates Start Menu shortcuts, and installs
+the current `APRSPropView.exe`.
+
+Installer upgrades replace the application executable and bundled files only.
+User data such as `config.toml`, `propview.db`, `map_tile_cache/`, and
+`user_audio/` is left in place. Publish both `APRSPropView.exe` and the setup
+asset on GitHub releases; assets named like `APRSPropViewSetup-<version>.exe` are
+detected by the in-app update checker so users can click **Install Update** in
+the About tab. On Linux, Raspberry Pi, and macOS, users still see release
+notices but installer-based update buttons are hidden because those platforms
+update from source or platform-specific builds.
+
+### Build a macOS app bundle
+
+Build the local test `.app` bundle on a macOS machine:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt pyinstaller pillow
+python build_macos.py
+```
+
+This produces `dist/APRS PropView.app`. On first launch, the app stores
+`config.toml`, `propview.db`, `map_tile_cache/`, and `user_audio/` in:
+
+```text
+~/Library/Application Support/APRS PropView/
+```
+
+The local `.app` build is unsigned unless you set `MACOS_CODESIGN_IDENTITY`
+before running `build_macos.py`. Unsigned builds are suitable for local testing,
+but public macOS releases should be code-signed and notarized.
+
+For a public macOS release, build on macOS, then sign, zip, and notarize the
+bundle with your Apple Developer credentials. Use the macOS builder script on a Mac or macOS CI.
+
+For Linux executable builds, native modem dependencies, and current platform-specific instructions, use [cross-platform setup](docs/CROSS_PLATFORM_SETUP.md).
+
+</details>
+
+### Maintain the in-app documentation
 
 Edit `docs/USER_GUIDE.md`, then run `python build_user_guide.py` with the optional documentation dependency `markdown-it-py` installed. The generator updates in-app help, `static/documentation.html`, and HTML copies of the public-hosting, modem, Linux and Docker companion guides. It does not change release-history documents.
+
+## Support and project information
+
+Questions, suggestions, or bugs? [Open an issue](https://github.com/RF-YVY/APRS-PropView/issues). Thanks to everyone who has contributed reports, testing, and ideas.
+
+Support development through [Give Thanks via PayPal](https://www.paypal.com/ncp/payment/2TZHQAECTSDGC) or the Buy Me a Coffee button above.
+
+Created by **Brett Wicker — K5YVY**, with assistance from an AI agent.
+**Wicker Made, LLC** · [k5yvy.radio@gmail.com](mailto:k5yvy.radio@gmail.com)
+
+Licensed under **Apache License 2.0**. See [LICENSE](LICENSE), [NOTICE](NOTICE), and [TRADEMARKS.md](TRADEMARKS.md).
