@@ -28,6 +28,26 @@ def _looks_like_aprs_packet(text: str) -> bool:
     return bool(sep and ">" in header)
 
 
+async def _timed(awaitable, timeout: Optional[float]):
+    """Await with a timeout, like asyncio.wait_for, and never lose a cancel.
+
+    Before Python 3.12, wait_for returns the result when the awaitable
+    finishes in the same tick as a cancellation, which leaves connect()
+    running after it was cancelled.
+    """
+    task = asyncio.ensure_future(awaitable)
+    try:
+        done, _ = await asyncio.wait({task}, timeout=timeout)
+    except asyncio.CancelledError:
+        task.cancel()
+        raise
+    if not done:
+        task.cancel()
+        await asyncio.wait({task})
+        raise asyncio.TimeoutError
+    return task.result()
+
+
 class APRSISClient:
     """Asynchronous APRS-IS client with auto-reconnect."""
 
@@ -40,12 +60,16 @@ class APRSISClient:
         self.connected = False
         self.verified = False  # True only after server confirms verified login
         self._reconnect_delay = 5
+        self._stable_session = 60  # A session this long clears the backoff
+        self._read_timeout = 120  # Servers send a comment line about every 20s
+        self._server_comments = False  # Seen on this connection
         self.server_banner = ""
         self._last_rx = 0.0
         self._pending_rx_lines: list[str] = []
         self._handshake_timeout = 3
         self._message_recipients = set()
         self._heard_me_calls = set()
+        self._wake = asyncio.Event()  # Set when settings change
 
     async def _reset_connection(self):
         """Clear connection state and close the current socket."""
@@ -125,18 +149,34 @@ class APRSISClient:
             return False
 
     async def connect(self):
-        """Connect to APRS-IS with auto-reconnect and exponential backoff."""
-        # APRS-IS policy: never connect with placeholder callsigns
-        base_call = self.config.station.callsign.upper()
-        if base_call in _BLOCKED_CALLSIGNS or not base_call:
-            logger.error(
-                f"Cannot connect to APRS-IS with callsign '{base_call}'. "
-                "Set your assigned callsign in settings."
-            )
-            return
+        """Connect to APRS-IS with auto-reconnect and exponential backoff.
 
+        Runs for the life of the app. While APRS-IS can't be used, the loop
+        waits here for reconnect() rather than exiting, so saving settings
+        is enough to bring the connection up.
+        """
         delay = self._reconnect_delay
         while True:
+            self._wake.clear()
+
+            # APRS-IS policy: never connect with placeholder callsigns
+            base_call = self.config.station.callsign.upper()
+            if base_call in _BLOCKED_CALLSIGNS or not base_call:
+                logger.error(
+                    f"Cannot connect to APRS-IS with callsign '{base_call}'. "
+                    "Set your assigned callsign in settings."
+                )
+                await self._wake.wait()
+                delay = self._reconnect_delay
+                continue
+
+            if not self.config.aprs_is.enabled:
+                logger.info("APRS-IS is disabled in settings")
+                await self._wake.wait()
+                delay = self._reconnect_delay
+                continue
+
+            session_start = None
             try:
                 server = self.config.aprs_is.server
                 port = self.config.aprs_is.port
@@ -148,14 +188,12 @@ class APRSISClient:
                 # private/local TNC2 feeds do not. Treat early packet-looking
                 # lines as receive data instead of discarding them as handshake.
                 try:
-                    banner = await asyncio.wait_for(
-                        self.reader.readline(),
-                        timeout=self._handshake_timeout,
-                    )
+                    banner = await _timed(self.reader.readline(), self._handshake_timeout)
                 except asyncio.TimeoutError:
                     banner = b""
 
                 self.server_banner = _decode_aprs_line(banner) if banner else ""
+                self._server_comments = self.server_banner.startswith("#")
                 if self.server_banner:
                     if _looks_like_aprs_packet(self.server_banner):
                         logger.info("APRS-IS server sent packet data before banner/logresp")
@@ -174,7 +212,7 @@ class APRSISClient:
 
                 self.connected = True
                 await self._read_login_response()
-                delay = self._reconnect_delay
+                session_start = time.monotonic()
                 await self._read_loop()
 
             except asyncio.CancelledError:
@@ -182,8 +220,24 @@ class APRSISClient:
             except Exception as e:
                 logger.error(f"APRS-IS connection error: {e}")
                 await self._reset_connection()
-                await asyncio.sleep(delay)
+
+            # A server can accept the login and close at once, so only a
+            # session that lasted clears the backoff.
+            if session_start is not None and time.monotonic() - session_start >= self._stable_session:
+                delay = self._reconnect_delay
+
+            if await self._sleep_or_wake(delay):
+                delay = self._reconnect_delay
+            else:
                 delay = min(delay * 2, 60)
+
+    async def _sleep_or_wake(self, seconds: float) -> bool:
+        """Wait out a backoff. Return True if a settings change ended it early."""
+        try:
+            await _timed(self._wake.wait(), seconds)
+            return True
+        except asyncio.TimeoutError:
+            return False
 
     async def _read_loop(self):
         """Read packets from APRS-IS."""
@@ -192,12 +246,22 @@ class APRSISClient:
                 await self._handle_rx_line(self._pending_rx_lines.pop(0))
 
             while True:
-                line = await self.reader.readline()
+                # Private TNC2 feeds can sit quiet for hours and never send
+                # comments, so silence only means a dead link on a server
+                # that has shown it sends them.
+                limit = self._read_timeout if self._server_comments else None
+                try:
+                    line = await _timed(self.reader.readline(), limit)
+                except asyncio.TimeoutError:
+                    logger.warning("APRS-IS link silent for %s seconds; reconnecting", limit)
+                    break
                 if not line:
                     break
 
                 text = _decode_aprs_line(line)
                 self._last_rx = time.time()
+                if text.startswith("#"):
+                    self._server_comments = True
                 await self._handle_rx_line(text)
 
         except asyncio.CancelledError:
@@ -211,10 +275,7 @@ class APRSISClient:
     async def _read_login_response(self):
         """Read an optional APRS-IS logresp without dropping early packets."""
         try:
-            response = await asyncio.wait_for(
-                self.reader.readline(),
-                timeout=self._handshake_timeout,
-            )
+            response = await _timed(self.reader.readline(), self._handshake_timeout)
         except asyncio.TimeoutError:
             logger.info("APRS-IS server did not send a login response; using read-only mode")
             self.verified = False
@@ -312,15 +373,13 @@ class APRSISClient:
     async def reconnect(self):
         """Close the current connection and reconnect with (possibly updated) config.
 
-        Call this after config changes to APRS-IS server/port/filter/passcode.
-        The existing connect() loop will handle the reconnection automatically
-        once we close the current writer — it will break out of _read_loop,
-        then loop back to the top of connect() and re-read config.
+        Call this after changes to the station callsign or the APRS-IS
+        settings. The connect() task re-reads config from the top of its loop
+        whether it was reading, backing off, or waiting for usable settings.
         """
         logger.info("APRS-IS reconnect requested (settings changed)")
+        self._wake.set()
         await self._reset_connection()
-        # The connect() coroutine is already running in a task and will
-        # automatically reconnect after _read_loop exits.
 
     async def keepalive(self):
         """Send periodic keepalive to APRS-IS."""
