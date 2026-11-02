@@ -2773,6 +2773,8 @@ try {{
 
             # Snapshot APRS-IS settings before update (for change detection)
             old_aprs_is = (
+                config.station.callsign,
+                config.station.ssid,
                 config.aprs_is.enabled,
                 config.aprs_is.server,
                 config.aprs_is.port,
@@ -2832,6 +2834,8 @@ try {{
 
             # Detect APRS-IS changes and trigger reconnect
             new_aprs_is = (
+                config.station.callsign,
+                config.station.ssid,
                 config.aprs_is.enabled,
                 config.aprs_is.server,
                 config.aprs_is.port,
@@ -3423,9 +3427,15 @@ try {{
             persisted = True
             apply_config(runtime_config, config)
             tracker.set_my_position(config.station.latitude, config.station.longitude)
-            if new_aprs_is != old_aprs_is and aprs_is:
-                await aprs_is.reconnect()
-                live_applied.append("APRS-IS (reconnecting)")
+            if new_aprs_is != old_aprs_is:
+                if aprs_is:
+                    await aprs_is.reconnect()
+                    live_applied.append(
+                        "APRS-IS (reconnecting)" if config.aprs_is.enabled else "APRS-IS (disconnected)"
+                    )
+                elif config.aprs_is.enabled:
+                    # The client is only built at startup when APRS-IS is enabled.
+                    need_restart.append("APRS-IS")
             if "web" in body:
                 if update_checker:
                     update_checker.configure(

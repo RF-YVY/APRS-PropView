@@ -46,6 +46,7 @@ class APRSISClient:
         self._handshake_timeout = 3
         self._message_recipients = set()
         self._heard_me_calls = set()
+        self._wake = asyncio.Event()  # Set when settings change
 
     async def _reset_connection(self):
         """Clear connection state and close the current socket."""
@@ -125,18 +126,33 @@ class APRSISClient:
             return False
 
     async def connect(self):
-        """Connect to APRS-IS with auto-reconnect and exponential backoff."""
-        # APRS-IS policy: never connect with placeholder callsigns
-        base_call = self.config.station.callsign.upper()
-        if base_call in _BLOCKED_CALLSIGNS or not base_call:
-            logger.error(
-                f"Cannot connect to APRS-IS with callsign '{base_call}'. "
-                "Set your assigned callsign in settings."
-            )
-            return
+        """Connect to APRS-IS with auto-reconnect and exponential backoff.
 
+        Runs for the life of the app. While APRS-IS can't be used, the loop
+        waits here for reconnect() rather than exiting, so saving settings
+        is enough to bring the connection up.
+        """
         delay = self._reconnect_delay
         while True:
+            self._wake.clear()
+
+            # APRS-IS policy: never connect with placeholder callsigns
+            base_call = self.config.station.callsign.upper()
+            if base_call in _BLOCKED_CALLSIGNS or not base_call:
+                logger.error(
+                    f"Cannot connect to APRS-IS with callsign '{base_call}'. "
+                    "Set your assigned callsign in settings."
+                )
+                await self._wake.wait()
+                delay = self._reconnect_delay
+                continue
+
+            if not self.config.aprs_is.enabled:
+                logger.info("APRS-IS is disabled in settings")
+                await self._wake.wait()
+                delay = self._reconnect_delay
+                continue
+
             try:
                 server = self.config.aprs_is.server
                 port = self.config.aprs_is.port
@@ -182,8 +198,18 @@ class APRSISClient:
             except Exception as e:
                 logger.error(f"APRS-IS connection error: {e}")
                 await self._reset_connection()
-                await asyncio.sleep(delay)
-                delay = min(delay * 2, 60)
+                if await self._sleep_or_wake(delay):
+                    delay = self._reconnect_delay
+                else:
+                    delay = min(delay * 2, 60)
+
+    async def _sleep_or_wake(self, seconds: float) -> bool:
+        """Wait out a backoff. Return True if a settings change ended it early."""
+        try:
+            await asyncio.wait_for(self._wake.wait(), timeout=seconds)
+            return True
+        except asyncio.TimeoutError:
+            return False
 
     async def _read_loop(self):
         """Read packets from APRS-IS."""
@@ -312,15 +338,13 @@ class APRSISClient:
     async def reconnect(self):
         """Close the current connection and reconnect with (possibly updated) config.
 
-        Call this after config changes to APRS-IS server/port/filter/passcode.
-        The existing connect() loop will handle the reconnection automatically
-        once we close the current writer — it will break out of _read_loop,
-        then loop back to the top of connect() and re-read config.
+        Call this after changes to the station callsign or the APRS-IS
+        settings. The connect() task re-reads config from the top of its loop
+        whether it was reading, backing off, or waiting for usable settings.
         """
         logger.info("APRS-IS reconnect requested (settings changed)")
+        self._wake.set()
         await self._reset_connection()
-        # The connect() coroutine is already running in a task and will
-        # automatically reconnect after _read_loop exits.
 
     async def keepalive(self):
         """Send periodic keepalive to APRS-IS."""
