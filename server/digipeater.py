@@ -12,6 +12,8 @@ from server.ax25 import AX25Frame, AX25Address
 
 logger = logging.getLogger("propview.digipeater")
 
+MAX_DIGIPEATERS = 8  # AX.25 limit on repeater addresses in a frame
+
 
 class DedupeCache:
     """LRU cache for duplicate packet detection."""
@@ -159,6 +161,9 @@ class Digipeater:
 
         # Add remaining path elements
         new_digis.extend(frame.digipeaters[idx + 1 :])
+        if len(new_digis) > MAX_DIGIPEATERS:
+            logger.debug(f"Declining {call}: path would exceed {MAX_DIGIPEATERS} digipeaters")
+            return None
 
         new_frame.digipeaters = new_digis
 

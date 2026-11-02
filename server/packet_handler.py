@@ -249,6 +249,8 @@ class PacketHandler:
 
         # Parse APRS content
         packet = parse_packet(raw_str, source="rf")
+        if not packet.valid:
+            return
         packet.port_name = getattr(interface, "name", "") if interface else ""
 
         if self.tracker.is_blocked_callsign(packet.from_call):
@@ -269,7 +271,11 @@ class PacketHandler:
         await self._check_incoming_message(packet, source="rf")
 
         # Digipeater processing
-        if self.digipeater:
+        if (
+            self.digipeater
+            and frame.control == AX25_UI_CONTROL
+            and frame.pid == AX25_PID_NO_LAYER3
+        ):
             new_frame = self.digipeater.should_digipeat(frame)
             if new_frame:
                 sent = await self._transmit_rf(new_frame)
@@ -310,6 +316,8 @@ class PacketHandler:
 
         logger.debug(f"RF RX text: {raw_str}")
         packet = parse_packet(raw_str, source="rf")
+        if not packet.valid:
+            return
         packet.port_name = getattr(interface, "name", "") if interface else ""
         if self.tracker.is_blocked_callsign(packet.from_call):
             logger.info("RF text RX ignored by station blocklist: %s", packet.from_call)
@@ -363,6 +371,8 @@ class PacketHandler:
 
         # Parse APRS content
         packet = parse_packet(raw_str, source="aprs_is")
+        if not packet.valid:
+            return
 
         if self.tracker.is_blocked_callsign(packet.from_call):
             logger.info("APRS-IS RX ignored by station blocklist: %s", packet.from_call)

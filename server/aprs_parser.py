@@ -4,9 +4,12 @@ import re
 import math
 import logging
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 logger = logging.getLogger("propview.parser")
+
+ADDRESS_RE = re.compile(r"[A-Za-z0-9]{1,9}(?:-[A-Za-z0-9]{1,6})?")
+PATH_ELEMENT_RE = re.compile(ADDRESS_RE.pattern + r"\*?")
 
 POSITION_WX_RE = re.compile(
     r"^(?P<lat>\d{4}\.\d{2}[NSns])(?P<table>.)(?P<lon>\d{5}\.\d{2}[EWew])_(?P<body>.*)$",
@@ -52,6 +55,7 @@ class APRSPacket:
     alive: bool = True
     # Third-party wrapper metadata
     third_party: bool = False
+    valid: bool = True
     outer_from_call: str = ""
     outer_path: str = ""
 
@@ -104,6 +108,16 @@ MIC_E_EAST_WEST = {
 }
 
 
+def _valid_addresses(from_call: str, to_call: str, path_parts: List[str]) -> bool:
+    """Check header addresses. APRS-IS carries calls that AX.25 cannot, so the
+    pattern is wider than a callsign: T2FINLAND, EL-123456, KD8JNT-VS."""
+    return (
+        ADDRESS_RE.fullmatch(from_call) is not None
+        and ADDRESS_RE.fullmatch(to_call) is not None
+        and all(PATH_ELEMENT_RE.fullmatch(part) for part in path_parts)
+    )
+
+
 def parse_packet(raw: str, source: str = "rf") -> APRSPacket:
     """Parse a raw APRS packet string into an APRSPacket."""
     pkt = APRSPacket(raw=raw, source=source)
@@ -126,6 +140,11 @@ def parse_packet(raw: str, source: str = "rf") -> APRSPacket:
         pkt.to_call = path_parts[0].strip()
         if len(path_parts) > 1:
             pkt.path = ",".join(path_parts[1:])
+
+        if not _valid_addresses(pkt.from_call, pkt.to_call, path_parts[1:]):
+            logger.info("Dropping packet with malformed address: %r", header[:120])
+            pkt.valid = False
+            return pkt
 
         if not info:
             return pkt
@@ -670,6 +689,20 @@ def make_rej_packet(addressee: str, message_id: str) -> str:
     return f":{padded}:rej{message_id}"
 
 
+def _degrees_minutes(value: float, degree_width: int) -> str:
+    """Format DDMM.mm from whole hundredths of a minute, so rounding the
+    minutes up to 60.00 carries into the degrees."""
+    degrees, hundredths = divmod(round(abs(value) * 6000), 6000)
+    return f"{degrees:0{degree_width}d}{hundredths / 100:05.2f}"
+
+
+def format_aprs_lat_lon(lat: float, lon: float) -> tuple[str, str]:
+    """Return APRS uncompressed latitude and longitude strings."""
+    lat_dir = "N" if lat >= 0 else "S"
+    lon_dir = "E" if lon >= 0 else "W"
+    return _degrees_minutes(lat, 2) + lat_dir, _degrees_minutes(lon, 3) + lon_dir
+
+
 def make_position_packet(
     callsign: str,
     lat: float,
@@ -679,24 +712,8 @@ def make_position_packet(
     comment: str = "",
 ) -> str:
     """Create an uncompressed APRS position packet info field."""
-    # Convert decimal degrees to APRS format
-    lat_dir = "N" if lat >= 0 else "S"
-    lat = abs(lat)
-    lat_deg = int(lat)
-    lat_min = (lat - lat_deg) * 60
-
-    lon_dir = "E" if lon >= 0 else "W"
-    lon = abs(lon)
-    lon_deg = int(lon)
-    lon_min = (lon - lon_deg) * 60
-
-    return (
-        f"={lat_deg:02d}{lat_min:05.2f}{lat_dir}"
-        f"{symbol_table}"
-        f"{lon_deg:03d}{lon_min:05.2f}{lon_dir}"
-        f"{symbol_code}"
-        f"{comment}"
-    )
+    lat_field, lon_field = format_aprs_lat_lon(lat, lon)
+    return f"={lat_field}{symbol_table}{lon_field}{symbol_code}{comment}"
 
 
 def build_station_beacon_comment(
