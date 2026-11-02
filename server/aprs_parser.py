@@ -4,9 +4,12 @@ import re
 import math
 import logging
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 logger = logging.getLogger("propview.parser")
+
+ADDRESS_RE = re.compile(r"[A-Za-z0-9]{1,9}(?:-[A-Za-z0-9]{1,6})?")
+PATH_ELEMENT_RE = re.compile(ADDRESS_RE.pattern + r"\*?")
 
 POSITION_WX_RE = re.compile(
     r"^(?P<lat>\d{4}\.\d{2}[NSns])(?P<table>.)(?P<lon>\d{5}\.\d{2}[EWew])_(?P<body>.*)$",
@@ -52,6 +55,7 @@ class APRSPacket:
     alive: bool = True
     # Third-party wrapper metadata
     third_party: bool = False
+    valid: bool = True
     outer_from_call: str = ""
     outer_path: str = ""
 
@@ -104,6 +108,16 @@ MIC_E_EAST_WEST = {
 }
 
 
+def _valid_addresses(from_call: str, to_call: str, path_parts: List[str]) -> bool:
+    """Check header addresses. APRS-IS carries calls that AX.25 cannot, so the
+    pattern is wider than a callsign: T2FINLAND, EL-123456, KD8JNT-VS."""
+    return (
+        ADDRESS_RE.fullmatch(from_call) is not None
+        and ADDRESS_RE.fullmatch(to_call) is not None
+        and all(PATH_ELEMENT_RE.fullmatch(part) for part in path_parts)
+    )
+
+
 def parse_packet(raw: str, source: str = "rf") -> APRSPacket:
     """Parse a raw APRS packet string into an APRSPacket."""
     pkt = APRSPacket(raw=raw, source=source)
@@ -126,6 +140,11 @@ def parse_packet(raw: str, source: str = "rf") -> APRSPacket:
         pkt.to_call = path_parts[0].strip()
         if len(path_parts) > 1:
             pkt.path = ",".join(path_parts[1:])
+
+        if not _valid_addresses(pkt.from_call, pkt.to_call, path_parts[1:]):
+            logger.info("Dropping packet with malformed address: %r", header[:120])
+            pkt.valid = False
+            return pkt
 
         if not info:
             return pkt

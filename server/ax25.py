@@ -10,6 +10,7 @@ logger = logging.getLogger("propview.ax25")
 AX25_FLAG = 0x7E
 AX25_UI_CONTROL = 0x03
 AX25_PID_NO_LAYER3 = 0xF0
+ADDRESS_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 
 # Address field constants
 ADDR_LEN = 7  # Each address is 7 bytes (6 callsign + 1 SSID)
@@ -65,7 +66,9 @@ class AX25Address:
         if len(data) < 7:
             return AX25Address()
 
-        callsign = "".join(chr(b >> 1) for b in data[:6]).strip()
+        callsign = "".join(chr(b >> 1) for b in data[:6]).rstrip(" ")
+        if not callsign or not ADDRESS_CHARS.issuperset(callsign):
+            raise ValueError(f"invalid AX.25 address {callsign!r}")
         ssid_byte = data[6]
         ssid = (ssid_byte & SSID_MASK) >> 1
         h_bit = bool(ssid_byte & SSID_HBIT)
