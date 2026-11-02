@@ -689,6 +689,20 @@ def make_rej_packet(addressee: str, message_id: str) -> str:
     return f":{padded}:rej{message_id}"
 
 
+def _degrees_minutes(value: float, degree_width: int) -> str:
+    """Format DDMM.mm from whole hundredths of a minute, so rounding the
+    minutes up to 60.00 carries into the degrees."""
+    degrees, hundredths = divmod(round(abs(value) * 6000), 6000)
+    return f"{degrees:0{degree_width}d}{hundredths / 100:05.2f}"
+
+
+def format_aprs_lat_lon(lat: float, lon: float) -> tuple[str, str]:
+    """Return APRS uncompressed latitude and longitude strings."""
+    lat_dir = "N" if lat >= 0 else "S"
+    lon_dir = "E" if lon >= 0 else "W"
+    return _degrees_minutes(lat, 2) + lat_dir, _degrees_minutes(lon, 3) + lon_dir
+
+
 def make_position_packet(
     callsign: str,
     lat: float,
@@ -698,24 +712,8 @@ def make_position_packet(
     comment: str = "",
 ) -> str:
     """Create an uncompressed APRS position packet info field."""
-    # Convert decimal degrees to APRS format
-    lat_dir = "N" if lat >= 0 else "S"
-    lat = abs(lat)
-    lat_deg = int(lat)
-    lat_min = (lat - lat_deg) * 60
-
-    lon_dir = "E" if lon >= 0 else "W"
-    lon = abs(lon)
-    lon_deg = int(lon)
-    lon_min = (lon - lon_deg) * 60
-
-    return (
-        f"={lat_deg:02d}{lat_min:05.2f}{lat_dir}"
-        f"{symbol_table}"
-        f"{lon_deg:03d}{lon_min:05.2f}{lon_dir}"
-        f"{symbol_code}"
-        f"{comment}"
-    )
+    lat_field, lon_field = format_aprs_lat_lon(lat, lon)
+    return f"={lat_field}{symbol_table}{lon_field}{symbol_code}{comment}"
 
 
 def build_station_beacon_comment(

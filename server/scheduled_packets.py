@@ -6,7 +6,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from server.aprs_parser import make_message_packet
+from server.aprs_parser import format_aprs_lat_lon, make_message_packet
 from server.config import Config
 
 logger = logging.getLogger("propview.scheduled_packets")
@@ -17,15 +17,7 @@ def _clean_ascii(text: str, max_len: int) -> str:
 
 
 def _coord_to_aprs(latitude: float, longitude: float) -> str:
-    lat_dir = "N" if latitude >= 0 else "S"
-    lon_dir = "E" if longitude >= 0 else "W"
-    lat = abs(float(latitude))
-    lon = abs(float(longitude))
-    lat_deg = int(lat)
-    lon_deg = int(lon)
-    lat_min = (lat - lat_deg) * 60
-    lon_min = (lon - lon_deg) * 60
-    return f"{lat_deg:02d}{lat_min:05.2f}{lat_dir}", f"{lon_deg:03d}{lon_min:05.2f}{lon_dir}"
+    return format_aprs_lat_lon(float(latitude), float(longitude))
 
 
 def _bool_item(value: Any, default: bool = False) -> bool:

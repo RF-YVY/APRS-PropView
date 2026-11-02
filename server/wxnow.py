@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
+from server.aprs_parser import format_aprs_lat_lon
 from server.config import Config
 
 logger = logging.getLogger("propview.wxnow")
@@ -78,19 +79,6 @@ def parse_wxnow_text(text: str, file_mtime: Optional[float] = None) -> WxNowRead
         file_mtime=float(file_mtime or time.time()),
         signature=f"{timestamp_text}\n{weather_body}",
     )
-
-
-def format_aprs_lat_lon(lat: float, lon: float) -> tuple[str, str]:
-    """Return APRS uncompressed latitude and longitude strings."""
-    lat_dir = "N" if lat >= 0 else "S"
-    lon_dir = "E" if lon >= 0 else "W"
-    lat_abs = abs(lat)
-    lon_abs = abs(lon)
-    lat_deg = int(lat_abs)
-    lon_deg = int(lon_abs)
-    lat_min = (lat_abs - lat_deg) * 60
-    lon_min = (lon_abs - lon_deg) * 60
-    return f"{lat_deg:02d}{lat_min:05.2f}{lat_dir}", f"{lon_deg:03d}{lon_min:05.2f}{lon_dir}"
 
 
 def build_wxnow_info(config: Config, reading: WxNowReading) -> str:
