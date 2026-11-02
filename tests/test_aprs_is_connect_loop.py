@@ -186,3 +186,45 @@ class SaveRouteTests(unittest.IsolatedAsyncioTestCase):
         result = await self.save(None, {'aprs_is': {'enabled': True}})
         self.assertTrue(result['success'])
         self.assertIn('APRS-IS', result['applicationRestartReasons'])
+
+
+class BackoffTests(ConnectLoopCase):
+    async def test_server_that_closes_after_login_is_not_hammered(self):
+        self.server = await FakeServer(close_after_login=True).start()
+        client = APRSISClient(make_config(self.server.port), AsyncMock())
+        client._handshake_timeout = .05
+        client._reconnect_delay = .1
+        self.task = asyncio.create_task(client.connect())
+        await asyncio.sleep(.45)
+
+        times = self.server.login_times
+        gaps = [later - earlier for earlier, later in zip(times, times[1:])]
+        self.assertLessEqual(len(times), 3)
+        self.assertGreaterEqual(len(gaps), 1)
+        self.assertGreaterEqual(gaps[0], .09)
+        if len(gaps) > 1:
+            self.assertGreaterEqual(gaps[1], .18)
+
+    async def test_lasting_session_resets_the_backoff(self):
+        self.server = await FakeServer(close_after_login=True).start()
+        client = APRSISClient(make_config(self.server.port), AsyncMock())
+        client._handshake_timeout = .05
+        client._reconnect_delay = .1
+        client._stable_session = 0
+        self.task = asyncio.create_task(client.connect())
+        await self.server.wait_for_logins(4)
+
+        times = self.server.login_times
+        gaps = [later - earlier for earlier, later in zip(times, times[1:])]
+        self.assertLess(max(gaps), .19)
+
+    async def test_settings_change_on_a_live_session_redials_at_once(self):
+        self.server = await FakeServer().start()
+        client = APRSISClient(make_config(self.server.port), AsyncMock())
+        client._handshake_timeout = .05
+        client._reconnect_delay = 30
+        self.task = asyncio.create_task(client.connect())
+        await self.server.wait_for_logins(1)
+
+        await client.reconnect()
+        await self.server.wait_for_logins(2)

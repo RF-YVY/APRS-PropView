@@ -40,6 +40,7 @@ class APRSISClient:
         self.connected = False
         self.verified = False  # True only after server confirms verified login
         self._reconnect_delay = 5
+        self._stable_session = 60  # A session this long clears the backoff
         self.server_banner = ""
         self._last_rx = 0.0
         self._pending_rx_lines: list[str] = []
@@ -153,6 +154,7 @@ class APRSISClient:
                 delay = self._reconnect_delay
                 continue
 
+            session_start = None
             try:
                 server = self.config.aprs_is.server
                 port = self.config.aprs_is.port
@@ -190,7 +192,7 @@ class APRSISClient:
 
                 self.connected = True
                 await self._read_login_response()
-                delay = self._reconnect_delay
+                session_start = time.monotonic()
                 await self._read_loop()
 
             except asyncio.CancelledError:
@@ -198,10 +200,16 @@ class APRSISClient:
             except Exception as e:
                 logger.error(f"APRS-IS connection error: {e}")
                 await self._reset_connection()
-                if await self._sleep_or_wake(delay):
-                    delay = self._reconnect_delay
-                else:
-                    delay = min(delay * 2, 60)
+
+            # A server can accept the login and close at once, so only a
+            # session that lasted clears the backoff.
+            if session_start is not None and time.monotonic() - session_start >= self._stable_session:
+                delay = self._reconnect_delay
+
+            if await self._sleep_or_wake(delay):
+                delay = self._reconnect_delay
+            else:
+                delay = min(delay * 2, 60)
 
     async def _sleep_or_wake(self, seconds: float) -> bool:
         """Wait out a backoff. Return True if a settings change ended it early."""
