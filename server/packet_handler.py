@@ -271,7 +271,11 @@ class PacketHandler:
         await self._check_incoming_message(packet, source="rf")
 
         # Digipeater processing
-        if self.digipeater:
+        if (
+            self.digipeater
+            and frame.control == AX25_UI_CONTROL
+            and frame.pid == AX25_PID_NO_LAYER3
+        ):
             new_frame = self.digipeater.should_digipeat(frame)
             if new_frame:
                 sent = await self._transmit_rf(new_frame)
