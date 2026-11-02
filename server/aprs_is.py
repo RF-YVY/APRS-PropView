@@ -28,6 +28,26 @@ def _looks_like_aprs_packet(text: str) -> bool:
     return bool(sep and ">" in header)
 
 
+async def _timed(awaitable, timeout: Optional[float]):
+    """Await with a timeout, like asyncio.wait_for, and never lose a cancel.
+
+    Before Python 3.12, wait_for returns the result when the awaitable
+    finishes in the same tick as a cancellation, which leaves connect()
+    running after it was cancelled.
+    """
+    task = asyncio.ensure_future(awaitable)
+    try:
+        done, _ = await asyncio.wait({task}, timeout=timeout)
+    except asyncio.CancelledError:
+        task.cancel()
+        raise
+    if not done:
+        task.cancel()
+        await asyncio.wait({task})
+        raise asyncio.TimeoutError
+    return task.result()
+
+
 class APRSISClient:
     """Asynchronous APRS-IS client with auto-reconnect."""
 
@@ -41,6 +61,8 @@ class APRSISClient:
         self.verified = False  # True only after server confirms verified login
         self._reconnect_delay = 5
         self._stable_session = 60  # A session this long clears the backoff
+        self._read_timeout = 120  # Servers send a comment line about every 20s
+        self._server_comments = False  # Seen on this connection
         self.server_banner = ""
         self._last_rx = 0.0
         self._pending_rx_lines: list[str] = []
@@ -166,14 +188,12 @@ class APRSISClient:
                 # private/local TNC2 feeds do not. Treat early packet-looking
                 # lines as receive data instead of discarding them as handshake.
                 try:
-                    banner = await asyncio.wait_for(
-                        self.reader.readline(),
-                        timeout=self._handshake_timeout,
-                    )
+                    banner = await _timed(self.reader.readline(), self._handshake_timeout)
                 except asyncio.TimeoutError:
                     banner = b""
 
                 self.server_banner = _decode_aprs_line(banner) if banner else ""
+                self._server_comments = self.server_banner.startswith("#")
                 if self.server_banner:
                     if _looks_like_aprs_packet(self.server_banner):
                         logger.info("APRS-IS server sent packet data before banner/logresp")
@@ -214,7 +234,7 @@ class APRSISClient:
     async def _sleep_or_wake(self, seconds: float) -> bool:
         """Wait out a backoff. Return True if a settings change ended it early."""
         try:
-            await asyncio.wait_for(self._wake.wait(), timeout=seconds)
+            await _timed(self._wake.wait(), seconds)
             return True
         except asyncio.TimeoutError:
             return False
@@ -226,12 +246,22 @@ class APRSISClient:
                 await self._handle_rx_line(self._pending_rx_lines.pop(0))
 
             while True:
-                line = await self.reader.readline()
+                # Private TNC2 feeds can sit quiet for hours and never send
+                # comments, so silence only means a dead link on a server
+                # that has shown it sends them.
+                limit = self._read_timeout if self._server_comments else None
+                try:
+                    line = await _timed(self.reader.readline(), limit)
+                except asyncio.TimeoutError:
+                    logger.warning("APRS-IS link silent for %s seconds; reconnecting", limit)
+                    break
                 if not line:
                     break
 
                 text = _decode_aprs_line(line)
                 self._last_rx = time.time()
+                if text.startswith("#"):
+                    self._server_comments = True
                 await self._handle_rx_line(text)
 
         except asyncio.CancelledError:
@@ -245,10 +275,7 @@ class APRSISClient:
     async def _read_login_response(self):
         """Read an optional APRS-IS logresp without dropping early packets."""
         try:
-            response = await asyncio.wait_for(
-                self.reader.readline(),
-                timeout=self._handshake_timeout,
-            )
+            response = await _timed(self.reader.readline(), self._handshake_timeout)
         except asyncio.TimeoutError:
             logger.info("APRS-IS server did not send a login response; using read-only mode")
             self.verified = False

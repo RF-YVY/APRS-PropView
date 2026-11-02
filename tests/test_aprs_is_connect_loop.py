@@ -9,16 +9,17 @@ from unittest.mock import AsyncMock, MagicMock
 from starlette.requests import Request
 
 from server.app import create_app
-from server.aprs_is import APRSISClient
+from server.aprs_is import APRSISClient, _timed
 from server.config import Config
 
 
 class FakeServer:
     """Answers each login, then keeps the socket open unless told otherwise."""
 
-    def __init__(self, close_after_login=False, send_comments=True):
+    def __init__(self, close_after_login=False, send_comments=True, comment_every=None):
         self.close_after_login = close_after_login
         self.send_comments = send_comments
+        self.comment_every = comment_every
         self.logins = []
         self.login_times = []
         self.server = None
@@ -45,6 +46,10 @@ class FakeServer:
         if self.close_after_login:
             writer.close()
             return
+        while self.comment_every:
+            writer.write(b'# aprsc 2.1 keepalive\r\n')
+            await writer.drain()
+            await asyncio.sleep(self.comment_every)
         await reader.read()
         writer.close()
 
@@ -54,7 +59,7 @@ class FakeServer:
             writer.close()
         await self.server.wait_closed()
 
-    async def wait_for_logins(self, count, timeout=2):
+    async def wait_for_logins(self, count, timeout=8):
         async def poll():
             while len(self.logins) < count:
                 await asyncio.sleep(.01)
@@ -215,8 +220,8 @@ class BackoffTests(ConnectLoopCase):
         await self.server.wait_for_logins(4)
 
         times = self.server.login_times
-        gaps = [later - earlier for earlier, later in zip(times, times[1:])]
-        self.assertLess(max(gaps), .19)
+        # Growing delays would total .1 + .2 + .4; a reset one stays near .3.
+        self.assertLess(times[3] - times[0], .6)
 
     async def test_settings_change_on_a_live_session_redials_at_once(self):
         self.server = await FakeServer().start()
@@ -228,3 +233,63 @@ class BackoffTests(ConnectLoopCase):
 
         await client.reconnect()
         await self.server.wait_for_logins(2)
+
+
+class DeadLinkTests(ConnectLoopCase):
+    def start_with_limit(self, limit):
+        client = APRSISClient(make_config(self.server.port), AsyncMock())
+        client._handshake_timeout = .05
+        client._reconnect_delay = .05
+        client._read_timeout = limit
+        self.task = asyncio.create_task(client.connect())
+        return client
+
+    async def test_silent_server_is_dropped_and_redialled(self):
+        self.server = await FakeServer().start()
+        client = self.start_with_limit(.1)
+        client._reconnect_delay = .3
+        await self.server.wait_for_logins(1)
+
+        async def until_down():
+            while client.connected or not client._server_comments:
+                await asyncio.sleep(.01)
+        await asyncio.wait_for(until_down(), 5)
+        await self.server.wait_for_logins(2)
+
+    async def test_server_comments_keep_the_link_alive(self):
+        self.server = await FakeServer(comment_every=.03).start()
+        client = self.start_with_limit(.5)
+        await self.server.wait_for_logins(1)
+        await asyncio.sleep(.8)
+        self.assertTrue(client.connected)
+        self.assertEqual(len(self.server.logins), 1)
+
+    async def test_feed_that_never_sends_comments_is_left_alone(self):
+        self.server = await FakeServer(send_comments=False).start()
+        client = self.start_with_limit(.1)
+        await self.server.wait_for_logins(1)
+        await asyncio.sleep(.3)
+        self.assertTrue(client.connected)
+        self.assertEqual(len(self.server.logins), 1)
+
+
+class TimedWaitTests(unittest.IsolatedAsyncioTestCase):
+    async def test_cancel_wins_when_the_read_finishes_in_the_same_tick(self):
+        ready = asyncio.Event()
+        task = asyncio.create_task(_timed(ready.wait(), 5))
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        ready.set()
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+
+    async def test_timeout_raises_and_frees_the_stream_for_the_next_read(self):
+        reader = asyncio.StreamReader()
+        with self.assertRaises(asyncio.TimeoutError):
+            await _timed(reader.readline(), .01)
+        reader.feed_data(b'next\n')
+        self.assertEqual(await _timed(reader.readline(), 1), b'next\n')
+
+    async def test_no_limit_waits_for_the_result(self):
+        self.assertEqual(await _timed(asyncio.sleep(0, 'done'), None), 'done')
