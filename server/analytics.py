@@ -2,11 +2,12 @@
 anomaly detection, bearing-sector analysis, historical comparison, sporadic-E."""
 
 from server.rf_analytics import RFHistoryAnalytics
+import asyncio
 import math
 import time
 import logging
 from typing import Dict, Any, List, Optional
-from collections import defaultdict
+from collections import defaultdict, deque
 from datetime import datetime
 
 logger = logging.getLogger("propview.analytics")
@@ -131,6 +132,58 @@ class AnalyticsEngine(RFHistoryAnalytics):
             "reason": reason,
         }
 
+    @staticmethod
+    def _rolling_station_stats(
+        events: List[tuple],
+        sample_times: List[float],
+    ) -> tuple[List[int], List[float]]:
+        """Distinct stations and farthest distance in the hour before each sample.
+
+        Events are (timestamp, callsign, distance) in time order. Each one enters
+        and leaves the window once, so the cost follows rows plus samples.
+        """
+        counts: List[int] = []
+        distances: List[float] = []
+        in_window: Dict[str, int] = {}
+        farthest = deque()
+        added = expired = 0
+        for end_ts in sample_times:
+            while added < len(events) and events[added][0] <= end_ts:
+                ts, call, dist = events[added]
+                added += 1
+                in_window[call] = in_window.get(call, 0) + 1
+                while farthest and farthest[-1][1] <= dist:
+                    farthest.pop()
+                farthest.append((ts, dist))
+            window_start = end_ts - 3600
+            while expired < added and events[expired][0] < window_start:
+                call = events[expired][1]
+                expired += 1
+                in_window[call] -= 1
+                if not in_window[call]:
+                    del in_window[call]
+            while farthest and farthest[0][0] < window_start:
+                farthest.popleft()
+            counts.append(len(in_window))
+            distances.append(farthest[0][1] if farthest else 0.0)
+        return counts, distances
+
+    @classmethod
+    def _threshold_series(cls, rows: Any, sample_times: List[float]) -> tuple:
+        """Split path history into direct and regional hourly series."""
+        direct: List[tuple] = []
+        regional: List[tuple] = []
+        for row in rows:
+            call = (row["callsign"] or "").upper()
+            if not call:
+                continue
+            event = (float(row["timestamp"] or 0), call, float(row["distance_km"] or 0))
+            (direct if int(row["is_direct"] or 0) == 1 else regional).append(event)
+        return (
+            *cls._rolling_station_stats(direct, sample_times),
+            *cls._rolling_station_stats(regional, sample_times),
+        )
+
     async def get_alert_threshold_recommendations(
         self,
         alert_config: Any,
@@ -155,7 +208,14 @@ class AnalyticsEngine(RFHistoryAnalytics):
                ORDER BY timestamp ASC""",
             (history_start,),
         )
-        rows = [dict(r) for r in await cursor.fetchall()]
+        # All database work shares one connection thread. Reading in pieces lets
+        # packet logging take turns instead of waiting for the whole result.
+        rows: List[Any] = []
+        while True:
+            chunk = await cursor.fetchmany(5000)
+            if not chunk:
+                break
+            rows.extend(chunk)
 
         step = sample_minutes * 60
         sample_times = []
@@ -164,35 +224,9 @@ class AnalyticsEngine(RFHistoryAnalytics):
             sample_times.append(t)
             t += step
 
-        direct_counts: List[int] = []
-        direct_distances: List[float] = []
-        regional_counts: List[int] = []
-        regional_distances: List[float] = []
-
-        for end_ts in sample_times:
-            window_start = end_ts - 3600
-            direct_seen = set()
-            regional_seen = set()
-            direct_max = 0.0
-            regional_max = 0.0
-            for row in rows:
-                ts = float(row.get("timestamp") or 0)
-                if ts < window_start or ts > end_ts:
-                    continue
-                call = (row.get("callsign") or "").upper()
-                if not call:
-                    continue
-                dist = float(row.get("distance_km") or 0)
-                if int(row.get("is_direct") or 0) == 1:
-                    direct_seen.add(call)
-                    direct_max = max(direct_max, dist)
-                else:
-                    regional_seen.add(call)
-                    regional_max = max(regional_max, dist)
-            direct_counts.append(len(direct_seen))
-            direct_distances.append(direct_max)
-            regional_counts.append(len(regional_seen))
-            regional_distances.append(regional_max)
+        direct_counts, direct_distances, regional_counts, regional_distances = await asyncio.to_thread(
+            self._threshold_series, rows, sample_times
+        )
 
         usable_samples = len(sample_times)
         samples_per_hour = usable_samples / max(hours, 1)

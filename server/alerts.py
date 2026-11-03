@@ -65,6 +65,7 @@ class AlertManager:
         self._alert_history: List[Dict[str, Any]] = []
         self._my_band_open: bool = False
         self._regional_band_open: bool = False
+        self._delivery_tasks: set = set()
 
     def _is_quiet_time(self) -> bool:
         """Check if current local time falls within the quiet window."""
@@ -251,7 +252,7 @@ class AlertManager:
         if len(self._alert_history) > 100:
             self._alert_history = self._alert_history[-100:]
 
-        await self.send_alert(alert)
+        self._deliver_in_background(alert)
         return alert
 
     async def check_anomaly(self, anomaly_data: Dict[str, Any]):
@@ -356,6 +357,20 @@ class AlertManager:
         for channel, result in zip((channel for channel, _ in tasks), results):
             if isinstance(result, Exception):
                 logger.error(f"Alert {channel} channel failed: {result}", exc_info=result)
+
+    def _deliver_in_background(self, alert: Dict[str, Any]):
+        """Send an alert without making the caller wait on outside services."""
+        task = asyncio.create_task(self.send_alert(alert))
+        self._delivery_tasks.add(task)
+        task.add_done_callback(self._delivery_finished)
+
+    def _delivery_finished(self, task: "asyncio.Task[None]"):
+        self._delivery_tasks.discard(task)
+        if task.cancelled():
+            return
+        error = task.exception()
+        if error:
+            logger.error("Alert delivery failed: %s", error, exc_info=error)
 
     async def send_test_alert(self) -> Dict[str, Any]:
         """Send a preformatted test alert to configured alert channels."""
