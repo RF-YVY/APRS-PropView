@@ -9,7 +9,7 @@ from server.operator_auth import (
 )
 from server.config import tomllib
 from server.analytics_routes import register_analytics_routes
-from server.resource_limits import PublicRequestLimits, TileCacheBudget
+from server.resource_limits import PublicRequestLimits, TileCacheBudget, peer_key
 import base64
 import binascii
 import hashlib
@@ -1060,6 +1060,10 @@ def create_app(
         tile_url = tile_cfg["url"]
         path = _tile_cache_path(tile_url, z, x, y)
         if not path.exists() or path.stat().st_size <= 0:
+            # Cached tiles are served at any zoom; only a miss above what the
+            # source serves is refused, since fetching it costs an upstream call.
+            if z > min(22, max(1, int(tile_cfg["max_zoom"]))):
+                return JSONResponse(status_code=404, content={"success": False, "message": "Tile not found."})
             limited = not request.state.operator_session
             if limited:
                 peer = request.client.host if request.client else 'unknown'
@@ -1162,7 +1166,7 @@ def create_app(
             return
         accepted = await ws_manager.connect(
             websocket, operator=bool(operator_auth.session(websocket.cookies.get(COOKIE, ''))),
-            peer=websocket.client.host if websocket.client else 'unknown')
+            peer=peer_key(websocket.client.host) if websocket.client else 'unknown')
         if not accepted:
             return
         try:

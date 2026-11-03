@@ -1,10 +1,25 @@
 """Bounded public API work and disk use, independent of radio processing."""
+import ipaddress
 import os
 import tempfile
 import threading
 import time
 from collections import OrderedDict
 from pathlib import Path
+
+
+def peer_key(host):
+    """Key a client for rate limits. An IPv6 /64, which one host can rotate
+    through, counts as one client."""
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return host
+    if address.version == 6 and address.ipv4_mapped:
+        return str(address.ipv4_mapped)
+    if address.version == 6:
+        return str(ipaddress.ip_network(f'{address}/64', strict=False))
+    return str(address)
 
 
 class PublicRequestLimits:
@@ -28,7 +43,7 @@ class PublicRequestLimits:
         kind = 'tiles' if path.startswith('/api/map-tiles/') else (
             'analytics' if path.startswith('/api/analytics/') else 'api')
         now = self.clock()
-        key = (peer, kind)
+        key = (peer_key(peer), kind)
         capacity, rate = self.POLICIES[kind]
         bucket = self.peers.pop(key, [float(capacity), now])
         self.peers[key] = bucket

@@ -1,6 +1,7 @@
 """Bounded browser delivery; radio work never waits for a slow socket."""
 import asyncio
 import json
+from collections import Counter
 
 
 class WebSocketManager:
@@ -19,10 +20,31 @@ class WebSocketManager:
         self.message_filter = None
         self._public_peers = {}
 
+    def _eviction_candidate(self, newcomer_count):
+        """Oldest public socket of the address holding the most, if it holds
+        at least two more than the newcomer, so a few addresses can't keep
+        every public slot and evictions stop once holdings are level."""
+        if not self._public_peers:
+            return None
+        heaviest, held = Counter(self._public_peers.values()).most_common(1)[0]
+        if held <= newcomer_count + 1:
+            return None
+        return next(socket for socket, peer in self._public_peers.items() if peer == heaviest)
+
     async def connect(self, websocket, operator=False, peer='unknown'):
-        if (len(self.active_connections) >= self.MAX_CONNECTIONS or
-                (not operator and (len(self._public_peers) >= self.MAX_PUBLIC_CONNECTIONS or
-                                  sum(value == peer for value in self._public_peers.values()) >= self.MAX_PUBLIC_PER_PEER))):
+        refuse = len(self.active_connections) >= self.MAX_CONNECTIONS
+        if not operator:
+            held = sum(value == peer for value in self._public_peers.values())
+            if held >= self.MAX_PUBLIC_PER_PEER:
+                refuse = True
+            elif len(self._public_peers) >= self.MAX_PUBLIC_CONNECTIONS:
+                victim = self._eviction_candidate(held)
+                if victim is None:
+                    refuse = True
+                else:
+                    self.disconnect(victim)
+                    refuse = len(self.active_connections) >= self.MAX_CONNECTIONS
+        if refuse:
             await websocket.close(code=1013, reason='Too many connections')
             return False
         # Reserve before yielding to the handshake: concurrent accepts must not
@@ -32,10 +54,15 @@ class WebSocketManager:
             self._public_peers[websocket] = peer
         try:
             await websocket.accept()
-        except (Exception, asyncio.CancelledError):
+        except (Exception, asyncio.CancelledError) as exc:
+            evicted = websocket not in self.active_connections
             self.active_connections.discard(websocket)
             self._public_peers.pop(websocket, None)
+            if evicted and not isinstance(exc, asyncio.CancelledError):
+                return False  # The eviction's close broke the handshake.
             raise
+        if websocket not in self.active_connections:
+            return False  # Evicted during the handshake; disconnect() closes it.
         queue = asyncio.Queue(maxsize=self.QUEUE_LIMIT)
         self._queues[websocket] = queue
         task = asyncio.create_task(self._send_loop(websocket, queue))
