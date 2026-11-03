@@ -19,10 +19,14 @@ from fastapi import Request
 from starlette.responses import JSONResponse
 
 from server.config_io import atomic_write
+from server.resource_limits import peer_key
 
 COOKIE = 'pv_operator_session'
 DURATIONS = (900, 3600, 28800)
 ITERATIONS = 600_000
+PEER_LOGIN_ATTEMPTS = 5      # per address, per minute
+LOGIN_PRESSURE = 30          # attempts per minute from all addresses
+LOGIN_CEILING = 120          # hard cap on password checks per minute
 logger = logging.getLogger('propview.operator')
 
 
@@ -38,6 +42,8 @@ def set_password(path, password, local_auto_login=True):
 
 
 class OperatorAuth:
+    MAX_LOGIN_WAITING = 8  # verifications queued behind login_lock
+
     def __init__(self, path):
         self.path = Path(path)
         self.sessions = {}
@@ -47,6 +53,7 @@ class OperatorAuth:
         self.record = None
         self.attempts = defaultdict(deque)
         self.global_attempts = deque()
+        self.login_waiting = 0
         self.login_lock = asyncio.Lock()
         self.enabled = False
         self.unlocked_session = {'csrf': secrets.token_urlsafe(32), 'expires_at': None, 'local': False}
@@ -190,32 +197,48 @@ class OperatorAuth:
                 raise ValueError()
         except (ValueError, KeyError, TypeError):
             return JSONResponse({'message': 'Invalid password or session duration.'}, status_code=400)
-        async with self.login_lock:
-            self.reload()
-            if not self.record:
-                return JSONResponse({'message': 'Set the operator password using the host computer first.'}, status_code=403)
-            now = time.time()
-            self.attempts = defaultdict(deque, {key: deque(t for t in values if now-t < 60)
-                                               for key, values in self.attempts.items() if values and now-values[-1] < 60})
-            peer = request.client.host if request.client else 'unknown'
-            attempts = self.attempts[peer]
-            while self.global_attempts and now-self.global_attempts[0] >= 60:
-                self.global_attempts.popleft()
-            if len(attempts) >= 5 or len(self.global_attempts) >= 30:
-                return JSONResponse({'message': 'Too many login attempts. Wait a minute.'}, status_code=429,
-                                    headers={'Retry-After': '60'})
-            attempts.append(now)
-            self.global_attempts.append(now)
-            record = self.record.copy()
-            verified = await asyncio.to_thread(self.verify, password, record)
-            self.reload()
-            if not verified or record != self.record:
-                logger.warning('Operator login rejected from %s', peer)
-                return JSONResponse({'message': 'Incorrect operator password.'}, status_code=401)
-            # Only this browser's old session is replaced. No global unlock flag.
-            response = self.create_session(request, duration)
-            logger.info('Operator login from %s for %s seconds', peer, duration)
-            return response
+        # Rate checks run before queueing for the lock, with no await between
+        # them, so a refused request never waits behind password hashing.
+        self.reload()
+        if not self.record:
+            return JSONResponse({'message': 'Set the operator password using the host computer first.'}, status_code=403)
+        now = time.time()
+        self.attempts = defaultdict(deque, {key: deque(t for t in values if now-t < 60)
+                                           for key, values in self.attempts.items() if values and now-values[-1] < 60})
+        peer = request.client.host if request.client else 'unknown'
+        attempts = self.attempts[peer_key(peer)]
+        while self.global_attempts and now-self.global_attempts[0] >= 60:
+            self.global_attempts.popleft()
+        # Under a flood each address drops to one try a minute. Refusing every
+        # address at 30 would let a handful of them lock the operator out; the
+        # ceiling still bounds guessing, at the cost of locking out past it.
+        allowed = 1 if len(self.global_attempts) >= LOGIN_PRESSURE else PEER_LOGIN_ATTEMPTS
+        if len(attempts) >= allowed or len(self.global_attempts) >= LOGIN_CEILING:
+            return JSONResponse({'message': 'Too many login attempts. Wait a minute.'}, status_code=429,
+                                headers={'Retry-After': '60'})
+        if self.login_waiting >= self.MAX_LOGIN_WAITING:
+            return JSONResponse({'message': 'Login is busy. Try again shortly.'}, status_code=429,
+                                headers={'Retry-After': '5'})
+        attempts.append(now)
+        self.global_attempts.append(now)
+        self.login_waiting += 1
+        try:
+            async with self.login_lock:
+                self.reload()
+                if not self.record:
+                    return JSONResponse({'message': 'Set the operator password using the host computer first.'}, status_code=403)
+                record = self.record.copy()
+                verified = await asyncio.to_thread(self.verify, password, record)
+                self.reload()
+                if not verified or record != self.record:
+                    logger.warning('Operator login rejected from %s', peer)
+                    return JSONResponse({'message': 'Incorrect operator password.'}, status_code=401)
+                # Only this browser's old session is replaced. No global unlock flag.
+                response = self.create_session(request, duration)
+                logger.info('Operator login from %s for %s seconds', peer, duration)
+                return response
+        finally:
+            self.login_waiting -= 1
 
     def logout(self, token):
         key = hashlib.sha256(token.encode()).hexdigest()
