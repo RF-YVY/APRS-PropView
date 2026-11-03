@@ -805,10 +805,10 @@ const MOBILE_ACCENT_COLORS = {
 
 const S = {
     ws: null, connected: false, myCall: '', messages: [], msgFilter: 'all', msgSort: 'asc',
-    rfStations: {}, isStations: {},
-    map: null, mapReady: false, rfMarkers: {}, isMarkers: {},
-    rfLayer: null, isLayer: null, lineLayer: null, rfLines: {}, isLines: {}, myMarker: null, myPos: null, baseTileLayer: null,
-    startTime: 0, ghostMinutes: 60, stationMeta: {},
+    rfStations: Object.create(null), isStations: Object.create(null),
+    map: null, mapReady: false, rfMarkers: Object.create(null), isMarkers: Object.create(null),
+    rfLayer: null, isLayer: null, lineLayer: null, rfLines: Object.create(null), isLines: Object.create(null), myMarker: null, myPos: null, baseTileLayer: null,
+    startTime: 0, ghostMinutes: 60, stationMeta: Object.create(null),
     unreadCount: 0, activeTab: 'mtab-home', propData: null,
     messagesLoaded: false, stationsLoaded: false, replyContext: null, selectedConversation: '', msgSearch: '',
     aprsIsConnected: false, aprsIsVerified: false,
@@ -1367,8 +1367,8 @@ function updateStationLine(st) {
 function redrawAllLines() {
     if (!S.lineLayer) return;
     S.lineLayer.clearLayers();
-    S.rfLines = {};
-    S.isLines = {};
+    S.rfLines = Object.create(null);
+    S.isLines = Object.create(null);
     if (!S.showLines) return;
     Object.values(S.rfStations).forEach(updateStationLine);
     Object.values(S.isStations).forEach(updateStationLine);

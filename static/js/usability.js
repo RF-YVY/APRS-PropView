@@ -675,6 +675,10 @@
         const jump = event.target.closest('[data-settings-jump], [data-go-settings]');
         if (jump) {
             event.preventDefault();
+            // A jump from inside a dialog (Connection Diagnostics) leaves it for
+            // the settings page, so the dialog closes rather than covering it.
+            const overlay = jump.closest('.modal-overlay');
+            if (overlay) overlay.style.display = 'none';
             goToSettings(jump.dataset.settingsJump || jump.dataset.goSettings, jump.dataset.goSection || '');
             return;
         }

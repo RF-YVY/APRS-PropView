@@ -4,8 +4,8 @@
 
 class StationManager {
     constructor() {
-        this.rfStations = {};      // callsign -> station data
-        this.isStations = {};      // callsign -> station data
+        this.rfStations = Object.create(null);      // callsign -> station data
+        this.isStations = Object.create(null);      // callsign -> station data
         this.rfTimeFilter = 24;    // hours
         this.rfDistFilter = 0;     // km, 0 = any
         this.rfTypeFilter = '';    // '' = all, or category key
@@ -496,7 +496,7 @@ class StationManager {
     _syncSourceStations(source, nextList) {
         const isRF = source === 'rf';
         const current = isRF ? this.rfStations : this.isStations;
-        const nextMap = {};
+        const nextMap = Object.create(null);
 
         nextList.forEach((station) => {
             nextMap[station.callsign] = station;
