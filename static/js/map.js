@@ -7,11 +7,11 @@ class PropViewMap {
         this.map = null;
         this.myMarker = null;
         this.myPosition = null; // {lat, lng}
-        this.rfMarkers = {};    // callsign -> marker
-        this.isMarkers = {};    // callsign -> marker
-        this.rfLines = {};      // callsign -> polyline
-        this.rfArrows = {};     // callsign -> [arrowhead markers]
-        this.rfLineData = {};   // callsign -> {last_heard, distance_km}
+        this.rfMarkers = Object.create(null);    // callsign -> marker
+        this.isMarkers = Object.create(null);    // callsign -> marker
+        this.rfLines = Object.create(null);      // callsign -> polyline
+        this.rfArrows = Object.create(null);     // callsign -> [arrowhead markers]
+        this.rfLineData = Object.create(null);   // callsign -> {last_heard, distance_km}
         this.showLines = true;
         this.showWatchedPaths = true;
         this.showRF = true;
@@ -55,9 +55,9 @@ class PropViewMap {
         this.darkMode = true;
         this.typeFilters = new Set();  // empty = show all, otherwise set of visible category keys
         // Track station symbol metadata for type filtering
-        this.stationMeta = {};  // callsign -> {source, symbol_table, symbol_code, category}
+        this.stationMeta = Object.create(null);  // callsign -> {source, symbol_table, symbol_code, category}
         this.myCallsign = '';   // own callsign for path filtering
-        this.hopMarkers = {};   // callsign -> [circleMarker, ...] for digi hop waypoints
+        this.hopMarkers = Object.create(null);   // callsign -> [circleMarker, ...] for digi hop waypoints
         this.showLabels = false;   // callsign labels toggle
         this.autoFit = false;      // auto-zoom to fit all stations
         this._userInteracted = false; // true when user manually pans/zooms
@@ -1251,12 +1251,12 @@ class PropViewMap {
         this.rfLayer.clearLayers();
         this.isLayer.clearLayers();
         this.lineLayer.clearLayers();
-        this.rfMarkers = {};
-        this.isMarkers = {};
-        this.rfLines = {};
-        this.rfArrows = {};
-        this.rfLineData = {};
-        this.hopMarkers = {};
+        this.rfMarkers = Object.create(null);
+        this.isMarkers = Object.create(null);
+        this.rfLines = Object.create(null);
+        this.rfArrows = Object.create(null);
+        this.rfLineData = Object.create(null);
+        this.hopMarkers = Object.create(null);
     }
 
     /**
