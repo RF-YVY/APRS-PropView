@@ -9,7 +9,7 @@ from server.operator_auth import (
 )
 from server.config import tomllib
 from server.analytics_routes import register_analytics_routes
-from server.resource_limits import PublicRequestLimits, TileCacheBudget
+from server.resource_limits import PublicRequestLimits, TileCacheBudget, peer_key
 import base64
 import binascii
 import hashlib
@@ -1162,7 +1162,7 @@ def create_app(
             return
         accepted = await ws_manager.connect(
             websocket, operator=bool(operator_auth.session(websocket.cookies.get(COOKIE, ''))),
-            peer=websocket.client.host if websocket.client else 'unknown')
+            peer=peer_key(websocket.client.host) if websocket.client else 'unknown')
         if not accepted:
             return
         try:

@@ -130,7 +130,8 @@ def test_websocket_viewers_cannot_take_operator_reserve():
         try:
             for i in range(16):
                 socket = MagicMock(accept=AsyncMock(), close=AsyncMock())
-                assert await manager.connect(socket, peer=str(i // 4))
+                # One socket per address: level holdings leave nothing to evict.
+                assert await manager.connect(socket, peer=str(i))
                 sockets.append(socket)
             extra = MagicMock(accept=AsyncMock(), close=AsyncMock())
             assert not await manager.connect(extra, peer='new')
