@@ -1,10 +1,13 @@
 """Configuration management using TOML format."""
 
+import logging
 import sys
 from server.config_io import atomic_write
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List
+
+logger = logging.getLogger("propview.config")
 
 CLUB_DISPLAY_SCENES = frozenset({
     "map", "propagation", "weather", "activity", "aprs-is", "packets",
@@ -731,8 +734,16 @@ class Config:
         }
 
         for key, (cls, attr) in section_map.items():
-            if key in data:
-                setattr(config, attr, cls(**data[key]))
+            if key not in data:
+                continue
+            section = data[key]
+            if not isinstance(section, dict):
+                logger.warning(f"Ignoring [{key}] in {path.name}: expected a table, using defaults")
+                continue
+            allowed = cls.__dataclass_fields__.keys()
+            for unknown in sorted(set(section) - set(allowed)):
+                logger.warning(f"Ignoring unknown setting {key}.{unknown} in {path.name}")
+            setattr(config, attr, cls(**{k: v for k, v in section.items() if k in allowed}))
 
         if "rf_ports" in data and isinstance(data["rf_ports"], list):
             ports = []
