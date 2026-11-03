@@ -6,10 +6,10 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 
 test('desktop and mobile uptime roll over at 24 hours and retain seconds', () => {
-    for (const file of ['static/js/app.js', 'static/mobile.html']) {
+    for (const file of ['static/js/app.js', 'static/js/mobile.js']) {
         const source = fs.readFileSync(path.join(root, file), 'utf8');
         const start = source.indexOf('function updateUptime()');
-        const end = source.indexOf('\n}', start) >= 0 && file.endsWith('.html')
+        const end = source.indexOf('\n}', start) >= 0 && file.endsWith('mobile.js')
             ? source.indexOf('\n}', start)+2 : source.indexOf('\n    }', start)+6;
         const fn = source.slice(start, end);
         for (const [seconds, expected] of [[0,'00:00:00'],[86399,'23:59:59'],[86400,'01:00:00:00'],[176461,'02:01:01:01'],[8640000,'100:00:00:00']]) {
@@ -42,13 +42,13 @@ test('toolbar session control includes visible Login text', () => {
 });
 
 test('desktop and mobile uptime follows server age across reloads and partial status updates', () => {
-    for (const file of ['static/js/app.js', 'static/mobile.html']) {
+    for (const file of ['static/js/app.js', 'static/js/mobile.js']) {
         const source = fs.readFileSync(path.join(root,file),'utf8');
         const start = source.indexOf('function syncServerUptime(status)');
         const end = source.indexOf('function updateUptime()',start);
         const fn = source.slice(start,end);
         const context = {Date:{now:()=>1000000000}, uptimeStart:0, S:{startTime:0}, updateUptime:()=>{}};
-        const getStart = () => file.endsWith('.html') ? context.S.startTime : context.uptimeStart;
+        const getStart = () => file.endsWith('mobile.js') ? context.S.startTime : context.uptimeStart;
         vm.runInNewContext(fn+'\nsyncServerUptime({uptime_seconds:7200});',context);
         assert.equal(getStart(),1000000-7200);
         for (const value of [undefined, null, -1, NaN, Infinity, '7200']) {

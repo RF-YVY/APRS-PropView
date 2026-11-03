@@ -11,39 +11,7 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/static/ico/favicon-16x16.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/static/ico/apple-touch-icon.png">
     <link rel="manifest" href="/static/ico/site.webmanifest">
-    <script>
-        (function () {
-            try {
-                var state = JSON.parse(localStorage.getItem('pvDesktopUIState') || '{}');
-                var mode = state.uiMode || state.uiTheme || 'dark';
-                var skin = state.uiSkin || 'standard';
-                var accent = state.uiAccent || 'blue';
-                var accentColors = {
-                    blue: '#58a6ff',
-                    cyan: '#39d5ff',
-                    green: '#3fb950',
-                    amber: '#d29922',
-                    purple: '#bc8cff',
-                    red: '#f85149'
-                };
-                if (mode === 'light') {
-                    document.documentElement.classList.add('ui-theme-light');
-                }
-                document.documentElement.dataset.uiMode = mode === 'light' ? 'light' : 'dark';
-                document.documentElement.dataset.uiSkin = skin;
-                document.documentElement.dataset.uiAccent = accent;
-                document.documentElement.dataset.uiDensity = ['comfortable', 'compact', 'wallboard'].includes(state.uiDensity)
-                    ? state.uiDensity
-                    : 'compact';
-                document.documentElement.style.setProperty(
-                    '--user-accent',
-                    accent === 'custom' && /^#[0-9a-f]{6}$/i.test(state.uiAccentCustom || '')
-                        ? state.uiAccentCustom
-                        : (accentColors[accent] || accentColors.blue)
-                );
-            } catch (e) {}
-        })();
-    </script>
+    <script src="/static/js/theme-boot.js?v=__ASSET_VERSION__"></script>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css" />
     <link rel="stylesheet" href="/static/css/style.css?v=__ASSET_VERSION__-club-display" />
@@ -820,7 +788,7 @@
                     <div id="sec-weather" class="analytics-section">
                         <div class="analytics-header">
                             <h3>Weather Graphs</h3>
-                            <button type="button" id="btn-weather-dashboard" class="analytics-action-btn" onclick="window.pvAnalytics?.showWeatherDashboard?.()">Dashboard</button>
+                            <button type="button" id="btn-weather-dashboard" class="analytics-action-btn">Dashboard</button>
                             <select id="weather-analytics-hours">
                                 <option value="6">6h</option>
                                 <option value="12">12h</option>
@@ -862,18 +830,18 @@
                         <div class="export-buttons">
                             <div class="export-group">
                                 <span>Stations</span>
-                                <button class="btn btn-small" onclick="pvAnalytics.exportData('stations','csv')">CSV</button>
-                                <button class="btn btn-small" onclick="pvAnalytics.exportData('stations','json')">JSON</button>
+                                <button class="btn btn-small" data-export-type="stations" data-export-format="csv">CSV</button>
+                                <button class="btn btn-small" data-export-type="stations" data-export-format="json">JSON</button>
                             </div>
                             <div class="export-group">
                                 <span>Packets (24h)</span>
-                                <button class="btn btn-small" onclick="pvAnalytics.exportData('packets','csv')">CSV</button>
-                                <button class="btn btn-small" onclick="pvAnalytics.exportData('packets','json')">JSON</button>
+                                <button class="btn btn-small" data-export-type="packets" data-export-format="csv">CSV</button>
+                                <button class="btn btn-small" data-export-type="packets" data-export-format="json">JSON</button>
                             </div>
                             <div class="export-group">
                                 <span>Propagation (24h)</span>
-                                <button class="btn btn-small" onclick="pvAnalytics.exportData('propagation','csv')">CSV</button>
-                                <button class="btn btn-small" onclick="pvAnalytics.exportData('propagation','json')">JSON</button>
+                                <button class="btn btn-small" data-export-type="propagation" data-export-format="csv">CSV</button>
+                                <button class="btn btn-small" data-export-type="propagation" data-export-format="json">JSON</button>
                             </div>
                         </div>
                     </div>
@@ -1877,7 +1845,7 @@
                             </div>
                             <div class="settings-row">
                                 <label for="cfg-wx-alert-provider">Alerts / Risk Source</label>
-                                <select id="cfg-wx-alert-provider" onchange="window.pvUpdateWeatherProviderUi?.()">
+                                <select id="cfg-wx-alert-provider">
                                     <option value="auto">Auto - NWS in US, Open-Meteo risk elsewhere</option>
                                     <option value="weatherbit">Weatherbit official alerts - API key</option>
                                     <option value="disabled">Disabled</option>

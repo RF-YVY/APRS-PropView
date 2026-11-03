@@ -19,11 +19,13 @@ window.pvWeather = (function () {
     function init() {
         updateMapSearchOffset();
         window.addEventListener('resize', updateMapSearchOffset);
-        // Alert dismiss buttons carry their key in a data attribute rather than
+        // Alert buttons carry their key or index in a data attribute rather than
         // an inline onclick, so alert text never becomes script.
         document.addEventListener('click', (e) => {
             const button = e.target.closest?.('.wx-alert-dismiss[data-alert-key]');
             if (button) dismissAlert(button.dataset.alertKey);
+            const summary = e.target.closest?.('.wx-alert-summary[data-alert-index]');
+            if (summary) toggleAlertDetail(Number(summary.dataset.alertIndex));
         });
         // Refresh button
         document.getElementById('wx-refresh-btn')?.addEventListener('click', () => {
@@ -386,7 +388,7 @@ window.pvWeather = (function () {
                     <button
                         type="button"
                         class="wx-alert-summary"
-                        onclick="pvWeather.toggleAlertDetail(${i})"
+                        data-alert-index="${i}"
                         aria-expanded="false"
                         aria-controls="${detailId}"
                         title="Show alert details"

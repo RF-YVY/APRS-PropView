@@ -8,13 +8,14 @@ const root = path.resolve(__dirname, '..');
 // station named toString or valueOf must not find Object.prototype members.
 const KEYED = ['rfMarkers', 'isMarkers', 'rfLines', 'isLines', 'rfArrows', 'rfLineData',
     'stationMeta', 'hopMarkers', 'rfStations', 'isStations', 'nextMap'];
-const FILES = ['static/js/map.js', 'static/js/stations.js', 'static/mobile.html'];
+const FILES = ['static/js/map.js', 'static/js/stations.js', 'static/js/mobile.js'];
 
 test('callsign-keyed dictionaries never start from a plain object literal', () => {
     const plain = new RegExp(`\\b(${KEYED.join('|')})\\s*(=|:)\\s*\\{\\s*\\}`, 'g');
     for (const file of FILES) {
         const source = fs.readFileSync(path.join(root, file), 'utf8');
         assert.deepEqual([...source.matchAll(plain)].map((m) => m[0]), [], file);
+        assert.ok(source.includes('Object.create(null)'), `${file} has no null-prototype dictionary`);
     }
 });
 

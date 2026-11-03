@@ -81,6 +81,38 @@ MAX_ALERT_AUDIO_BYTES = 15 * 1024 * 1024
 MAP_TILE_CACHE_DIR = Path(os.environ.get("PROPVIEW_MAP_TILE_CACHE_DIR") or (RUNTIME_DATA_DIR / "map_tile_cache")).expanduser()
 MAX_TILE_CACHE_REQUEST = 800
 MAX_TILE_BYTES = 1024 * 1024
+CONTENT_SECURITY_POLICY = "script-src 'self'; object-src 'none'; base-uri 'self'"
+
+
+class ContentSecurityPolicyMiddleware:
+    """Send CONTENT_SECURITY_POLICY on every HTTP response.
+
+    Script runs only from files this server ships, so markup that slips past
+    escaping cannot execute. Images, styles and connections are left open:
+    map tiles and overlays come from operator-chosen hosts. A plain ASGI
+    wrapper keeps this off the request path, unlike an @app.middleware hop.
+    """
+
+    _NAME = b"content-security-policy"
+    _VALUE = CONTENT_SECURITY_POLICY.encode("ascii")
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_policy(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                if not any(name.lower() == self._NAME for name, _ in headers):
+                    headers.append((self._NAME, self._VALUE))
+                message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, send_with_policy)
 TILE_CACHE_BUDGET = TileCacheBudget(MAP_TILE_CACHE_DIR)
 
 # ── Validation helpers ──────────────────────────────────────────────
@@ -949,6 +981,8 @@ def create_app(
         allow_headers=["*"],
     )
 
+    app.add_middleware(ContentSecurityPolicyMiddleware)
+
     # ── Static files ────────────────────────────────────────────────
 
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -1025,7 +1059,13 @@ def create_app(
 
     @app.get("/mobile")
     async def mobile_page():
-        return FileResponse(str(STATIC_DIR / "mobile.html"))
+        # The page script lives in static/js/mobile.js, so the page is never
+        # cached and its script URLs change whenever those files do.
+        html = (STATIC_DIR / "mobile.html").read_text(encoding="utf-8")
+        return HTMLResponse(
+            html.replace("__ASSET_VERSION__", desktop_asset_version()),
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
 
     @app.post("/api/mobile/verify-pin")
     async def verify_mobile_pin(request: Request):
