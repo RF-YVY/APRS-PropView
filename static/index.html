@@ -1551,11 +1551,11 @@
                         <h3>Tracking</h3>
                         <div class="settings-row">
                             <label for="cfg-track-age">Max Station Age (min)</label>
-                            <input type="number" id="cfg-track-age" min="1" step="1" value="1440">
+                            <input type="number" id="cfg-track-age" min="10" max="525600" step="1" value="1440">
                         </div>
                         <div class="settings-row">
                             <label for="cfg-track-cleanup">Cleanup Interval (min)</label>
-                            <input type="number" id="cfg-track-cleanup" min="1" step="1" value="60">
+                            <input type="number" id="cfg-track-cleanup" min="1" max="1440" step="1" value="60">
                         </div>
                         <div class="settings-row settings-row-stacked">
                             <label for="cfg-packet-retention">Raw packet retention (days)</label>
