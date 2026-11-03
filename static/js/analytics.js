@@ -16,6 +16,17 @@
         'weather-humidity-chart': ['humidity', 'Humidity', '%', '#3fb950'],
     };
 
+    // Dashboard and export buttons are wired once, at load, so they work
+    // even if an earlier module's init throws before init() runs.
+    document.addEventListener('click', (e) => {
+        if (e.target.closest?.('#btn-weather-dashboard')) {
+            showWeatherDashboard();
+            return;
+        }
+        const exportBtn = e.target.closest?.('[data-export-type][data-export-format]');
+        if (exportBtn) exportData(exportBtn.dataset.exportType, exportBtn.dataset.exportFormat);
+    });
+
     // ── Initialization ─────────────────────────────────────────
 
     function init() {

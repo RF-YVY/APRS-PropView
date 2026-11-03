@@ -2061,6 +2061,13 @@
             : '<span>No opening lifecycle is active.</span>';
     }
 
+    // Watched-path scope buttons carry their index in a data attribute; one
+    // listener, bound at load, serves every render of the panel.
+    document.addEventListener('click', (e) => {
+        const button = e.target.closest?.('.watched-path-scope[data-scope-index]');
+        if (button) window.pvMap?.focusWatchScopeByIndex(Number(button.dataset.scopeIndex));
+    });
+
     function renderWatchedPaths(watched) {
         const panel = document.getElementById('watched-paths-panel');
         if (!panel) return;
@@ -2092,7 +2099,7 @@
                     <div class="watched-path-meta">${_escapeHTML(profile + bonus)}</div>
                     ${awareness ? `<div class="watched-path-meta">Remote alerts: ${_escapeHTML(awareness)}</div>` : ''}
                     <div class="watched-path-probes">${probeLine}</div>
-                    <button type="button" class="btn btn-small watched-path-scope" onclick="window.pvMap?.focusWatchScopeByIndex(${index})">View local scope</button>
+                    <button type="button" class="btn btn-small watched-path-scope" data-scope-index="${index}">View local scope</button>
                 </div>
             `;
         }).join('');
