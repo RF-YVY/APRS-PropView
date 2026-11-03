@@ -37,7 +37,7 @@ from server.config import (
     Config, StationConfig, DigiConfig, IGateConfig, APRSISConfig,
     KISSSerialConfig, KISSTCPConfig, RFPortConfig, WatchedPathConfig, WebConfig, DatabaseConfig, TrackingConfig,
     MessagingConfig, AlertsConfig, PropagationConfig, WeatherConfig, GPSConfig, MQTTConfig,
-    CLUB_DISPLAY_SCENES,
+    CLUB_DISPLAY_SCENES, TRACKING_CLEANUP_INTERVAL_RANGE, TRACKING_MAX_STATION_AGE_RANGE,
 )
 from server.callbook import CallbookCredentials, lookup_callsign
 from server.browser_launch import available_browsers, browser_ids
@@ -722,6 +722,21 @@ def _validate_config(body: Dict[str, Any]) -> Optional[str]:
         dbpath = db_cfg.get("path", "")
         if dbpath and not _SAFE_PATH_RE.match(dbpath):
             return "Database path must be a simple filename (alphanumeric, dots, hyphens, underscores only)."
+
+    if isinstance(body.get("tracking"), dict):
+        t = body["tracking"]
+        for key, label, (low, high) in (
+            ("cleanup_interval", "Cleanup interval", TRACKING_CLEANUP_INTERVAL_RANGE),
+            ("max_station_age", "Max station age", TRACKING_MAX_STATION_AGE_RANGE),
+        ):
+            if key not in t:
+                continue
+            try:
+                value = int(t[key])
+            except (TypeError, ValueError):
+                return f"{label} must be a whole number of minutes."
+            if not low <= value <= high:
+                return f"{label} must be between {low // 60} and {high // 60} minutes."
 
     return None
 

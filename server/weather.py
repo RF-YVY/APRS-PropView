@@ -85,7 +85,16 @@ _VALID_GEOJSON_GEOMETRY_TYPES = {
     "GeometryCollection",
 }
 _MAX_ALERT_ZONE_GEOMETRIES = 80
-_ZONE_GEOMETRY_CACHE: Dict[str, Optional[Dict[str, Any]]] = {}
+# zone URL -> (expires at, geometry). Failures expire before the next alert
+# poll (30 s minimum) so one NWS timeout can't hide an alert until restart.
+_ZONE_GEOMETRY_CACHE: Dict[str, Tuple[float, Optional[Dict[str, Any]]]] = {}
+_ZONE_GEOMETRY_CACHE_MAX = 512
+_ZONE_GEOMETRY_TTL_SECONDS = 24 * 60 * 60
+_ZONE_GEOMETRY_FAILURE_TTL_SECONDS = 25
+
+
+def _zone_cache_now() -> float:
+    return time.monotonic()
 
 # US Zip code regex
 _ZIP_RE = re.compile(r"^\d{5}$")
@@ -629,14 +638,19 @@ async def _fetch_zone_geometry(zone_url: str) -> Optional[Dict[str, Any]]:
     """Fetch and cache a NWS zone/county GeoJSON geometry."""
     if not zone_url:
         return None
-    if zone_url in _ZONE_GEOMETRY_CACHE:
-        return _ZONE_GEOMETRY_CACHE[zone_url]
+    cached = _ZONE_GEOMETRY_CACHE.get(zone_url)
+    if cached is not None and cached[0] > _zone_cache_now():
+        return cached[1]
 
     data = await _async_http_get(zone_url, timeout=15, retries=1, log_fail=False)
     geometry = data.get("geometry") if isinstance(data, dict) else None
     if not _is_valid_geojson_geometry(geometry):
         geometry = None
-    _ZONE_GEOMETRY_CACHE[zone_url] = geometry
+    ttl = _ZONE_GEOMETRY_TTL_SECONDS if geometry is not None else _ZONE_GEOMETRY_FAILURE_TTL_SECONDS
+    _ZONE_GEOMETRY_CACHE.pop(zone_url, None)
+    while len(_ZONE_GEOMETRY_CACHE) >= _ZONE_GEOMETRY_CACHE_MAX:
+        del _ZONE_GEOMETRY_CACHE[next(iter(_ZONE_GEOMETRY_CACHE))]
+    _ZONE_GEOMETRY_CACHE[zone_url] = (_zone_cache_now() + ttl, geometry)
     return geometry
 
 

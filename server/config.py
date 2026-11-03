@@ -1,10 +1,18 @@
 """Configuration management using TOML format."""
 
+import logging
 import sys
 from server.config_io import atomic_write
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List
+
+logger = logging.getLogger("propview.config")
+
+# Seconds. A zero interval spins the cleanup loop; a tiny age empties the
+# stations table on every pass.
+TRACKING_CLEANUP_INTERVAL_RANGE = (60, 86400)
+TRACKING_MAX_STATION_AGE_RANGE = (600, 365 * 86400)
 
 CLUB_DISPLAY_SCENES = frozenset({
     "map", "propagation", "weather", "activity", "aprs-is", "packets",
@@ -731,8 +739,16 @@ class Config:
         }
 
         for key, (cls, attr) in section_map.items():
-            if key in data:
-                setattr(config, attr, cls(**data[key]))
+            if key not in data:
+                continue
+            section = data[key]
+            if not isinstance(section, dict):
+                logger.warning(f"Ignoring [{key}] in {path.name}: expected a table, using defaults")
+                continue
+            allowed = cls.__dataclass_fields__.keys()
+            for unknown in sorted(set(section) - set(allowed)):
+                logger.warning(f"Ignoring unknown setting {key}.{unknown} in {path.name}")
+            setattr(config, attr, cls(**{k: v for k, v in section.items() if k in allowed}))
 
         if "rf_ports" in data and isinstance(data["rf_ports"], list):
             ports = []
@@ -749,6 +765,19 @@ class Config:
                 if isinstance(item, dict):
                     paths.append(WatchedPathConfig(**{k: v for k, v in item.items() if k in allowed}))
             config.watched_paths = paths
+
+        for key, (low, high) in (
+            ("cleanup_interval", TRACKING_CLEANUP_INTERVAL_RANGE),
+            ("max_station_age", TRACKING_MAX_STATION_AGE_RANGE),
+        ):
+            try:
+                value = int(getattr(config.tracking, key))
+            except (TypeError, ValueError):
+                value = getattr(TrackingConfig, key)
+            bounded = max(low, min(high, value))
+            if bounded != getattr(config.tracking, key):
+                logger.warning(f"tracking.{key} = {getattr(config.tracking, key)!r} is out of range, using {bounded}")
+            setattr(config.tracking, key, bounded)
 
         packet_animation = str(config.web.visual_packet_animation or "basic").strip().lower()
         config.web.visual_packet_animation = packet_animation if packet_animation in {"off", "basic", "enhanced"} else "basic"
