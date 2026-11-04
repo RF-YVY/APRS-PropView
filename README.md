@@ -376,7 +376,9 @@ map_tile_max_zoom = 14
 
 The local server can be backed by downloaded OpenStreetMap data or a prepared
 tile archive. Keep the max zoom realistic for the area you cache; zoom levels
-above 14 grow quickly.
+above 14 grow quickly. The tile proxy won't fetch a tile above
+`map_tile_max_zoom` (19 for the default OpenStreetMap source), though tiles
+already in the cache are served at any zoom.
 
 The map's **Cache** control downloads the currently visible base-map tiles at
 the current zoom into `map_tile_cache/`. Cached tiles are served by APRS

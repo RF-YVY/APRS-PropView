@@ -56,6 +56,7 @@ These variables are useful for containers and app registries:
 | `PROPVIEW_LONGITUDE` | config value | Override station longitude. |
 | `PROPVIEW_MAP_TILE_CACHE_DIR` | `$PROPVIEW_DATA_DIR/map_tile_cache` | Override map tile cache location. |
 | `PROPVIEW_USER_AUDIO_DIR` | `$PROPVIEW_DATA_DIR/user_audio` | Override alert audio upload location. |
+| `FORWARDED_ALLOW_IPS` | loopback | Reverse proxies trusted to send `X-Forwarded-For`. Set it to the proxy container's address so each visitor gets their own limits; see [Public hosting](PUBLIC_HOSTING.md#public-hosting). |
 
 Environment variables are applied every time the container starts. If you set a
 variable such as `PROPVIEW_HOST`, `PROPVIEW_PORT`, `PROPVIEW_CALLSIGN`, or

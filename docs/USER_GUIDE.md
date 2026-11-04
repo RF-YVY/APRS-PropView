@@ -55,6 +55,8 @@ RF Ports supports multiple named serial and TCP interfaces. Serial KISS, TCP KIS
 
 Digipeater settings control whether received packets may be repeated, including path/deduplication behavior. IGate settings control RF-to-APRS-IS and optional APRS-IS-to-RF traffic, subject to route restrictions. Review paths and station settings before enabling these functions. A receive-only interface is never a transmit path. APRS-IS → RF is controlled only in Settings → Radio & TNC → IGate and is off by default. Enable the IGate and APRS-IS → RF there. The built-in modem also needs its general Enable RF transmission switch on to transmit. There is no separate modem gating option.
 
+The digipeater repeats only UI frames, and it won't repeat a packet whose path already holds 8 digipeaters.
+
 Manual **Transmit Beacon** uses the selected RF, APRS-IS or combined route and requires a valid station position. Connected RF reception and RF transmit availability are separate: the modem can receive while TX is disabled. Scheduled beacon intervals and smart beaconing are station functions, independent of whether a browser is currently open.
 
 **Experimental modem:** further radio and hardware testing is needed on Linux, Raspberry Pi and macOS. Performance may vary by platform and audio interface.
@@ -91,7 +93,7 @@ The transmit watchdog bounds audio/serial PTT to ten seconds per packet; VOX rel
 
 ## APRS-IS and packet interpretation
 
-Configure callsign, server, port, passcode and filter under **Radio & TNC → APRS-IS**. Unverified/read-only connections can receive; sending requires verification. Filter helpers support fixed station ranges, moving/my ranges and extra APRS-IS filter tokens. The packet list identifies RF versus internet source; internet reports must not be read as local radio propagation evidence.
+Configure callsign, server, port, passcode and filter under **Radio & TNC → APRS-IS**. Unverified/read-only connections can receive; sending requires verification. If a server that has been sending its periodic comment lines goes silent for 120 seconds, PropView drops the connection and reconnects. Packets whose source, destination or path is not a valid address are dropped before tracking, gating or digipeating. Filter helpers support fixed station ranges, moving/my ranges and extra APRS-IS filter tokens. The packet list identifies RF versus internet source; internet reports must not be read as local radio propagation evidence.
 
 ## Messages, contacts and OTA activity spots
 
