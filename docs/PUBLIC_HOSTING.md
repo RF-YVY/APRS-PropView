@@ -77,6 +77,19 @@ browser profiles private; do not share an operator browser profile with viewers.
 - Forward cookies per client. Never inject a shared operator cookie or cache
   operator API responses. API responses use `Cache-Control: no-store` and
   `Vary: Cookie`.
+- Let PropView see each visitor's address. Uvicorn reads the client address
+  from `X-Forwarded-For` only when the request comes from loopback by default.
+  If the proxy runs on another host or in another container, start PropView
+  with `FORWARDED_ALLOW_IPS` set to the proxy's address, for example
+  `FORWARDED_ALLOW_IPS=172.18.0.2`. Without it, every visitor appears to come
+  from the proxy and shares that one address's limits (see below). Don't use
+  `*` unless nothing but the proxy can reach the backend port.
+- Keep PropView's `Content-Security-Policy` header. Every response carries
+  `script-src 'self'; object-src 'none'; base-uri 'self'`, so markup that
+  slips past escaping can't run script. A policy added by the proxy doesn't
+  replace it, because the browser enforces both. A proxy policy with
+  `default-src`, `img-src` or `style-src` can block custom map tiles, radar
+  overlays and the inline styles the pages use.
 - Forward `/ws` for live updates. Each outgoing message is checked against
   that socket's browser session, including after logout/expiry/reset.
 - Do not expose the installation/data directory through a web server.
@@ -93,6 +106,26 @@ and detailed diagnostics require login. Public WebSocket output excludes
 messages, GPS jobs, and unknown event types. Custom base-map credentials stay
 behind the tile proxy. Custom credential-bearing radar sources are disabled
 for public viewers; built-in radar sources remain available.
+
+## Limits per address
+
+These limits count each client address separately, with an IPv6 /64 counted
+as one address. The live-update and API limits apply only to browsers without
+an operator session.
+
+- Live updates: 16 public WebSocket connections, at most 4 per address, out
+  of 20 in total, so at least 4 stay free for operators. When the public
+  connections are full, a newcomer takes the oldest connection of the address
+  holding the most, if that address holds at least two more than the
+  newcomer. The evicted browser reconnects on its own.
+- Login: 5 password attempts per address per minute. Once 30 attempts a
+  minute arrive across all addresses, each address drops to 1 a minute, and
+  no more than 120 passwords are checked a minute. Refused attempts get
+  HTTP 429.
+- API requests: per-address and server-wide request budgets answer HTTP 429
+  with `Retry-After` when exceeded. Map tiles not yet cached have a smaller
+  budget of their own, and a tile above the tile source's maximum zoom is
+  served only if it is already cached.
 
 ## Upgrading existing installations
 

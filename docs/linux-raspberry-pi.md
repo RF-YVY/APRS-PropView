@@ -281,7 +281,9 @@ PropView serves map tiles through its local `/api/map-tiles/{z}/{x}/{y}` proxy,
 so cached tiles continue to display when the upstream OSM or custom XYZ tile
 server is offline. Cache each zoom level you care about separately; already
 cached tiles are reused, while uncached missing tiles remain blank until the
-upstream source is reachable again.
+upstream source is reachable again. The proxy won't fetch a tile above
+`map_tile_max_zoom` (19 for the default OpenStreetMap source), though tiles
+already in the cache are served at any zoom.
 
 ## Smart Beaconing
 

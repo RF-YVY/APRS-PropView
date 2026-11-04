@@ -1,5 +1,6 @@
 # APRS PropView Configuration
 # Edit this file with your station details before starting
+# Unknown keys, such as typos or settings from a newer release, are logged and ignored.
 
 [station]
 callsign = "N0CALL"
@@ -118,9 +119,10 @@ packet_retention_days = 7
 history_retention_days = 30
 
 [tracking]
-# Maximum age for station records in seconds (default 24h)
+# Maximum age for station records in seconds (default 24h, 600 to 31536000)
 max_station_age = 86400
-# How often to purge old records (seconds)
+# How often to purge old records in seconds (default 1h, 60 to 86400).
+# Values outside these ranges are clamped at startup and the change is logged.
 cleanup_interval = 3600
 # Callsigns to ignore completely. Use CALL-SSID for one SSID, or CALL for all SSIDs.
 blocked_callsigns = []
