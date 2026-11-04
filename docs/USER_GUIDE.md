@@ -1,8 +1,8 @@
 # APRS PropView User Guide
 
-Current version: **1.14.4**. This guide covers the desktop dashboard, mobile companion, settings and built-in modem.
+Current version: **1.14.5**. This guide covers the desktop dashboard, mobile companion, settings and built-in modem.
 
-Release date: October 29, 2026.
+Release date: November 4, 2026.
 
 ## Getting started
 

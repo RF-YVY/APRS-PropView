@@ -4,7 +4,7 @@ The built-in modem now builds a host-native library on Windows, Linux and macOS.
 Run Python 3.11 or newer. Build on the target OS and CPU architecture: a Windows
 DLL or executable cannot be used as a native Linux/Pi/macOS application.
 
-## v1.14.4 update
+## v1.14.5 update
 
 Use the package matching your OS and CPU: Windows portable/setup, Linux amd64 or arm64, or macOS Intel/Apple Silicon. Stop the existing application before replacing binaries; retain its application data directory. Browser-only reloads do not restart the server or reset uptime. After updating, refresh the browser. User login is optional under Settings → Security; existing configured passwords retain protection. New headless installs can enable login and set a password directly in the browser. See the [User Guide](USER_GUIDE.md) for personalization and the [changelog](../CHANGELOG.md) for security fixes.
 

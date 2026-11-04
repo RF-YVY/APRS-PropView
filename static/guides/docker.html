@@ -41,7 +41,8 @@ ghcr.io/rf-yvy/aprs-propview:&lt;version&gt;
 | <code>PROPVIEW_LATITUDE</code> | config value | Override station latitude. |
 | <code>PROPVIEW_LONGITUDE</code> | config value | Override station longitude. |
 | <code>PROPVIEW_MAP_TILE_CACHE_DIR</code> | <code>$PROPVIEW_DATA_DIR/map_tile_cache</code> | Override map tile cache location. |
-| <code>PROPVIEW_USER_AUDIO_DIR</code> | <code>$PROPVIEW_DATA_DIR/user_audio</code> | Override alert audio upload location. |</p>
+| <code>PROPVIEW_USER_AUDIO_DIR</code> | <code>$PROPVIEW_DATA_DIR/user_audio</code> | Override alert audio upload location. |
+| <code>FORWARDED_ALLOW_IPS</code> | loopback | Reverse proxies trusted to send <code>X-Forwarded-For</code>. Set it to the proxy container's address so each visitor gets their own limits; see <a href="PUBLIC_HOSTING.md#public-hosting">Public hosting</a>. |</p>
 <p>Environment variables are applied every time the container starts. If you set a
 variable such as <code>PROPVIEW_HOST</code>, <code>PROPVIEW_PORT</code>, <code>PROPVIEW_CALLSIGN</code>, or
 <code>PROPVIEW_KISS_TCP_HOST</code> in TrueNAS, Portainer, or Compose, that value wins over

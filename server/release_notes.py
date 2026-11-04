@@ -8,6 +8,12 @@ from server.config_io import atomic_write
 logger = logging.getLogger('propview.release')
 
 RELEASES = {
+    '1.14.5': [
+        'Contributor fixes improve APRS validation, digipeating, position encoding and APRS-IS connection recovery.',
+        'Slow alerts and threshold recommendations no longer stall packet processing; unattended configuration and weather recovery are improved.',
+        'Security hardening adds an inline-script-blocking CSP, per-address login and WebSocket fairness, and tile-proxy zoom limits.',
+        'Fixed prototype-name callsign lookups and Settings navigation; updated deployment guidance. Thanks to @denmojo for PRs #31–#38.',
+    ],
     '1.14.4': [
         'I apologize for another update so soon. Mandatory login complicated headless Pi setup and may not be needed for most users on trusted local networks.',
         'Settings → Security now offers optional User login, off by default without an existing password. Enable it to set a password in the browser.',

@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PUBLIC HOSTING</title><style>body{margin:0;background:#101820;color:#e5edf3;font:16px/1.65 system-ui,sans-serif}main{max-width:980px;margin:auto;padding:32px 24px 70px}h1,h2,h3{line-height:1.25;color:#fff}h2{margin-top:2.3em;border-bottom:1px solid #405361;padding-bottom:10px;scroll-margin-top:18px}a{color:#79c9ff}code{background:#243441;padding:2px 5px;border-radius:3px}li{margin:.5em 0}nav{padding:18px 24px;background:#1a2b38;border:1px solid #405361;border-radius:10px}nav ul{columns:2;padding-left:20px}nav li{break-inside:avoid}p,li{overflow-wrap:anywhere}@media(max-width:600px){nav ul{columns:1}main{padding:18px}}</style></head><body><main><nav aria-label="Contents"><strong>Contents</strong><ul><li><a href="#first-setup-and-lost-passwords">First setup and lost passwords</a></li><li><a href="#sign-in-once-operate-until-expiry">Sign in once, operate until expiry</a></li><li><a href="#public-hosting">Public hosting</a></li><li><a href="#upgrading-existing-installations">Upgrading existing installations</a></li><li><a href="#what-s-new-after-an-update">What&#x27;s new after an update</a></li><li><a href="#finding-operator-access">Finding operator access</a></li></ul></nav><h1>Public dashboard and operator access</h1>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PUBLIC HOSTING</title><style>body{margin:0;background:#101820;color:#e5edf3;font:16px/1.65 system-ui,sans-serif}main{max-width:980px;margin:auto;padding:32px 24px 70px}h1,h2,h3{line-height:1.25;color:#fff}h2{margin-top:2.3em;border-bottom:1px solid #405361;padding-bottom:10px;scroll-margin-top:18px}a{color:#79c9ff}code{background:#243441;padding:2px 5px;border-radius:3px}li{margin:.5em 0}nav{padding:18px 24px;background:#1a2b38;border:1px solid #405361;border-radius:10px}nav ul{columns:2;padding-left:20px}nav li{break-inside:avoid}p,li{overflow-wrap:anywhere}@media(max-width:600px){nav ul{columns:1}main{padding:18px}}</style></head><body><main><nav aria-label="Contents"><strong>Contents</strong><ul><li><a href="#first-setup-and-lost-passwords">First setup and lost passwords</a></li><li><a href="#sign-in-once-operate-until-expiry">Sign in once, operate until expiry</a></li><li><a href="#public-hosting">Public hosting</a></li><li><a href="#limits-per-address">Limits per address</a></li><li><a href="#upgrading-existing-installations">Upgrading existing installations</a></li><li><a href="#what-s-new-after-an-update">What&#x27;s new after an update</a></li><li><a href="#finding-operator-access">Finding operator access</a></li></ul></nav><h1>Public dashboard and operator access</h1>
 <p>User login is optional and off by default when no password has been configured. While off, anyone who can reach the application can change settings, read messages and use transmit controls. <strong>Enable User login for unattended or public-facing instances</strong> before making the application accessible. Use HTTPS or a trusted private VPN for remote access.</p>
 <h2 id="first-setup-and-lost-passwords">First setup and lost passwords</h2>
 <p>Open <strong>Settings → Security</strong> and turn on <strong>Enable User login</strong>. Set and confirm a password of 6–256 characters in the browser prompt. Saving enables protection and signs in the current browser for one hour. Other browsers must sign in separately and receive read-only public data until they do. Cancel leaves login off. Signed-in users may disable login in Security, unlocking access for everyone who can reach the application.</p>
@@ -59,6 +59,19 @@ Uvicorn from loopback. Cookies use Secure when the app sees HTTPS.</li>
 <li>Forward cookies per client. Never inject a shared operator cookie or cache
 operator API responses. API responses use <code>Cache-Control: no-store</code> and
 <code>Vary: Cookie</code>.</li>
+<li>Let PropView see each visitor's address. Uvicorn reads the client address
+from <code>X-Forwarded-For</code> only when the request comes from loopback by default.
+If the proxy runs on another host or in another container, start PropView
+with <code>FORWARDED_ALLOW_IPS</code> set to the proxy's address, for example
+<code>FORWARDED_ALLOW_IPS=172.18.0.2</code>. Without it, every visitor appears to come
+from the proxy and shares that one address's limits (see below). Don't use
+<code>*</code> unless nothing but the proxy can reach the backend port.</li>
+<li>Keep PropView's <code>Content-Security-Policy</code> header. Every response carries
+<code>script-src 'self'; object-src 'none'; base-uri 'self'</code>, so markup that
+slips past escaping can't run script. A policy added by the proxy doesn't
+replace it, because the browser enforces both. A proxy policy with
+<code>default-src</code>, <code>img-src</code> or <code>style-src</code> can block custom map tiles, radar
+overlays and the inline styles the pages use.</li>
 <li>Forward <code>/ws</code> for live updates. Each outgoing message is checked against
 that socket's browser session, including after logout/expiry/reset.</li>
 <li>Do not expose the installation/data directory through a web server.</li>
@@ -74,6 +87,25 @@ and detailed diagnostics require login. Public WebSocket output excludes
 messages, GPS jobs, and unknown event types. Custom base-map credentials stay
 behind the tile proxy. Custom credential-bearing radar sources are disabled
 for public viewers; built-in radar sources remain available.</p>
+<h2 id="limits-per-address">Limits per address</h2>
+<p>These limits count each client address separately, with an IPv6 /64 counted
+as one address. The live-update and API limits apply only to browsers without
+an operator session.</p>
+<ul>
+<li>Live updates: 16 public WebSocket connections, at most 4 per address, out
+of 20 in total, so at least 4 stay free for operators. When the public
+connections are full, a newcomer takes the oldest connection of the address
+holding the most, if that address holds at least two more than the
+newcomer. The evicted browser reconnects on its own.</li>
+<li>Login: 5 password attempts per address per minute. Once 30 attempts a
+minute arrive across all addresses, each address drops to 1 a minute, and
+no more than 120 passwords are checked a minute. Refused attempts get
+HTTP 429.</li>
+<li>API requests: per-address and server-wide request budgets answer HTTP 429
+with <code>Retry-After</code> when exceeded. Map tiles not yet cached have a smaller
+budget of their own, and a tile above the tile source's maximum zoom is
+served only if it is already cached.</li>
+</ul>
 <h2 id="upgrading-existing-installations">Upgrading existing installations</h2>
 <p>After installing this version, enable User login in Settings → Security before publishing
 to change settings or transmit manually. The old mobile PIN and browser-local
