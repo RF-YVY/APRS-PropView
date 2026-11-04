@@ -9,6 +9,7 @@ logger = logging.getLogger('propview.release')
 
 RELEASES = {
     '1.14.5': [
+        'External TNC connection status no longer counts the unused built-in modem as a disconnected port.',
         'Contributor fixes improve APRS validation, digipeating, position encoding and APRS-IS connection recovery.',
         'Slow alerts and threshold recommendations no longer stall packet processing; unattended configuration and weather recovery are improved.',
         'Security hardening adds an inline-script-blocking CSP, per-address login and WebSocket fairness, and tile-proxy zoom limits.',

@@ -36,10 +36,12 @@ class ReleaseTests(unittest.TestCase):
     def test_release_bundles_full_notes_and_modem_disclaimer(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / 'CHANGELOG.md').read_text(encoding='utf-8')
-        self.assertEqual(text, (root / 'docs/release-v1.14.5.md').read_text(encoding='utf-8'))
+        notes = (root / 'docs/release-v1.14.5.md').read_text(encoding='utf-8')
+        self.assertIn('## v1.14.5', notes)
+        self.assertNotIn('## v1.14.4', notes)
         html = (root / 'static/releases/v1.14.5.html').read_text(encoding='utf-8')
-        self.assertIn('changes since v1.11.1', html)
-        self.assertIn('Further radio and hardware testing is needed', html)
+        self.assertIn('v1.14.5', html)
+        self.assertNotIn('v1.14.4', html)
         modem = (root / 'static/js/software-modem.js').read_text(encoding='utf-8')
         self.assertIn('Experimental modem:', modem)
         self.assertIn('placeholder="W1AW"', (root / 'static/js/aprs-spot.js').read_text())

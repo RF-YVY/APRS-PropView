@@ -114,6 +114,10 @@ class SoftwareModem:
     name='Built-in modem (experimental)'
 
     @property
+    def status_enabled(self):
+        return bool(self.connected or self.can_transmit or self.settings.get('auto_start') or self.last_error)
+
+    @property
     def can_transmit(self):return self.transmitter.enabled
 
     @property

@@ -1158,6 +1158,7 @@ class PacketHandler:
                     "rx_only_is": bool(getattr(iface, "rx_only_is", False)),
                 }
                 for iface in self.rf_interfaces
+                if getattr(iface, "status_enabled", True)
             ],
             "aprs_is_connected": is_connected,
             "aprs_is_verified": bool(self.aprs_is and getattr(self.aprs_is, "verified", False)),

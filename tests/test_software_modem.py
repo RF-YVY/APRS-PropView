@@ -225,6 +225,31 @@ class OfflineRouteTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ModemDashboardTests(unittest.IsolatedAsyncioTestCase):
+    async def test_external_tnc_status_excludes_unused_modem(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import MagicMock
+        from types import SimpleNamespace
+        from server.config import Config
+        from server.packet_handler import PacketHandler
+        from server.software_modem import SoftwareModem
+        config = Config()
+        handler = PacketHandler(config, MagicMock(), None, None, MagicMock())
+        external = SimpleNamespace(name='External TNC', connected=True, can_transmit=True)
+        with tempfile.TemporaryDirectory() as temp:
+            modem = SoftwareModem(handler, Path(temp) / 'modem.json')
+            handler.add_rf_interface(external)
+            handler.add_rf_interface(modem)
+            self.assertEqual([p['name'] for p in handler.get_status()['rf_interfaces']], ['External TNC'])
+            modem.connected = True
+            self.assertEqual(len(handler.get_status()['rf_interfaces']), 2)
+            modem.connected = False
+            modem.settings['auto_start'] = True
+            self.assertEqual(len(handler.get_status()['rf_interfaces']), 2)
+            modem.settings.clear()
+            modem.last_error = 'Audio device unavailable'
+            self.assertEqual(len(handler.get_status()['rf_interfaces']), 2)
+
     async def test_modem_only_dashboard_updates_without_packets(self):
         import asyncio, tempfile
         from pathlib import Path

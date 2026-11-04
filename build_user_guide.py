@@ -44,6 +44,7 @@ for name in ['PUBLIC_HOSTING','DEVELOPMENT_MODEM','linux-raspberry-pi','docker',
 print('Generated full documentation, in-app help and four companion guides')
 
 releases=ROOT/'static/releases';releases.mkdir(exist_ok=True)
-release_body,release_toc=render((ROOT/'CHANGELOG.md').read_text(encoding='utf-8'))
 version = re.search(r'^APP_VERSION = "([^"]+)"', (ROOT/'main.py').read_text(encoding='utf-8'), re.M).group(1)
+
+release_body,release_toc=render((ROOT/('docs/release-v'+version+'.md')).read_text(encoding='utf-8'))
 (releases/('v'+version+'.html')).write_text(page('APRS PropView '+version+' changelog',release_body,release_toc),encoding='utf-8')
