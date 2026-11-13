@@ -1009,7 +1009,8 @@ class PacketHandler:
 
         # Beacon on RF
         transmitted = False
-        if mode in {"rf", "both"} and self.rf_interfaces:
+        rf_tx_capable = self._can_send_via("rf")
+        if mode in {"rf", "both"} and rf_tx_capable:
             from server.ax25 import AX25Address
 
             frame = AX25Frame()
@@ -1031,7 +1032,11 @@ class PacketHandler:
             if await self._transmit_rf(frame):
                 transmitted = True
                 await self._record_tx_packet(frame.to_aprs_string(), "RF TX")
-            logger.info(f"Beacon RF TX: {cfg.full_callsign}>APPRPV via {path_str or 'DIRECT'}")
+                logger.info(f"Beacon RF TX: {cfg.full_callsign}>APPRPV via {path_str or 'DIRECT'}")
+            else:
+                logger.warning("Beacon RF TX failed: no RF interface accepted the frame")
+        elif mode in {"rf", "both"} and self.rf_interfaces:
+            logger.info("Beacon RF skipped: no transmit-capable RF port (all connected ports are RX-only or offline)")
 
         # Beacon on APRS-IS
         if mode in {"aprs_is", "both"} and self.aprs_is and self.aprs_is.connected:
@@ -1039,7 +1044,9 @@ class PacketHandler:
             if await self.aprs_is.send(packet):
                 transmitted = True
                 await self._record_tx_packet(packet, "APRS-IS TX")
-            logger.info("Beacon APRS-IS TX")
+                logger.info("Beacon APRS-IS TX")
+            else:
+                logger.warning("Beacon APRS-IS TX failed")
 
         if mode == "rf" and not self.rf_interfaces:
             logger.warning("Beacon: no RF interfaces available")
