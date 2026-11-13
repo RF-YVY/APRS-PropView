@@ -214,6 +214,12 @@ def _web_port_available(host: str, port: int) -> bool:
     family = socket.AF_INET6 if ":" in str(host) else socket.AF_INET
     try:
         with socket.socket(family, socket.SOCK_STREAM) as sock:
+            # Match uvicorn's listener: on POSIX, SO_REUSEADDR lets the bind
+            # succeed past TIME_WAIT sockets left by a just-stopped instance
+            # while still failing if another process is actively listening.
+            # On Windows it would allow stealing a live port, so skip it there.
+            if os.name != "nt":
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.bind((host, int(port)))
     except OSError:
         return False
