@@ -2,7 +2,7 @@
 
 Current version: **1.14.5**. This guide covers the desktop dashboard, mobile companion, settings and built-in modem.
 
-Release date: November 4, 2026.
+Release date: November 19, 2026.
 
 ## Getting started
 
