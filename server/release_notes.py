@@ -8,6 +8,9 @@ from server.config_io import atomic_write
 logger = logging.getLogger('propview.release')
 
 RELEASES = {
+    '1.14.6': [
+        'Map tile downloads now use the bundled CA certificates alongside system trust, with better logging when a download fails.',
+    ],
     '1.14.5': [
         'External TNC connection status no longer counts the unused built-in modem as a disconnected port.',
         'Contributor fixes improve APRS validation, digipeating, position encoding and APRS-IS connection recovery.',

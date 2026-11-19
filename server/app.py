@@ -18,6 +18,7 @@ import mimetypes
 import os
 import re
 import shutil
+import ssl
 import subprocess
 import time
 import logging
@@ -333,12 +334,25 @@ def _download_tile(tile_url: str, z: int, x: int, y: int) -> Optional[Path]:
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        # Frozen macOS/Python installs may have no usable default CA bundle.
+        # Keep system trust (including local enterprise roots) and add the
+        # certificate bundle shipped with the desktop application.
+        import certifi
+
+        context = ssl.create_default_context()
+        context.load_verify_locations(cafile=certifi.where())
+        with urllib.request.urlopen(req, timeout=10, context=context) as resp:
             status = getattr(resp, "status", 200)
             if status >= 400:
+                logger.warning('Map tile %s/%s/%s download returned HTTP %s', z, x, y, status)
                 return None
             data = resp.read(MAX_TILE_BYTES + 1)
-    except Exception:
+    except Exception as exc:
+        # Do not log custom tile URLs, which may contain API credentials.
+        reason = getattr(exc, 'reason', exc)
+        logger.warning('Map tile %s/%s/%s download failed (%s; HTTP %s; TLS verification: %s)',
+                       z, x, y, type(reason).__name__, getattr(exc, 'code', 'n/a'),
+                       getattr(reason, 'verify_message', 'n/a'))
         return None
 
     if not data or len(data) > MAX_TILE_BYTES:
